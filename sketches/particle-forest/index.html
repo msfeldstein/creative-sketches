@@ -49,7 +49,7 @@
 
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.8, 0.5, 0.2
+      0.5, 0.4, 0.3
     );
     composer.addPass(bloomPass);
 
@@ -273,9 +273,9 @@
     const paths = tree.paths;
 
     // Create massive particle system for the tree
-    const PARTICLES = 80000; // Fewer particles so trails are visible
+    const PARTICLES = 20000;
     const MAX_PATH = 10;
-    const TRAIL_LENGTH = 16; // Long comet trails
+    const TRAIL_LENGTH = 6; // Fewer but more visible trail segments
 
     // Path data texture
     const pathTexW = MAX_PATH;
@@ -311,67 +311,121 @@
     const pathTex = new THREE.DataTexture(pathData, pathTexW, pathTexH, THREE.RGBAFormat, THREE.FloatType);
     pathTex.needsUpdate = true;
 
-    // Particle geometry
-    const geo = new THREE.InstancedBufferGeometry();
-    const quad = new Float32Array([-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0]);
-    const quadUv = new Float32Array([0,0, 1,0, 1,1, 0,1]);
-    const quadIdx = new Uint16Array([0,1,2, 0,2,3]);
-    geo.setAttribute('position', new THREE.BufferAttribute(quad, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(quadUv, 2));
-    geo.setIndex(new THREE.BufferAttribute(quadIdx, 1));
-
-    // Each particle has TRAIL_LENGTH instances for the trail effect
-    const TOTAL_INSTANCES = PARTICLES * TRAIL_LENGTH;
+    // Line geometry - non-instanced, each vertex has full particle data
+    const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+    const TOTAL_VERTICES = PARTICLES * TRAIL_SEGMENTS * 2; // 2 vertices per line segment
     
-    const pathIndices = new Float32Array(TOTAL_INSTANCES);
-    const pathLengths = new Float32Array(TOTAL_INSTANCES);
-    const scales = new Float32Array(TOTAL_INSTANCES);
-    const speeds = new Float32Array(TOTAL_INSTANCES);
-    const phases = new Float32Array(TOTAL_INSTANCES);
-    const timeOffsets = new Float32Array(TOTAL_INSTANCES);
-    const colorSeeds = new Float32Array(TOTAL_INSTANCES);
-    const trailIndices = new Float32Array(TOTAL_INSTANCES);
+    const geo = new THREE.BufferGeometry();
+    // Dummy positions - actual positions computed in shader
+    const positions = new Float32Array(TOTAL_VERTICES * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    // Per-vertex attributes
+    const pathIndices = new Float32Array(TOTAL_VERTICES);
+    const pathLengths = new Float32Array(TOTAL_VERTICES);
+    const scales = new Float32Array(TOTAL_VERTICES);
+    const speeds = new Float32Array(TOTAL_VERTICES);
+    const phases = new Float32Array(TOTAL_VERTICES);
+    const timeOffsets = new Float32Array(TOTAL_VERTICES);
+    const colorSeeds = new Float32Array(TOTAL_VERTICES);
+    const trailIndices = new Float32Array(TOTAL_VERTICES); // The actual trail point index (0 to TRAIL_LENGTH-1)
 
-    for (let i = 0; i < PARTICLES; i++) {
+    // Helper to set vertex data for a line segment
+    function setSegmentVertex(vertexIdx, pi, pathLen, scale, speed, phase, timeOffset, colorSeed, trailIdx) {
+      pathIndices[vertexIdx] = pi;
+      pathLengths[vertexIdx] = pathLen;
+      scales[vertexIdx] = scale;
+      speeds[vertexIdx] = speed;
+      phases[vertexIdx] = phase;
+      timeOffsets[vertexIdx] = timeOffset;
+      colorSeeds[vertexIdx] = colorSeed;
+      trailIndices[vertexIdx] = trailIdx;
+    }
+    
+    // Create burst groups - particles that spawn together
+    const NUM_BURSTS = 150;
+    const burstTimeOffsets = [];
+    const burstPaths = [];
+    const burstSpeeds = [];
+    const burstColorSeeds = [];
+    
+    for (let b = 0; b < NUM_BURSTS; b++) {
+      burstTimeOffsets.push(Math.random() * 30);
+      burstPaths.push(Math.floor(Math.random() * paths.length));
+      burstSpeeds.push(0.025 + Math.random() * 0.03);
+      burstColorSeeds.push(Math.random());
+    }
+    
+    const BURST_PARTICLES = Math.floor(PARTICLES * 0.7);
+    let particleIdx = 0;
+    let vertexIdx = 0;
+    
+    // Create burst particles
+    for (let b = 0; b < NUM_BURSTS; b++) {
+      const burstSize = 200 + Math.floor(Math.pow(Math.random(), 2) * 600);
+      const burstTime = burstTimeOffsets[b];
+      const burstPath = burstPaths[b];
+      const burstSpeed = burstSpeeds[b];
+      const burstColor = burstColorSeeds[b];
+      
+      for (let p = 0; p < burstSize && particleIdx < BURST_PARTICLES; p++) {
+        let pi = burstPath;
+        if (Math.random() > 0.3) {
+          pi = Math.floor(Math.random() * paths.length);
+        }
+        
+        const baseScale = 0.016 + Math.pow(Math.random(), 2) * 0.028;
+        const timeVariation = (Math.random() - 0.5) * 0.8;
+        const baseTimeOffset = burstTime + timeVariation;
+        const baseSpeed = burstSpeed + (Math.random() - 0.5) * 0.015;
+        const basePhase = Math.random() * Math.PI * 2;
+        const baseColorSeed = burstColor + (Math.random() - 0.5) * 0.15;
+        const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
+        
+        // Create line segments for this particle's trail
+        for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+          // Start vertex of segment (trail point seg)
+          setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg);
+          // End vertex of segment (trail point seg+1)
+          setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg + 1);
+        }
+        particleIdx++;
+      }
+    }
+    
+    // Fill remaining with uniform backdrop particles
+    for (let i = particleIdx; i < PARTICLES; i++) {
       const pi = Math.floor(Math.random() * paths.length);
-      const baseScale = 0.018 + Math.pow(Math.random(), 2) * 0.03; // Bigger particles for visible trails
-      const baseSpeed = 0.03 + Math.random() * 0.04; // Good speed for visible motion
+      const baseScale = 0.012 + Math.pow(Math.random(), 2) * 0.02;
+      const baseSpeed = 0.03 + Math.random() * 0.04;
       const basePhase = Math.random() * Math.PI * 2;
       const baseTimeOffset = Math.random() * 30;
       const baseColorSeed = Math.random();
       const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
       
-      // Create trail instances for this particle
-      for (let t = 0; t < TRAIL_LENGTH; t++) {
-        const idx = i * TRAIL_LENGTH + t;
-        pathIndices[idx] = pi;
-        pathLengths[idx] = pathLen;
-        scales[idx] = baseScale;
-        speeds[idx] = baseSpeed;
-        phases[idx] = basePhase;
-        timeOffsets[idx] = baseTimeOffset;
-        colorSeeds[idx] = baseColorSeed;
-        trailIndices[idx] = t; // 0 = head, increasing = older trail segments
+      for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+        setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg);
+        setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg + 1);
       }
     }
 
-    geo.setAttribute('pathIndex', new THREE.InstancedBufferAttribute(pathIndices, 1));
-    geo.setAttribute('pathLength', new THREE.InstancedBufferAttribute(pathLengths, 1));
-    geo.setAttribute('aScale', new THREE.InstancedBufferAttribute(scales, 1));
-    geo.setAttribute('speed', new THREE.InstancedBufferAttribute(speeds, 1));
-    geo.setAttribute('phase', new THREE.InstancedBufferAttribute(phases, 1));
-    geo.setAttribute('timeOffset', new THREE.InstancedBufferAttribute(timeOffsets, 1));
-    geo.setAttribute('colorSeed', new THREE.InstancedBufferAttribute(colorSeeds, 1));
-    geo.setAttribute('trailIndex', new THREE.InstancedBufferAttribute(trailIndices, 1));
+    geo.setAttribute('pathIndex', new THREE.BufferAttribute(pathIndices, 1));
+    geo.setAttribute('pathLength', new THREE.BufferAttribute(pathLengths, 1));
+    geo.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+    geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+    geo.setAttribute('timeOffset', new THREE.BufferAttribute(timeOffsets, 1));
+    geo.setAttribute('colorSeed', new THREE.BufferAttribute(colorSeeds, 1));
+    geo.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
 
     const treeMat = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uTexture: { value: particleTex },
         uPathTex: { value: pathTex },
-        uPathSize: { value: new THREE.Vector2(pathTexW, pathTexH) }
+        uPathSize: { value: new THREE.Vector2(pathTexW, pathTexH) },
+        uTrailSegments: { value: TRAIL_SEGMENTS }
       },
-        vertexShader: `
+      vertexShader: `
         attribute float pathIndex;
         attribute float pathLength;
         attribute float aScale;
@@ -384,14 +438,15 @@
         uniform float uTime;
         uniform sampler2D uPathTex;
         uniform vec2 uPathSize;
+        uniform float uTrailSegments;
         
         varying float vAlpha;
-        varying vec2 vUv;
         varying float vHeight;
         varying float vProgress;
         varying float vColorSeed;
         varying float vPhase;
         varying float vTrailFade;
+        varying float vWrap; // 1.0 if this segment crosses wrap boundary
         
         float hash(float n) { return fract(sin(n) * 43758.5453); }
         float noise(float x) {
@@ -405,23 +460,34 @@
         }
         
         void main() {
-          vUv = uv;
           vColorSeed = colorSeed;
           vPhase = phase;
           
-          // Trail offset - each segment is behind in time (larger = longer visible trail)
-          float trailOffset = trailIndex * 0.04; // Time gap between trail segments
-          float time = uTime + timeOffset - trailOffset;
+          float baseTime = uTime + timeOffset;
+          float noiseOffset = (noise(phase * 10.0) - 0.5) * 0.08;
           
-          // Trail fade - head is bright, tail fades out
-          vTrailFade = 1.0 - (trailIndex / 16.0);
-          vTrailFade = pow(vTrailFade, 1.2); // Gradual falloff so tail is visible
+          // Trail offset - each point is behind in time
+          float trailOffset = trailIndex * 0.5;
+          float time = baseTime - trailOffset;
           
-          float t = mod(time * speed, 1.0);
-          vProgress = t;
+          // Compute t with noise in single mod to avoid double-wrap issues
+          float rawT = time * speed + noiseOffset;
+          float t = mod(rawT, 1.0);
           
-          // Spread particles along path
-          t = mod(t + (noise(phase * 10.0) - 0.5) * 0.12, 1.0);
+          // Detect wrap-around BEFORE position calculation
+          // Compute raw t for adjacent trail points (same noise since phase is constant)
+          float rawTPrev = (baseTime - (trailIndex - 1.0) * 0.5) * speed + noiseOffset;
+          float rawTNext = (baseTime - (trailIndex + 1.0) * 0.5) * speed + noiseOffset;
+          
+          // Check if this vertex and its neighbors are in different "cycles"
+          // floor(rawT) gives the cycle number - if they differ, the segment wraps
+          float cycleCurrent = floor(rawT);
+          float cyclePrev = floor(rawTPrev);
+          float cycleNext = floor(rawTNext);
+          
+          float wrapPrev = abs(cycleCurrent - cyclePrev) > 0.5 ? 1.0 : 0.0;
+          float wrapNext = abs(cycleCurrent - cycleNext) > 0.5 ? 1.0 : 0.0;
+          vWrap = max(wrapPrev, wrapNext);
           
           float segCount = pathLength - 1.0;
           float segProg = t * segCount;
@@ -445,7 +511,7 @@
           vHeight = pos.y;
           float thick = mix(p1.w, p2.w, segT);
           
-          // Drift perpendicular to path - TIGHT to show branch structure
+          // Drift perpendicular to path
           vec3 tangent = normalize(p2.xyz - p1.xyz + 0.001);
           vec3 perp1 = normalize(cross(tangent, vec3(0.0, 1.0, 0.1)));
           vec3 perp2 = normalize(cross(tangent, perp1));
@@ -453,15 +519,12 @@
           float ns1 = phase * 10.0 + time * 0.2;
           float ns2 = phase * 7.0 + time * 0.25;
           
-          // Much smaller drift - particles stay close to branches
           float d1 = (noise(ns1 + t * 2.0) - 0.5) * 0.8;
           d1 += sin(phase * 3.0 + time * 0.2 + t * 1.5) * 0.3;
           float d2 = (noise(ns2 + t * 1.8) - 0.5) * 0.8;
           d2 += cos(phase * 2.0 + time * 0.15 + t * 1.2) * 0.3;
           
-          // Drift scales with thickness - thicker branches = more spread
           float driftMult = thick * 0.5 + 0.05;
-          // Slight increase at tips
           driftMult *= 1.0 + t * 0.5;
           
           d1 *= driftMult;
@@ -470,35 +533,33 @@
           float vDrift = (noise(phase * 13.0 + t * 1.5) - 0.5) * thick * 0.2;
           pos += perp1 * d1 + perp2 * d2 + vec3(0.0, vDrift, 0.0);
           
-          // Alpha - trail is clearly visible, tail stays visible
+          // Trail fade - head is bright, tail fades out
+          vTrailFade = 1.0 - (trailIndex / (uTrailSegments + 1.0));
+          vTrailFade = pow(max(vTrailFade, 0.0), 0.8);
+          
+          vProgress = t;
+          
+          // Alpha
           float alphaBase = smoothstep(0.0, 0.05, t) * smoothstep(1.0, 0.8, t);
-          vAlpha = alphaBase * (0.3 + 0.7 * vTrailFade); // Tail is at least 30% visible
+          vAlpha = alphaBase * (0.3 + 0.7 * vTrailFade);
           
-          // Scale - trail segments shrink to show direction
-          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
-          float pScale = aScale;
-          pScale *= 0.7 + thick * 0.4;
-          pScale *= (0.3 + 0.7 * vTrailFade); // Head full size, tail shrinks to 30%
-          mv.xyz += position * pScale;
-          
-          gl_Position = projectionMatrix * mv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
         }
       `,
-        fragmentShader: `
-        uniform sampler2D uTexture;
+      fragmentShader: `
         uniform float uTime;
         
         varying float vAlpha;
-        varying vec2 vUv;
         varying float vHeight;
         varying float vProgress;
         varying float vColorSeed;
         varying float vPhase;
         varying float vTrailFade;
+        varying float vWrap;
         
         void main() {
-          vec4 tex = texture2D(uTexture, vUv);
-          
+          // Hide segments that wrap around
+          if (vWrap > 0.5) discard;
           float h = clamp(vHeight / 22.0, 0.0, 1.0);
           
           // Rich color palette
@@ -510,7 +571,7 @@
           vec3 white = vec3(1.0, 0.98, 0.95);
           
           // Base color from seed
-          float colorMix = vColorSeed + sin(uTime * 0.15 + vPhase) * 0.2;
+          float colorMix = vColorSeed + sin(uTime * 0.15 + vPhase) * 0.15;
           vec3 baseColor;
           if (colorMix < 0.25) {
             baseColor = mix(cyan, teal, colorMix * 4.0);
@@ -535,10 +596,10 @@
           float sparkle = pow(max(0.0, sin(uTime * 1.2 + vPhase * 25.0 + vProgress * 15.0)), 20.0);
           color += white * sparkle * 0.7;
           
-          // Core brightness - subtle
+          // Core brightness
           color *= 0.95 + (1.0 - vProgress) * 0.1;
           
-          gl_FragColor = vec4(color, tex.a * vAlpha * 0.8);
+          gl_FragColor = vec4(color, vAlpha * 0.15);
         }
       `,
       transparent: true,
@@ -546,7 +607,7 @@
       depthWrite: false
     });
 
-    const treeMesh = new THREE.Mesh(geo, treeMat);
+    const treeMesh = new THREE.LineSegments(geo, treeMat);
     treeMesh.frustumCulled = false;
     scene.add(treeMesh);
 
@@ -671,172 +732,6 @@
     const fogLayers = createFog();
     fogLayers.forEach(layer => scene.add(layer));
 
-    // Generate root structure data for the ground shader
-    function generateRoots() {
-      const roots = [];
-      const numMainRoots = 7;
-      
-      for (let i = 0; i < numMainRoots; i++) {
-        const angle = (i / numMainRoots) * Math.PI * 2 + Math.random() * 0.4;
-        let x = 0, z = 0;
-        let dir = angle;
-        let length = 2 + Math.random() * 2;
-        
-        // Main root path
-        const path = [];
-        for (let j = 0; j < 8; j++) {
-          path.push({ x, z });
-          dir += (Math.random() - 0.5) * 0.6;
-          x += Math.cos(dir) * length;
-          z += Math.sin(dir) * length;
-          length *= 0.85 + Math.random() * 0.1;
-        }
-        roots.push(path);
-        
-        // Sub-branches
-        for (let j = 1; j < path.length - 1; j++) {
-          if (Math.random() > 0.4) {
-            const branchDir = dir + (Math.random() > 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.8);
-            let bx = path[j].x, bz = path[j].z;
-            let bLen = length * 0.7;
-            const branch = [{ x: bx, z: bz }];
-            for (let k = 0; k < 4; k++) {
-              bx += Math.cos(branchDir + (Math.random() - 0.5) * 0.4) * bLen;
-              bz += Math.sin(branchDir + (Math.random() - 0.5) * 0.4) * bLen;
-              branch.push({ x: bx, z: bz });
-              bLen *= 0.75;
-            }
-            roots.push(branch);
-          }
-        }
-      }
-      return roots;
-    }
-    
-    const rootPaths = generateRoots();
-    
-    // Encode roots into a texture for the shader
-    function createRootTexture(roots) {
-      const size = 64;
-      const data = new Float32Array(size * size * 4);
-      
-      // For each root path, encode it
-      let rootIdx = 0;
-      roots.forEach(path => {
-        if (rootIdx >= size) return;
-        path.forEach((point, i) => {
-          if (i >= size) return;
-          const idx = (rootIdx * size + i) * 4;
-          data[idx] = point.x;
-          data[idx + 1] = point.z;
-          data[idx + 2] = path.length; // Store path length
-          data[idx + 3] = 1.0;
-        });
-        rootIdx++;
-      });
-      
-      const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
-      tex.needsUpdate = true;
-      return { texture: tex, numRoots: roots.length };
-    }
-    
-    const rootTexData = createRootTexture(rootPaths);
-
-    // Rolling ground with tree glow
-    function createGround() {
-      const geo = new THREE.PlaneGeometry(200, 200, 100, 100);
-      const mat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 } },
-        vertexShader: `
-          varying vec2 vUv;
-          varying vec3 vWorldPos;
-          uniform float uTime;
-          
-          // Noise for rolling hills
-          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-          float noise(vec2 p) {
-            vec2 i = floor(p), f = fract(p);
-            f = f * f * (3.0 - 2.0 * f);
-            return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),
-                       mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
-          }
-          
-          void main() {
-            vUv = uv;
-            vec3 pos = position;
-            
-            // Rolling hills
-            vec2 noiseCoord = pos.xy * 0.02 + uTime * 0.01;
-            float hill = noise(noiseCoord) * 3.0;
-            hill += noise(noiseCoord * 2.0) * 1.5;
-            hill += noise(noiseCoord * 4.0) * 0.75;
-            pos.z += hill - 3.0;
-            
-            vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
-            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-          }
-        `,
-        fragmentShader: `
-          uniform float uTime;
-          varying vec2 vUv;
-          varying vec3 vWorldPos;
-          
-          void main() {
-            // Distance from tree (at origin)
-            float dist = length(vWorldPos.xz);
-            
-            // Dark pool under tree - pure black near center
-            float darkPool = 1.0 - exp(-dist * 0.12);
-            
-            // Outer glow - inverted, glows AWAY from tree
-            float outerGlow = smoothstep(5.0, 25.0, dist) * smoothstep(80.0, 40.0, dist);
-            outerGlow *= 0.4; // Half brightness
-            
-            // Pulse slightly
-            outerGlow *= 0.9 + 0.1 * sin(uTime * 0.5);
-            
-            // Color - subtle cyan/violet glow in distance
-            vec3 glowColor = mix(vec3(0.0, 0.5, 0.7), vec3(0.3, 0.3, 0.6), dist * 0.02);
-            
-            // Reflection of tree in dark pool - fake it with inverted Y sampling
-            float reflectionDist = dist;
-            float reflection = exp(-reflectionDist * 0.15) * darkPool;
-            reflection *= smoothstep(15.0, 0.0, dist); // Only close to tree
-            vec3 reflectionColor = vec3(0.3, 0.5, 0.7) * reflection * 0.3;
-            
-            // Shimmer in reflection
-            float shimmer = sin(dist * 2.0 - uTime * 0.8) * 0.5 + 0.5;
-            reflectionColor *= 0.7 + shimmer * 0.3;
-            
-            // Pure black base
-            vec3 groundColor = vec3(0.0, 0.0, 0.0);
-            
-            // Combine: black pool + reflection + outer glow
-            vec3 color = groundColor;
-            color += reflectionColor * darkPool;
-            color += glowColor * outerGlow;
-            
-            // Fade out at edges
-            float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
-            edge *= smoothstep(0.0, 0.1, vUv.y) * smoothstep(1.0, 0.9, vUv.y);
-            
-            gl_FragColor = vec4(color, edge * 0.95);
-          }
-        `,
-        transparent: true,
-        side: THREE.DoubleSide,
-        depthWrite: false
-      });
-      
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.rotation.x = -Math.PI / 2;
-      mesh.position.y = -1;
-      return mesh;
-    }
-    
-    const ground = createGround();
-    scene.add(ground);
-
     // Rising energy particles - going up and OUT, slow and ethereal
     function createRisingEnergy() {
       const count = 600;
@@ -918,7 +813,6 @@
       treeMat.uniforms.uTime.value = t;
       stars.material.uniforms.uTime.value = t;
       risingEnergy.material.uniforms.uTime.value = t;
-      ground.material.uniforms.uTime.value = t;
       
       // Fog layers billboard - always face camera but don't rotate
       fogLayers.forEach(layer => {
