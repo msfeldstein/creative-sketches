@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Spirit Tree</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000003; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000008, 0.012);
+    
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 10, 35);
+    camera.lookAt(0, 12, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000003);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.85;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.8, 0.5, 0.2
+    );
+    composer.addPass(bloomPass);
+
+    // Ethereal post-processing shader
+    const etherealShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        varying vec2 vUv;
+        
+        void main() {
+          vec2 center = vUv - 0.5;
+          float dist = length(center);
+          
+          // Subtle breathing distortion
+          float wave = sin(uTime * 0.4 + dist * 6.0) * 0.003 * dist;
+          vec2 uv = vUv + center * wave;
+          
+          // Chromatic aberration
+          float aberr = dist * dist * 0.012;
+          vec4 texR = texture2D(tDiffuse, uv + vec2(aberr, 0.0));
+          vec4 texG = texture2D(tDiffuse, uv);
+          vec4 texB = texture2D(tDiffuse, uv - vec2(aberr, 0.0));
+          vec3 color = vec3(texR.r, texG.g, texB.b);
+          
+          // Vignette
+          float vignette = 1.0 - dot(center * 1.3, center * 1.3);
+          vignette = pow(max(vignette, 0.0), 1.5);
+          
+          // Cool color grade
+          color *= vec3(0.92, 0.96, 1.1);
+          color *= vignette;
+          
+          // Subtle grain
+          float grain = fract(sin(dot(vUv + uTime * 0.1, vec2(12.9898, 78.233))) * 43758.5453) * 0.025;
+          color += grain - 0.0125;
+          
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+    const etherealPass = new ShaderPass(etherealShader);
+    composer.addPass(etherealPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.03;
+    controls.target.set(0, 10, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.15;
+    controls.minDistance = 12;
+    controls.maxDistance = 60;
+
+    // Starfield
+    function createStarfield() {
+      const count = 2500;
+      const positions = new Float32Array(count * 3);
+      const sizes = new Float32Array(count);
+      const phases = new Float32Array(count);
+      
+      for (let i = 0; i < count; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 80 + Math.random() * 120;
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.6 + 15;
+        positions[i * 3 + 2] = r * Math.cos(phi);
+        sizes[i] = 0.3 + Math.pow(Math.random(), 3) * 2.5;
+        phases[i] = Math.random() * Math.PI * 2;
+      }
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+      geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          attribute float size;
+          attribute float phase;
+          varying float vAlpha;
+          uniform float uTime;
+          void main() {
+            float twinkle = pow(sin(uTime * 1.5 + phase * 8.0) * 0.5 + 0.5, 2.0);
+            vAlpha = 0.2 + twinkle * 0.8;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (1.0 + twinkle * 0.3) * (200.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 3.0) * 0.5;
+            gl_FragColor = vec4(0.7, 0.85, 1.0, a * vAlpha * 0.6);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+    const stars = createStarfield();
+    scene.add(stars);
+
+
+
+    // Create particle texture
+    function createParticleTexture() {
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      gradient.addColorStop(0, 'rgba(255,255,255,1)');
+      gradient.addColorStop(0.2, 'rgba(255,255,255,0.8)');
+      gradient.addColorStop(0.5, 'rgba(255,255,255,0.3)');
+      gradient.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      return new THREE.CanvasTexture(canvas);
+    }
+    const particleTex = createParticleTexture();
+
+    // Generate the magnificent tree
+    class Branch {
+      constructor(start, end, thickness, depth, parent = null) {
+        this.start = start.clone();
+        this.end = end.clone();
+        this.thickness = thickness;
+        this.depth = depth;
+        this.parent = parent;
+        this.children = [];
+      }
+    }
+
+    function generateTree() {
+      const branches = [];
+      
+      function grow(start, dir, length, thickness, depth, parent) {
+        if (depth > 7 || thickness < 0.02) return null;
+        
+        const end = start.clone().add(dir.clone().multiplyScalar(length));
+        const branch = new Branch(start, end, thickness, depth, parent);
+        branches.push(branch);
+        if (parent) parent.children.push(branch);
+        
+        // Branch count varies by depth - more at mid-levels
+        let branchCount;
+        if (depth === 0) branchCount = 5; // Main branches from trunk
+        else if (depth < 3) branchCount = 3 + Math.floor(Math.random() * 2);
+        else if (depth < 5) branchCount = 2 + Math.floor(Math.random() * 2);
+        else branchCount = 2;
+        
+        for (let i = 0; i < branchCount; i++) {
+          const newDir = dir.clone();
+          
+          // Spread outward more - tree-like branching
+          const spreadAngle = 0.6 + depth * 0.1;
+          const azimuth = (i / branchCount) * Math.PI * 2 + Math.random() * 0.5;
+          newDir.x += Math.cos(azimuth) * spreadAngle * (0.5 + Math.random() * 0.5);
+          newDir.z += Math.sin(azimuth) * spreadAngle * (0.5 + Math.random() * 0.5);
+          newDir.y = 0.3 + Math.random() * 0.5; // Less upward at higher branches
+          if (depth < 2) newDir.y += 0.3; // Main branches go more up
+          newDir.normalize();
+          
+          const newLength = length * (0.6 + Math.random() * 0.2);
+          const newThickness = thickness * (0.55 + Math.random() * 0.15);
+          const startT = 0.6 + Math.random() * 0.35;
+          const newStart = branch.start.clone().lerp(branch.end, startT);
+          
+          grow(newStart, newDir, newLength, newThickness, depth + 1, branch);
+        }
+        
+        return branch;
+      }
+      
+      // Main trunk - taller
+      const trunkDir = new THREE.Vector3(0, 1, 0);
+      trunkDir.x += (Math.random() - 0.5) * 0.03;
+      trunkDir.z += (Math.random() - 0.5) * 0.03;
+      trunkDir.normalize();
+      
+      grow(new THREE.Vector3(0, 0, 0), trunkDir, 10, 0.8, 0, null);
+      
+      // Find all paths from root to tips
+      const paths = [];
+      function findPaths(branch, path) {
+        const newPath = [...path, branch];
+        if (branch.children.length === 0) {
+          paths.push(newPath);
+        } else {
+          branch.children.forEach(c => findPaths(c, newPath));
+        }
+      }
+      
+      const root = branches[0];
+      if (root) findPaths(root, []);
+      
+      return { branches, paths };
+    }
+
+    const tree = generateTree();
+    const paths = tree.paths;
+
+    // Create massive particle system for the tree
+    const PARTICLES = 80000; // Fewer particles so trails are visible
+    const MAX_PATH = 10;
+    const TRAIL_LENGTH = 16; // Long comet trails
+
+    // Path data texture
+    const pathTexW = MAX_PATH;
+    const pathTexH = paths.length;
+    const pathData = new Float32Array(pathTexW * pathTexH * 4);
+
+    paths.forEach((path, pi) => {
+      let idx = 0;
+      pathData[(pi * pathTexW + idx) * 4 + 0] = path[0].start.x;
+      pathData[(pi * pathTexW + idx) * 4 + 1] = path[0].start.y;
+      pathData[(pi * pathTexW + idx) * 4 + 2] = path[0].start.z;
+      pathData[(pi * pathTexW + idx) * 4 + 3] = path[0].thickness;
+      idx++;
+      
+      for (let b = 0; b < path.length && idx < MAX_PATH; b++) {
+        pathData[(pi * pathTexW + idx) * 4 + 0] = path[b].end.x;
+        pathData[(pi * pathTexW + idx) * 4 + 1] = path[b].end.y;
+        pathData[(pi * pathTexW + idx) * 4 + 2] = path[b].end.z;
+        pathData[(pi * pathTexW + idx) * 4 + 3] = path[b].thickness;
+        idx++;
+      }
+      
+      const last = path[path.length - 1];
+      while (idx < MAX_PATH) {
+        pathData[(pi * pathTexW + idx) * 4 + 0] = last.end.x;
+        pathData[(pi * pathTexW + idx) * 4 + 1] = last.end.y;
+        pathData[(pi * pathTexW + idx) * 4 + 2] = last.end.z;
+        pathData[(pi * pathTexW + idx) * 4 + 3] = last.thickness;
+        idx++;
+      }
+    });
+
+    const pathTex = new THREE.DataTexture(pathData, pathTexW, pathTexH, THREE.RGBAFormat, THREE.FloatType);
+    pathTex.needsUpdate = true;
+
+    // Particle geometry
+    const geo = new THREE.InstancedBufferGeometry();
+    const quad = new Float32Array([-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0]);
+    const quadUv = new Float32Array([0,0, 1,0, 1,1, 0,1]);
+    const quadIdx = new Uint16Array([0,1,2, 0,2,3]);
+    geo.setAttribute('position', new THREE.BufferAttribute(quad, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(quadUv, 2));
+    geo.setIndex(new THREE.BufferAttribute(quadIdx, 1));
+
+    // Each particle has TRAIL_LENGTH instances for the trail effect
+    const TOTAL_INSTANCES = PARTICLES * TRAIL_LENGTH;
+    
+    const pathIndices = new Float32Array(TOTAL_INSTANCES);
+    const pathLengths = new Float32Array(TOTAL_INSTANCES);
+    const scales = new Float32Array(TOTAL_INSTANCES);
+    const speeds = new Float32Array(TOTAL_INSTANCES);
+    const phases = new Float32Array(TOTAL_INSTANCES);
+    const timeOffsets = new Float32Array(TOTAL_INSTANCES);
+    const colorSeeds = new Float32Array(TOTAL_INSTANCES);
+    const trailIndices = new Float32Array(TOTAL_INSTANCES);
+
+    for (let i = 0; i < PARTICLES; i++) {
+      const pi = Math.floor(Math.random() * paths.length);
+      const baseScale = 0.018 + Math.pow(Math.random(), 2) * 0.03; // Bigger particles for visible trails
+      const baseSpeed = 0.03 + Math.random() * 0.04; // Good speed for visible motion
+      const basePhase = Math.random() * Math.PI * 2;
+      const baseTimeOffset = Math.random() * 30;
+      const baseColorSeed = Math.random();
+      const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
+      
+      // Create trail instances for this particle
+      for (let t = 0; t < TRAIL_LENGTH; t++) {
+        const idx = i * TRAIL_LENGTH + t;
+        pathIndices[idx] = pi;
+        pathLengths[idx] = pathLen;
+        scales[idx] = baseScale;
+        speeds[idx] = baseSpeed;
+        phases[idx] = basePhase;
+        timeOffsets[idx] = baseTimeOffset;
+        colorSeeds[idx] = baseColorSeed;
+        trailIndices[idx] = t; // 0 = head, increasing = older trail segments
+      }
+    }
+
+    geo.setAttribute('pathIndex', new THREE.InstancedBufferAttribute(pathIndices, 1));
+    geo.setAttribute('pathLength', new THREE.InstancedBufferAttribute(pathLengths, 1));
+    geo.setAttribute('aScale', new THREE.InstancedBufferAttribute(scales, 1));
+    geo.setAttribute('speed', new THREE.InstancedBufferAttribute(speeds, 1));
+    geo.setAttribute('phase', new THREE.InstancedBufferAttribute(phases, 1));
+    geo.setAttribute('timeOffset', new THREE.InstancedBufferAttribute(timeOffsets, 1));
+    geo.setAttribute('colorSeed', new THREE.InstancedBufferAttribute(colorSeeds, 1));
+    geo.setAttribute('trailIndex', new THREE.InstancedBufferAttribute(trailIndices, 1));
+
+    const treeMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uTexture: { value: particleTex },
+        uPathTex: { value: pathTex },
+        uPathSize: { value: new THREE.Vector2(pathTexW, pathTexH) }
+      },
+        vertexShader: `
+        attribute float pathIndex;
+        attribute float pathLength;
+        attribute float aScale;
+        attribute float speed;
+        attribute float phase;
+        attribute float timeOffset;
+        attribute float colorSeed;
+        attribute float trailIndex;
+        
+        uniform float uTime;
+        uniform sampler2D uPathTex;
+        uniform vec2 uPathSize;
+        
+        varying float vAlpha;
+        varying vec2 vUv;
+        varying float vHeight;
+        varying float vProgress;
+        varying float vColorSeed;
+        varying float vPhase;
+        varying float vTrailFade;
+        
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+        float noise(float x) {
+          float i = floor(x), f = fract(x);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(hash(i), hash(i + 1.0), f);
+        }
+        
+        vec4 getPathPt(float pi, float idx) {
+          return texture2D(uPathTex, vec2((idx + 0.5) / uPathSize.x, (pi + 0.5) / uPathSize.y));
+        }
+        
+        void main() {
+          vUv = uv;
+          vColorSeed = colorSeed;
+          vPhase = phase;
+          
+          // Trail offset - each segment is behind in time (larger = longer visible trail)
+          float trailOffset = trailIndex * 0.04; // Time gap between trail segments
+          float time = uTime + timeOffset - trailOffset;
+          
+          // Trail fade - head is bright, tail fades out
+          vTrailFade = 1.0 - (trailIndex / 16.0);
+          vTrailFade = pow(vTrailFade, 1.2); // Gradual falloff so tail is visible
+          
+          float t = mod(time * speed, 1.0);
+          vProgress = t;
+          
+          // Spread particles along path
+          t = mod(t + (noise(phase * 10.0) - 0.5) * 0.12, 1.0);
+          
+          float segCount = pathLength - 1.0;
+          float segProg = t * segCount;
+          float segIdx = floor(segProg);
+          float segT = fract(segProg);
+          
+          // Catmull-Rom interpolation
+          vec4 p0 = getPathPt(pathIndex, max(0.0, segIdx - 1.0));
+          vec4 p1 = getPathPt(pathIndex, segIdx);
+          vec4 p2 = getPathPt(pathIndex, min(segIdx + 1.0, pathLength - 1.0));
+          vec4 p3 = getPathPt(pathIndex, min(segIdx + 2.0, pathLength - 1.0));
+          
+          float t2 = segT * segT, t3 = t2 * segT;
+          vec3 pos = 0.5 * (
+            2.0 * p1.xyz +
+            (-p0.xyz + p2.xyz) * segT +
+            (2.0 * p0.xyz - 5.0 * p1.xyz + 4.0 * p2.xyz - p3.xyz) * t2 +
+            (-p0.xyz + 3.0 * p1.xyz - 3.0 * p2.xyz + p3.xyz) * t3
+          );
+          
+          vHeight = pos.y;
+          float thick = mix(p1.w, p2.w, segT);
+          
+          // Drift perpendicular to path - TIGHT to show branch structure
+          vec3 tangent = normalize(p2.xyz - p1.xyz + 0.001);
+          vec3 perp1 = normalize(cross(tangent, vec3(0.0, 1.0, 0.1)));
+          vec3 perp2 = normalize(cross(tangent, perp1));
+          
+          float ns1 = phase * 10.0 + time * 0.2;
+          float ns2 = phase * 7.0 + time * 0.25;
+          
+          // Much smaller drift - particles stay close to branches
+          float d1 = (noise(ns1 + t * 2.0) - 0.5) * 0.8;
+          d1 += sin(phase * 3.0 + time * 0.2 + t * 1.5) * 0.3;
+          float d2 = (noise(ns2 + t * 1.8) - 0.5) * 0.8;
+          d2 += cos(phase * 2.0 + time * 0.15 + t * 1.2) * 0.3;
+          
+          // Drift scales with thickness - thicker branches = more spread
+          float driftMult = thick * 0.5 + 0.05;
+          // Slight increase at tips
+          driftMult *= 1.0 + t * 0.5;
+          
+          d1 *= driftMult;
+          d2 *= driftMult;
+          
+          float vDrift = (noise(phase * 13.0 + t * 1.5) - 0.5) * thick * 0.2;
+          pos += perp1 * d1 + perp2 * d2 + vec3(0.0, vDrift, 0.0);
+          
+          // Alpha - trail is clearly visible, tail stays visible
+          float alphaBase = smoothstep(0.0, 0.05, t) * smoothstep(1.0, 0.8, t);
+          vAlpha = alphaBase * (0.3 + 0.7 * vTrailFade); // Tail is at least 30% visible
+          
+          // Scale - trail segments shrink to show direction
+          vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+          float pScale = aScale;
+          pScale *= 0.7 + thick * 0.4;
+          pScale *= (0.3 + 0.7 * vTrailFade); // Head full size, tail shrinks to 30%
+          mv.xyz += position * pScale;
+          
+          gl_Position = projectionMatrix * mv;
+        }
+      `,
+        fragmentShader: `
+        uniform sampler2D uTexture;
+        uniform float uTime;
+        
+        varying float vAlpha;
+        varying vec2 vUv;
+        varying float vHeight;
+        varying float vProgress;
+        varying float vColorSeed;
+        varying float vPhase;
+        varying float vTrailFade;
+        
+        void main() {
+          vec4 tex = texture2D(uTexture, vUv);
+          
+          float h = clamp(vHeight / 22.0, 0.0, 1.0);
+          
+          // Rich color palette
+          vec3 cyan = vec3(0.0, 0.92, 1.0);
+          vec3 teal = vec3(0.0, 1.0, 0.85);
+          vec3 violet = vec3(0.6, 0.3, 1.0);
+          vec3 magenta = vec3(1.0, 0.2, 0.7);
+          vec3 gold = vec3(1.0, 0.8, 0.0);
+          vec3 white = vec3(1.0, 0.98, 0.95);
+          
+          // Base color from seed
+          float colorMix = vColorSeed + sin(uTime * 0.15 + vPhase) * 0.2;
+          vec3 baseColor;
+          if (colorMix < 0.25) {
+            baseColor = mix(cyan, teal, colorMix * 4.0);
+          } else if (colorMix < 0.5) {
+            baseColor = mix(teal, violet, (colorMix - 0.25) * 4.0);
+          } else if (colorMix < 0.75) {
+            baseColor = mix(violet, magenta, (colorMix - 0.5) * 4.0);
+          } else {
+            baseColor = mix(magenta, cyan, (colorMix - 0.75) * 4.0);
+          }
+          
+          // Height-based color shift
+          vec3 color = mix(baseColor, violet, h * 0.4);
+          color = mix(color, gold, h * h * 0.3);
+          
+          // Shimmer
+          float shimmer = sin(uTime * 4.0 + vPhase * 12.0 + vProgress * 30.0) * 0.5 + 0.5;
+          shimmer *= sin(uTime * 2.5 + vPhase * 8.0) * 0.5 + 0.5;
+          color += gold * pow(shimmer, 3.0) * vProgress * 0.5;
+          
+          // Rare bright sparkle
+          float sparkle = pow(max(0.0, sin(uTime * 1.2 + vPhase * 25.0 + vProgress * 15.0)), 20.0);
+          color += white * sparkle * 0.7;
+          
+          // Core brightness - subtle
+          color *= 0.95 + (1.0 - vProgress) * 0.1;
+          
+          gl_FragColor = vec4(color, tex.a * vAlpha * 0.8);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    const treeMesh = new THREE.Mesh(geo, treeMat);
+    treeMesh.frustumCulled = false;
+    scene.add(treeMesh);
+
+    // Horizontal flowing fog - subtle and cloudlike
+    function createFog() {
+      const geo = new THREE.PlaneGeometry(120, 60, 1, 1);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec2 vUv;
+          
+          // Simplex-ish noise functions for detailed clouds
+          vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+          vec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+          vec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }
+          
+          float snoise(vec2 v) {
+            const vec4 C = vec4(0.211324865405187, 0.366025403784439,
+                               -0.577350269189626, 0.024390243902439);
+            vec2 i  = floor(v + dot(v, C.yy));
+            vec2 x0 = v - i + dot(i, C.xx);
+            vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);
+            vec4 x12 = x0.xyxy + C.xxzz;
+            x12.xy -= i1;
+            i = mod289(i);
+            vec3 p = permute(permute(i.y + vec3(0.0, i1.y, 1.0)) + i.x + vec3(0.0, i1.x, 1.0));
+            vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);
+            m = m*m; m = m*m;
+            vec3 x = 2.0 * fract(p * C.www) - 1.0;
+            vec3 h = abs(x) - 0.5;
+            vec3 ox = floor(x + 0.5);
+            vec3 a0 = x - ox;
+            m *= 1.79284291400159 - 0.85373472095314 * (a0*a0 + h*h);
+            vec3 g;
+            g.x = a0.x * x0.x + h.x * x0.y;
+            g.yz = a0.yz * x12.xz + h.yz * x12.yw;
+            return 130.0 * dot(m, g);
+          }
+          
+          float fbm(vec2 p) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            float frequency = 1.0;
+            for (int i = 0; i < 6; i++) {
+              value += amplitude * snoise(p * frequency);
+              amplitude *= 0.5;
+              frequency *= 2.0;
+            }
+            return value;
+          }
+          
+          void main() {
+            vec2 uv = vUv;
+            
+            // Horizontal drift
+            float drift = uTime * 0.015;
+            
+            // Multi-layered cloud noise
+            vec2 p1 = uv * vec2(3.0, 1.5) + vec2(drift, 0.0);
+            vec2 p2 = uv * vec2(5.0, 2.0) + vec2(drift * 1.3, uTime * 0.005);
+            vec2 p3 = uv * vec2(8.0, 3.0) + vec2(drift * 0.7, -uTime * 0.003);
+            
+            float cloud1 = fbm(p1) * 0.5 + 0.5;
+            float cloud2 = fbm(p2) * 0.5 + 0.5;
+            float cloud3 = fbm(p3) * 0.5 + 0.5;
+            
+            // Combine layers with sharper edges
+            float clouds = cloud1 * 0.5 + cloud2 * 0.3 + cloud3 * 0.2;
+            
+            // Sharp cloud lines - tight smoothstep for defined edges
+            float sharpClouds = smoothstep(0.48, 0.53, clouds);
+            // Add some wispy detail at lower opacity
+            float wispyClouds = smoothstep(0.4, 0.65, clouds) * 0.3;
+            clouds = sharpClouds * 0.7 + wispyClouds;
+            
+            // Fade at edges
+            float edgeFade = smoothstep(0.0, 0.25, uv.x) * smoothstep(1.0, 0.75, uv.x);
+            edgeFade *= smoothstep(0.0, 0.2, uv.y) * smoothstep(1.0, 0.8, uv.y);
+            
+            // Blue/violet tinted
+            vec3 fogColor = vec3(0.45, 0.5, 0.65);
+            
+            // Visible but not overwhelming
+            float alpha = clouds * edgeFade * 0.15;
+            
+            gl_FragColor = vec4(fogColor, alpha);
+          }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      
+      const layers = [];
+      // Multiple fog layers - will billboard to always face camera
+      const layerConfigs = [
+        { y: 6, z: -40, scale: 1.3 },
+        { y: 14, z: -50, scale: 1.6 },
+        { y: 20, z: -35, scale: 1.1 },
+      ];
+      
+      layerConfigs.forEach(config => {
+        const mesh = new THREE.Mesh(geo.clone(), mat.clone());
+        mesh.position.set(0, config.y, config.z);
+        mesh.scale.setScalar(config.scale);
+        mesh.userData.material = mesh.material;
+        mesh.userData.basePosition = { y: config.y, z: config.z };
+        layers.push(mesh);
+      });
+      
+      return layers;
+    }
+    
+    const fogLayers = createFog();
+    fogLayers.forEach(layer => scene.add(layer));
+
+    // Generate root structure data for the ground shader
+    function generateRoots() {
+      const roots = [];
+      const numMainRoots = 7;
+      
+      for (let i = 0; i < numMainRoots; i++) {
+        const angle = (i / numMainRoots) * Math.PI * 2 + Math.random() * 0.4;
+        let x = 0, z = 0;
+        let dir = angle;
+        let length = 2 + Math.random() * 2;
+        
+        // Main root path
+        const path = [];
+        for (let j = 0; j < 8; j++) {
+          path.push({ x, z });
+          dir += (Math.random() - 0.5) * 0.6;
+          x += Math.cos(dir) * length;
+          z += Math.sin(dir) * length;
+          length *= 0.85 + Math.random() * 0.1;
+        }
+        roots.push(path);
+        
+        // Sub-branches
+        for (let j = 1; j < path.length - 1; j++) {
+          if (Math.random() > 0.4) {
+            const branchDir = dir + (Math.random() > 0.5 ? 1 : -1) * (0.5 + Math.random() * 0.8);
+            let bx = path[j].x, bz = path[j].z;
+            let bLen = length * 0.7;
+            const branch = [{ x: bx, z: bz }];
+            for (let k = 0; k < 4; k++) {
+              bx += Math.cos(branchDir + (Math.random() - 0.5) * 0.4) * bLen;
+              bz += Math.sin(branchDir + (Math.random() - 0.5) * 0.4) * bLen;
+              branch.push({ x: bx, z: bz });
+              bLen *= 0.75;
+            }
+            roots.push(branch);
+          }
+        }
+      }
+      return roots;
+    }
+    
+    const rootPaths = generateRoots();
+    
+    // Encode roots into a texture for the shader
+    function createRootTexture(roots) {
+      const size = 64;
+      const data = new Float32Array(size * size * 4);
+      
+      // For each root path, encode it
+      let rootIdx = 0;
+      roots.forEach(path => {
+        if (rootIdx >= size) return;
+        path.forEach((point, i) => {
+          if (i >= size) return;
+          const idx = (rootIdx * size + i) * 4;
+          data[idx] = point.x;
+          data[idx + 1] = point.z;
+          data[idx + 2] = path.length; // Store path length
+          data[idx + 3] = 1.0;
+        });
+        rootIdx++;
+      });
+      
+      const tex = new THREE.DataTexture(data, size, size, THREE.RGBAFormat, THREE.FloatType);
+      tex.needsUpdate = true;
+      return { texture: tex, numRoots: roots.length };
+    }
+    
+    const rootTexData = createRootTexture(rootPaths);
+
+    // Rolling ground with tree glow
+    function createGround() {
+      const geo = new THREE.PlaneGeometry(200, 200, 100, 100);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec2 vUv;
+          varying vec3 vWorldPos;
+          uniform float uTime;
+          
+          // Noise for rolling hills
+          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          float noise(vec2 p) {
+            vec2 i = floor(p), f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1,0)), f.x),
+                       mix(hash(i + vec2(0,1)), hash(i + vec2(1,1)), f.x), f.y);
+          }
+          
+          void main() {
+            vUv = uv;
+            vec3 pos = position;
+            
+            // Rolling hills
+            vec2 noiseCoord = pos.xy * 0.02 + uTime * 0.01;
+            float hill = noise(noiseCoord) * 3.0;
+            hill += noise(noiseCoord * 2.0) * 1.5;
+            hill += noise(noiseCoord * 4.0) * 0.75;
+            pos.z += hill - 3.0;
+            
+            vWorldPos = (modelMatrix * vec4(pos, 1.0)).xyz;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec2 vUv;
+          varying vec3 vWorldPos;
+          
+          void main() {
+            // Distance from tree (at origin)
+            float dist = length(vWorldPos.xz);
+            
+            // Dark pool under tree - pure black near center
+            float darkPool = 1.0 - exp(-dist * 0.12);
+            
+            // Outer glow - inverted, glows AWAY from tree
+            float outerGlow = smoothstep(5.0, 25.0, dist) * smoothstep(80.0, 40.0, dist);
+            outerGlow *= 0.4; // Half brightness
+            
+            // Pulse slightly
+            outerGlow *= 0.9 + 0.1 * sin(uTime * 0.5);
+            
+            // Color - subtle cyan/violet glow in distance
+            vec3 glowColor = mix(vec3(0.0, 0.5, 0.7), vec3(0.3, 0.3, 0.6), dist * 0.02);
+            
+            // Reflection of tree in dark pool - fake it with inverted Y sampling
+            float reflectionDist = dist;
+            float reflection = exp(-reflectionDist * 0.15) * darkPool;
+            reflection *= smoothstep(15.0, 0.0, dist); // Only close to tree
+            vec3 reflectionColor = vec3(0.3, 0.5, 0.7) * reflection * 0.3;
+            
+            // Shimmer in reflection
+            float shimmer = sin(dist * 2.0 - uTime * 0.8) * 0.5 + 0.5;
+            reflectionColor *= 0.7 + shimmer * 0.3;
+            
+            // Pure black base
+            vec3 groundColor = vec3(0.0, 0.0, 0.0);
+            
+            // Combine: black pool + reflection + outer glow
+            vec3 color = groundColor;
+            color += reflectionColor * darkPool;
+            color += glowColor * outerGlow;
+            
+            // Fade out at edges
+            float edge = smoothstep(0.0, 0.1, vUv.x) * smoothstep(1.0, 0.9, vUv.x);
+            edge *= smoothstep(0.0, 0.1, vUv.y) * smoothstep(1.0, 0.9, vUv.y);
+            
+            gl_FragColor = vec4(color, edge * 0.95);
+          }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = -1;
+      return mesh;
+    }
+    
+    const ground = createGround();
+    scene.add(ground);
+
+    // Rising energy particles - going up and OUT, slow and ethereal
+    function createRisingEnergy() {
+      const count = 600;
+      const positions = new Float32Array(count * 3);
+      const phases = new Float32Array(count);
+      const speeds = new Float32Array(count);
+      
+      for (let i = 0; i < count; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const radius = 0.5 + Math.random() * 3;
+        positions[i * 3] = Math.cos(angle) * radius;
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = Math.sin(angle) * radius;
+        phases[i] = Math.random() * Math.PI * 2;
+        speeds[i] = 0.06 + Math.random() * 0.1; // Much slower
+      }
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          attribute float phase;
+          attribute float speed;
+          varying float vAlpha;
+          varying vec3 vColor;
+          uniform float uTime;
+          void main() {
+            float time = uTime * speed + phase;
+            float life = mod(time, 1.0);
+            
+            vec3 pos = position;
+            pos.y = life * 30.0;
+            
+            // Spiral OUTWARD as they rise
+            float angle = time * 0.8 + phase * 3.0;
+            float expand = 1.0 + life * life * 10.0;
+            pos.x = position.x * expand * cos(angle) - position.z * expand * sin(angle);
+            pos.z = position.x * expand * sin(angle) + position.z * expand * cos(angle);
+            
+            // Fade in then out
+            vAlpha = sin(life * 3.14159) * 0.6;
+            
+            // Color gradient from cyan to violet as they rise
+            vColor = mix(vec3(0.0, 0.9, 1.0), vec3(0.6, 0.3, 1.0), life);
+            
+            vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = (1.0 + life * 2.0) * (50.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          varying vec3 vColor;
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 4.0) * 0.4;
+            gl_FragColor = vec4(vColor, a * vAlpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+    const risingEnergy = createRisingEnergy();
+    scene.add(risingEnergy);
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+      
+      treeMat.uniforms.uTime.value = t;
+      stars.material.uniforms.uTime.value = t;
+      risingEnergy.material.uniforms.uTime.value = t;
+      ground.material.uniforms.uTime.value = t;
+      
+      // Fog layers billboard - always face camera but don't rotate
+      fogLayers.forEach(layer => {
+        if (layer.userData.material) layer.userData.material.uniforms.uTime.value = t;
+        // Make fog face camera
+        layer.lookAt(camera.position);
+      });
+      
+      etherealPass.uniforms.uTime.value = t;
+      
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

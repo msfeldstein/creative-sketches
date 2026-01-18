@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Particle Forest</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #050508; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x050508, 0.012);
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 12, 35);
+    camera.lookAt(0, 8, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x050508);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 8, 0);
+
+    // Create circle sprite texture
+    function createCircleTexture() {
+      const size = 64;
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      
+      const gradient = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      gradient.addColorStop(0.2, 'rgba(255, 255, 255, 0.8)');
+      gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.3)');
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+      
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    const circleTexture = createCircleTexture();
+
+    // Tree generation
+    class Branch {
+      constructor(start, end, thickness, depth, parent = null) {
+        this.start = start.clone();
+        this.end = end.clone();
+        this.thickness = thickness;
+        this.depth = depth;
+        this.parent = parent;
+        this.children = [];
+        this.length = start.distanceTo(end);
+      }
+    }
+
+    function generateTree(params) {
+      const {
+        position,
+        trunkHeight,
+        trunkThickness,
+        maxDepth,
+        branchAngleRange,
+        branchLengthFactor,
+        branchThicknessFactor,
+        branchCountMin,
+        branchCountMax,
+        upwardBias
+      } = params;
+
+      let rootBranch = null;
+
+      function createBranches(start, direction, length, thickness, depth, parent) {
+        if (depth > maxDepth || thickness < 0.02) return null;
+
+        const end = start.clone().add(direction.clone().multiplyScalar(length));
+        const branch = new Branch(start, end, thickness, depth, parent);
+        
+        if (parent) parent.children.push(branch);
+
+        const branchCount = Math.floor(branchCountMin + Math.random() * (branchCountMax - branchCountMin + 1));
+        
+        for (let i = 0; i < branchCount; i++) {
+          const randomAngle = (Math.random() - 0.5) * branchAngleRange;
+          const randomTilt = (Math.random() - 0.5) * branchAngleRange;
+          
+          const newDir = direction.clone();
+          const rotAxis1 = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), Math.random() * Math.PI * 2);
+          newDir.applyAxisAngle(rotAxis1, randomAngle);
+          newDir.applyAxisAngle(new THREE.Vector3(0, 0, 1), randomTilt);
+          newDir.y += upwardBias;
+          newDir.normalize();
+
+          const newLength = length * (branchLengthFactor + Math.random() * 0.2);
+          const newThickness = thickness * branchThicknessFactor;
+          
+          const startOffset = 0.6 + Math.random() * 0.4;
+          const newStart = branch.start.clone().lerp(branch.end, startOffset);
+
+          createBranches(newStart, newDir, newLength, newThickness, depth + 1, branch);
+        }
+
+        return branch;
+      }
+
+      const trunkDir = new THREE.Vector3(0, 1, 0);
+      trunkDir.x += (Math.random() - 0.5) * 0.1;
+      trunkDir.z += (Math.random() - 0.5) * 0.1;
+      trunkDir.normalize();
+
+      rootBranch = createBranches(position, trunkDir, trunkHeight, trunkThickness, 0, null);
+
+      // Generate paths from root to leaves
+      const paths = [];
+      
+      function findPaths(branch, currentPath) {
+        const newPath = [...currentPath, branch];
+        
+        if (branch.children.length === 0) {
+          paths.push(newPath);
+        } else {
+          branch.children.forEach(child => findPaths(child, newPath));
+        }
+      }
+      
+      if (rootBranch) findPaths(rootBranch, []);
+
+      return { rootBranch, paths };
+    }
+
+    // Generate trees
+    const trees = [];
+    const NUM_TREES = 7;
+
+    for (let t = 0; t < NUM_TREES; t++) {
+      const angle = (t / NUM_TREES) * Math.PI * 2 + Math.random() * 0.5;
+      const radius = 8 + Math.random() * 12;
+      
+      const params = {
+        position: new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius),
+        trunkHeight: 4 + Math.random() * 6,
+        trunkThickness: 0.3 + Math.random() * 0.4,
+        maxDepth: 3 + Math.floor(Math.random() * 3),
+        branchAngleRange: Math.PI * (0.3 + Math.random() * 0.4),
+        branchLengthFactor: 0.5 + Math.random() * 0.3,
+        branchThicknessFactor: 0.6 + Math.random() * 0.2,
+        branchCountMin: 2,
+        branchCountMax: 3 + Math.floor(Math.random() * 2),
+        upwardBias: 0.2 + Math.random() * 0.3
+      };
+
+      trees.push({ params, ...generateTree(params) });
+    }
+
+    // Create particle systems using path texture
+    const PARTICLES_PER_TREE = 50000;
+    const MAX_PATH_LENGTH = 8;
+
+    trees.forEach((tree) => {
+      const paths = tree.paths;
+      if (paths.length === 0) return;
+
+      // Create a data texture to store all paths
+      // Each row = one path, columns = path points (x,y,z,thickness)
+      const pathTexWidth = MAX_PATH_LENGTH;
+      const pathTexHeight = paths.length;
+      const pathData = new Float32Array(pathTexWidth * pathTexHeight * 4);
+
+      paths.forEach((path, pathIdx) => {
+        // First point is trunk base
+        let pointIdx = 0;
+        const firstBranch = path[0];
+        
+        pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 0] = firstBranch.start.x;
+        pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 1] = firstBranch.start.y;
+        pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 2] = firstBranch.start.z;
+        pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 3] = firstBranch.thickness;
+        pointIdx++;
+
+        // Add branch endpoints
+        for (let b = 0; b < path.length && pointIdx < MAX_PATH_LENGTH; b++) {
+          const branch = path[b];
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 0] = branch.end.x;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 1] = branch.end.y;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 2] = branch.end.z;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 3] = branch.thickness;
+          pointIdx++;
+        }
+
+        // Fill remaining with last point
+        const lastBranch = path[path.length - 1];
+        while (pointIdx < MAX_PATH_LENGTH) {
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 0] = lastBranch.end.x;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 1] = lastBranch.end.y;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 2] = lastBranch.end.z;
+          pathData[(pathIdx * pathTexWidth + pointIdx) * 4 + 3] = lastBranch.thickness;
+          pointIdx++;
+        }
+      });
+
+      const pathTexture = new THREE.DataTexture(
+        pathData, pathTexWidth, pathTexHeight,
+        THREE.RGBAFormat, THREE.FloatType
+      );
+      pathTexture.needsUpdate = true;
+
+      // Create geometry
+      const geometry = new THREE.InstancedBufferGeometry();
+      
+      const vertices = new Float32Array([-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0]);
+      const uvs = new Float32Array([0,0, 1,0, 1,1, 0,1]);
+      const indices = new Uint16Array([0,1,2, 0,2,3]);
+      
+      geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+
+      // Instance attributes
+      const pathIndices = new Float32Array(PARTICLES_PER_TREE);
+      const pathLengths = new Float32Array(PARTICLES_PER_TREE);
+      const scales = new Float32Array(PARTICLES_PER_TREE);
+      const speeds = new Float32Array(PARTICLES_PER_TREE);
+      const phases = new Float32Array(PARTICLES_PER_TREE);
+      const timeOffsets = new Float32Array(PARTICLES_PER_TREE);
+
+      for (let i = 0; i < PARTICLES_PER_TREE; i++) {
+        const pathIdx = Math.floor(Math.random() * paths.length);
+        pathIndices[i] = pathIdx;
+        pathLengths[i] = Math.min(paths[pathIdx].length + 1, MAX_PATH_LENGTH);
+        scales[i] = 0.02 + Math.pow(Math.random(), 2) * 0.05;
+        speeds[i] = 0.12 + Math.random() * 0.2;
+        phases[i] = Math.random() * Math.PI * 2;
+        timeOffsets[i] = Math.random() * 15;
+      }
+
+      geometry.setAttribute('pathIndex', new THREE.InstancedBufferAttribute(pathIndices, 1));
+      geometry.setAttribute('pathLength', new THREE.InstancedBufferAttribute(pathLengths, 1));
+      geometry.setAttribute('aScale', new THREE.InstancedBufferAttribute(scales, 1));
+      geometry.setAttribute('speed', new THREE.InstancedBufferAttribute(speeds, 1));
+      geometry.setAttribute('phase', new THREE.InstancedBufferAttribute(phases, 1));
+      geometry.setAttribute('timeOffset', new THREE.InstancedBufferAttribute(timeOffsets, 1));
+
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uTexture: { value: circleTexture },
+          uPathTexture: { value: pathTexture },
+          uPathTexSize: { value: new THREE.Vector2(pathTexWidth, pathTexHeight) }
+        },
+        vertexShader: `
+          attribute float pathIndex;
+          attribute float pathLength;
+          attribute float aScale;
+          attribute float speed;
+          attribute float phase;
+          attribute float timeOffset;
+          
+          uniform float uTime;
+          uniform sampler2D uPathTexture;
+          uniform vec2 uPathTexSize;
+          
+          varying float vAlpha;
+          varying vec2 vUv;
+          
+          // Simplex-ish noise
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          float noise(float x) {
+            float i = floor(x);
+            float f = fract(x);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(hash(i), hash(i + 1.0), f);
+          }
+          
+          vec4 getPathPoint(float pathIdx, float pointIdx) {
+            vec2 texCoord = vec2(
+              (pointIdx + 0.5) / uPathTexSize.x,
+              (pathIdx + 0.5) / uPathTexSize.y
+            );
+            return texture2D(uPathTexture, texCoord);
+          }
+          
+          void main() {
+            vUv = uv;
+            
+            float time = uTime + timeOffset;
+            float t = mod(time * speed, 1.0);
+            
+            // Add per-particle random offset to spread out choke points
+            float spreadPhase = phase * 1.7;
+            float tOffset = (noise(spreadPhase) - 0.5) * 0.15;
+            t = mod(t + tOffset, 1.0);
+            
+            // Find segment with smoothed transition
+            float segmentCount = pathLength - 1.0;
+            float segmentProgress = t * segmentCount;
+            float segmentIndex = floor(segmentProgress);
+            float segmentT = fract(segmentProgress);
+            
+            // Sample multiple points for smoother curves
+            vec4 p0 = getPathPoint(pathIndex, max(0.0, segmentIndex - 1.0));
+            vec4 p1 = getPathPoint(pathIndex, segmentIndex);
+            vec4 p2 = getPathPoint(pathIndex, min(segmentIndex + 1.0, pathLength - 1.0));
+            vec4 p3 = getPathPoint(pathIndex, min(segmentIndex + 2.0, pathLength - 1.0));
+            
+            // Catmull-Rom spline for smooth curves
+            float t2 = segmentT * segmentT;
+            float t3 = t2 * segmentT;
+            vec3 pos = 0.5 * (
+              (2.0 * p1.xyz) +
+              (-p0.xyz + p2.xyz) * segmentT +
+              (2.0 * p0.xyz - 5.0 * p1.xyz + 4.0 * p2.xyz - p3.xyz) * t2 +
+              (-p0.xyz + 3.0 * p1.xyz - 3.0 * p2.xyz + p3.xyz) * t3
+            );
+            
+            float thickness = mix(p1.w, p2.w, segmentT);
+            
+            // Calculate general up direction for drift
+            vec3 tangent = normalize(p2.xyz - p1.xyz + vec3(0.001, 0.001, 0.001));
+            vec3 perp1 = normalize(cross(tangent, vec3(0.0, 1.0, 0.1)));
+            vec3 perp2 = normalize(cross(tangent, perp1));
+            
+            // Multi-layered organic noise for drift
+            float noiseScale1 = phase * 10.0 + time * 0.4;
+            float noiseScale2 = phase * 7.3 + time * 0.6;
+            float noiseScale3 = phase * 13.7 + time * 0.3;
+            
+            float drift1 = (noise(noiseScale1 + t * 3.0) - 0.5) * 2.0;
+            drift1 += (noise(noiseScale1 * 2.1 + t * 5.0) - 0.5) * 1.0;
+            drift1 += sin(phase * 3.0 + time * 0.5 + t * 2.0) * 0.5;
+            
+            float drift2 = (noise(noiseScale2 + t * 2.5) - 0.5) * 2.0;
+            drift2 += (noise(noiseScale2 * 1.8 + t * 4.0) - 0.5) * 1.0;
+            drift2 += cos(phase * 2.3 + time * 0.4 + t * 1.8) * 0.5;
+            
+            // Base drift amount - varies with thickness
+            float baseDrift = thickness * 1.2 + 0.3;
+            
+            // Drift increases along the path (more spread at tips)
+            float progressDrift = 1.0 + t * t * 2.5;
+            
+            // Random per-particle drift multiplier
+            float particleDriftMult = 0.6 + noise(phase * 5.0) * 0.8;
+            
+            drift1 *= baseDrift * progressDrift * particleDriftMult;
+            drift2 *= baseDrift * progressDrift * particleDriftMult;
+            
+            // Add some vertical drift too
+            float vertDrift = (noise(noiseScale3 + t * 2.0) - 0.5) * progressDrift * 0.5;
+            
+            pos += perp1 * drift1 + perp2 * drift2 + vec3(0.0, vertDrift, 0.0);
+            
+            // Alpha with noise
+            float alphaBase = smoothstep(0.0, 0.08, t) * smoothstep(1.0, 0.75, t);
+            float alphaNoise = 0.5 + 0.5 * noise(phase * 20.0 + time * 2.0);
+            vAlpha = alphaBase * alphaNoise;
+            
+            // Billboard
+            vec4 mvPosition = modelViewMatrix * vec4(pos, 1.0);
+            float particleScale = aScale * (0.8 + 0.2 * noise(phase * 8.0 + time * 1.5));
+            particleScale *= 1.0 - t * 0.3;
+            mvPosition.xyz += position * particleScale;
+            
+            gl_Position = projectionMatrix * mvPosition;
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uTexture;
+          varying float vAlpha;
+          varying vec2 vUv;
+          
+          void main() {
+            vec4 texColor = texture2D(uTexture, vUv);
+            gl_FragColor = vec4(1.0, 1.0, 1.0, texColor.a * vAlpha * 0.8);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      scene.add(mesh);
+      
+      tree.mesh = mesh;
+      tree.material = material;
+    });
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+      
+      trees.forEach(tree => {
+        if (tree.material) tree.material.uniforms.uTime.value = t;
+      });
+
+      controls.update();
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
