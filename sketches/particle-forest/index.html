@@ -6,11 +6,86 @@
   <title>The Spirit Tree</title>
   <style>
     * { margin: 0; padding: 0; }
-    body { overflow: hidden; background: #000003; }
+    body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 200px;
+      display: none;
+      z-index: 1000;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel h3 {
+      margin: 0 0 12px 0;
+      font-size: 14px;
+      color: rgba(100, 200, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    #debugPanel .section {
+      margin-bottom: 16px;
+    }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: rgba(100, 200, 255, 0.15);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #debugPanel button:hover {
+      background: rgba(100, 200, 255, 0.3);
+      border-color: rgba(100, 200, 255, 0.5);
+    }
+    #debugPanel button:active {
+      background: rgba(100, 200, 255, 0.4);
+    }
+    #debugPanel button.active {
+      background: rgba(100, 200, 255, 0.4);
+      border-color: rgba(100, 200, 255, 0.7);
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
+  <div id="debugPanel">
+    <h3>Debug Panel</h3>
+    <div class="section">
+      <button id="btnRegenerate">Regenerate Tree</button>
+    </div>
+    <div class="section">
+      <div class="section-title">Camera Flows</div>
+      <button id="btnTopDownZoom">Top Down Zoom</button>
+      <button id="btnResetCamera">Reset Camera</button>
+    </div>
+  </div>
+  <div class="hint">Press D for debug panel</div>
+  
   <script type="importmap">
     {
       "imports": {
@@ -611,6 +686,154 @@
     treeMesh.frustumCulled = false;
     scene.add(treeMesh);
 
+    // Tip sparks - single sparks shooting from random tips
+    function createTipSparks() {
+      const NUM_SPARKS = 8; // Spark "slots" - staggered so ~1 visible at a time
+      const SPARK_TRAIL_LENGTH = 10;
+      const SPARK_TRAIL_SEGMENTS = SPARK_TRAIL_LENGTH - 1;
+      const TOTAL_SPARK_VERTICES = NUM_SPARKS * SPARK_TRAIL_SEGMENTS * 2;
+      
+      const sparkGeo = new THREE.BufferGeometry();
+      const sparkPositions = new Float32Array(TOTAL_SPARK_VERTICES * 3);
+      sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+      
+      // Attributes for each spark vertex
+      const sparkIndices = new Float32Array(TOTAL_SPARK_VERTICES);
+      const sparkTrailIndices = new Float32Array(TOTAL_SPARK_VERTICES);
+      const sparkSpeeds = new Float32Array(TOTAL_SPARK_VERTICES);
+      
+      let vertIdx = 0;
+      for (let spark = 0; spark < NUM_SPARKS; spark++) {
+        const speed = 0.8 + Math.random() * 0.4;
+        
+        for (let seg = 0; seg < SPARK_TRAIL_SEGMENTS; seg++) {
+          sparkIndices[vertIdx] = spark;
+          sparkTrailIndices[vertIdx] = seg;
+          sparkSpeeds[vertIdx] = speed;
+          vertIdx++;
+          sparkIndices[vertIdx] = spark;
+          sparkTrailIndices[vertIdx] = seg + 1;
+          sparkSpeeds[vertIdx] = speed;
+          vertIdx++;
+        }
+      }
+      
+      sparkGeo.setAttribute('sparkIndex', new THREE.BufferAttribute(sparkIndices, 1));
+      sparkGeo.setAttribute('sparkTrailIndex', new THREE.BufferAttribute(sparkTrailIndices, 1));
+      sparkGeo.setAttribute('sparkSpeed', new THREE.BufferAttribute(sparkSpeeds, 1));
+      
+      // Store ALL tip positions in texture - shader picks randomly
+      const numTips = paths.length;
+      const tipData = new Float32Array(numTips * 4);
+      paths.forEach((path, i) => {
+        const lastBranch = path[path.length - 1];
+        tipData[i * 4 + 0] = lastBranch.end.x;
+        tipData[i * 4 + 1] = lastBranch.end.y;
+        tipData[i * 4 + 2] = lastBranch.end.z;
+        tipData[i * 4 + 3] = 1.0;
+      });
+      const tipTex = new THREE.DataTexture(tipData, numTips, 1, THREE.RGBAFormat, THREE.FloatType);
+      tipTex.needsUpdate = true;
+      
+      const sparkMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uTipTex: { value: tipTex },
+          uNumTips: { value: numTips },
+          uNumSparks: { value: NUM_SPARKS },
+          uTrailSegments: { value: SPARK_TRAIL_SEGMENTS }
+        },
+        vertexShader: `
+          attribute float sparkIndex;
+          attribute float sparkTrailIndex;
+          attribute float sparkSpeed;
+          
+          uniform float uTime;
+          uniform sampler2D uTipTex;
+          uniform float uNumTips;
+          uniform float uNumSparks;
+          uniform float uTrailSegments;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          varying float vColorMix;
+          
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          
+          void main() {
+            // Each spark fires every 3.5 sec, staggered across all sparks
+            float sparkInterval = 3.5;
+            float sparkOffset = sparkIndex * sparkInterval / uNumSparks;
+            
+            float globalTime = uTime + sparkOffset;
+            float cycleIndex = floor(globalTime / sparkInterval);
+            float localTime = mod(globalTime, sparkInterval);
+            
+            // Pick random tip based on cycle
+            float tipIndex = floor(hash(cycleIndex * 13.0 + sparkIndex * 7.0) * uNumTips);
+            vec4 tipPos = texture2D(uTipTex, vec2((tipIndex + 0.5) / uNumTips, 0.5));
+            
+            // Trail offset
+            float trailOffset = sparkTrailIndex * 0.03;
+            float t = localTime - trailOffset;
+            
+            // Rise for ~1.2 seconds
+            float riseTime = 1.2;
+            float life = t / riseTime;
+            
+            // Position: shoot straight up
+            vec3 pos = tipPos.xyz;
+            pos.y += max(0.0, t) * 10.0 * sparkSpeed;
+            
+            // Trail fade
+            vTrailFade = 1.0 - (sparkTrailIndex / uTrailSegments);
+            vTrailFade = pow(max(vTrailFade, 0.0), 0.5);
+            
+            // Alpha
+            float fadeIn = smoothstep(0.0, 0.1, life);
+            float fadeOut = 1.0 - smoothstep(0.5, 1.0, life);
+            vAlpha = fadeIn * fadeOut * vTrailFade;
+            
+            if (t < 0.0 || life > 1.0) vAlpha = 0.0;
+            
+            vColorMix = hash(cycleIndex + sparkIndex);
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          varying float vTrailFade;
+          varying float vColorMix;
+          
+          void main() {
+            if (vAlpha < 0.01) discard;
+            
+            // Bright spark colors - white/gold/cyan
+            vec3 white = vec3(1.0, 1.0, 1.0);
+            vec3 gold = vec3(1.0, 0.85, 0.4);
+            vec3 cyan = vec3(0.4, 0.9, 1.0);
+            
+            vec3 color = mix(gold, cyan, sin(vColorMix * 6.28) * 0.5 + 0.5);
+            color = mix(color, white, vTrailFade * 0.5);
+            
+            gl_FragColor = vec4(color, vAlpha * 0.6);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const sparkMesh = new THREE.LineSegments(sparkGeo, sparkMat);
+      sparkMesh.frustumCulled = false;
+      
+      return { mesh: sparkMesh, material: sparkMat, tipTex };
+    }
+    
+    const tipSparks = createTipSparks();
+    scene.add(tipSparks.mesh);
+
     // Horizontal flowing fog - subtle and cloudlike
     function createFog() {
       const geo = new THREE.PlaneGeometry(120, 60, 1, 1);
@@ -806,6 +1029,9 @@
     const risingEnergy = createRisingEnergy();
     scene.add(risingEnergy);
 
+    // Camera animation state
+    let cameraAnimation = null;
+    
     // Animation
     function animate(time) {
       const t = time * 0.001;
@@ -813,6 +1039,7 @@
       treeMat.uniforms.uTime.value = t;
       stars.material.uniforms.uTime.value = t;
       risingEnergy.material.uniforms.uTime.value = t;
+      tipSparks.material.uniforms.uTime.value = t;
       
       // Fog layers billboard - always face camera but don't rotate
       fogLayers.forEach(layer => {
@@ -822,6 +1049,11 @@
       });
       
       etherealPass.uniforms.uTime.value = t;
+      
+      // Update camera animation if active
+      if (cameraAnimation && cameraAnimation.active) {
+        cameraAnimation.update(time);
+      }
       
       controls.update();
       composer.render();
@@ -835,6 +1067,158 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
       composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Debug Panel
+    const debugPanel = document.getElementById('debugPanel');
+    const btnRegenerate = document.getElementById('btnRegenerate');
+    const btnTopDownZoom = document.getElementById('btnTopDownZoom');
+    const btnResetCamera = document.getElementById('btnResetCamera');
+    
+    // Toggle debug panel with 'D' key
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') {
+        debugPanel.classList.toggle('visible');
+      }
+    });
+    
+    // Regenerate tree
+    btnRegenerate.addEventListener('click', () => {
+      // Generate new tree
+      const newTree = generateTree();
+      const newPaths = newTree.paths;
+      
+      // Update path texture
+      const newPathTexH = newPaths.length;
+      const newPathData = new Float32Array(pathTexW * newPathTexH * 4);
+      
+      newPaths.forEach((path, pi) => {
+        let idx = 0;
+        newPathData[(pi * pathTexW + idx) * 4 + 0] = path[0].start.x;
+        newPathData[(pi * pathTexW + idx) * 4 + 1] = path[0].start.y;
+        newPathData[(pi * pathTexW + idx) * 4 + 2] = path[0].start.z;
+        newPathData[(pi * pathTexW + idx) * 4 + 3] = path[0].thickness;
+        idx++;
+        
+        for (let b = 0; b < path.length && idx < MAX_PATH; b++) {
+          newPathData[(pi * pathTexW + idx) * 4 + 0] = path[b].end.x;
+          newPathData[(pi * pathTexW + idx) * 4 + 1] = path[b].end.y;
+          newPathData[(pi * pathTexW + idx) * 4 + 2] = path[b].end.z;
+          newPathData[(pi * pathTexW + idx) * 4 + 3] = path[b].thickness;
+          idx++;
+        }
+        
+        const last = path[path.length - 1];
+        while (idx < MAX_PATH) {
+          newPathData[(pi * pathTexW + idx) * 4 + 0] = last.end.x;
+          newPathData[(pi * pathTexW + idx) * 4 + 1] = last.end.y;
+          newPathData[(pi * pathTexW + idx) * 4 + 2] = last.end.z;
+          newPathData[(pi * pathTexW + idx) * 4 + 3] = last.thickness;
+          idx++;
+        }
+      });
+      
+      // Create new texture and update material
+      const newPathTex = new THREE.DataTexture(newPathData, pathTexW, newPathTexH, THREE.RGBAFormat, THREE.FloatType);
+      newPathTex.needsUpdate = true;
+      treeMat.uniforms.uPathTex.value = newPathTex;
+      treeMat.uniforms.uPathSize.value.y = newPathTexH;
+      
+      // Update particle path indices - must keep same path for all vertices of a particle
+      // Each particle has TRAIL_SEGMENTS * 2 vertices
+      const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+      const verticesPerParticle = TRAIL_SEGMENTS * 2;
+      const pathIndicesAttr = geo.getAttribute('pathIndex');
+      const pathLengthsAttr = geo.getAttribute('pathLength');
+      
+      for (let p = 0; p < PARTICLES; p++) {
+        const pi = Math.floor(Math.random() * newPaths.length);
+        const pathLen = Math.min(newPaths[pi].length + 1, MAX_PATH);
+        
+        // Set same path index and length for all vertices of this particle
+        for (let v = 0; v < verticesPerParticle; v++) {
+          const idx = p * verticesPerParticle + v;
+          if (idx < pathIndicesAttr.count) {
+            pathIndicesAttr.array[idx] = pi;
+            pathLengthsAttr.array[idx] = pathLen;
+          }
+        }
+      }
+      pathIndicesAttr.needsUpdate = true;
+      pathLengthsAttr.needsUpdate = true;
+      
+      // Update tip sparks texture with all tips
+      const newTipData = new Float32Array(newPaths.length * 4);
+      newPaths.forEach((path, i) => {
+        const lastBranch = path[path.length - 1];
+        newTipData[i * 4 + 0] = lastBranch.end.x;
+        newTipData[i * 4 + 1] = lastBranch.end.y;
+        newTipData[i * 4 + 2] = lastBranch.end.z;
+        newTipData[i * 4 + 3] = 1.0;
+      });
+      const newTipTex = new THREE.DataTexture(newTipData, newPaths.length, 1, THREE.RGBAFormat, THREE.FloatType);
+      newTipTex.needsUpdate = true;
+      tipSparks.material.uniforms.uTipTex.value = newTipTex;
+      tipSparks.material.uniforms.uNumTips.value = newPaths.length;
+    });
+    
+    // Top Down Zoom camera animation
+    btnTopDownZoom.addEventListener('click', () => {
+      // Stop any existing animation
+      if (cameraAnimation) {
+        cameraAnimation.active = false;
+      }
+      
+      // Disable orbit controls during animation
+      controls.enabled = false;
+      controls.autoRotate = false;
+      
+      // Animation parameters
+      const startY = 50;
+      const endY = -5;
+      const duration = 20000; // 20 seconds
+      const startTime = performance.now();
+      
+      cameraAnimation = {
+        active: true,
+        update: (time) => {
+          if (!cameraAnimation.active) return;
+          
+          const elapsed = time - startTime;
+          const progress = Math.min(elapsed / duration, 1);
+          
+          // Ease in-out
+          const eased = progress < 0.5 
+            ? 2 * progress * progress 
+            : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+          
+          const y = startY + (endY - startY) * eased;
+          
+          camera.position.set(0, y, 0.01);
+          camera.lookAt(0, y - 1, 0);
+          
+          if (progress >= 1) {
+            cameraAnimation.active = false;
+          }
+        }
+      };
+      
+      btnTopDownZoom.classList.add('active');
+    });
+    
+    // Reset camera
+    btnResetCamera.addEventListener('click', () => {
+      if (cameraAnimation) {
+        cameraAnimation.active = false;
+      }
+      
+      controls.enabled = true;
+      controls.autoRotate = true;
+      camera.position.set(0, 10, 35);
+      camera.lookAt(0, 12, 0);
+      controls.target.set(0, 10, 0);
+      
+      btnTopDownZoom.classList.remove('active');
     });
   </script>
 </body>
