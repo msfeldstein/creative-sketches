@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ink Topography</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body { overflow: hidden; background: #050608; }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    .hud {
+      position: fixed;
+      right: 16px;
+      top: 16px;
+      z-index: 10;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      color: rgba(235, 240, 255, 0.8);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      user-select: none;
+      mix-blend-mode: screen;
+      pointer-events: none;
+      text-align: right;
+    }
+    .hud .title { color: rgba(255, 220, 160, 0.92); margin-bottom: 6px; }
+    .hud .hint { color: rgba(235, 240, 255, 0.45); text-transform: none; letter-spacing: 0; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="hud" aria-hidden="true">
+    <div class="title">Ink Topography</div>
+    <div class="hint">Click to drop a ripple • R to reseed</div>
+  </div>
+
+  <script type="module">
+    const canvas = document.getElementById('c');
+    const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+
+    const state = {
+      w: 1,
+      h: 1,
+      dpr: 1,
+      t: 0,
+      seed: (Math.random() * 1e9) | 0,
+      ripples: [],
+      reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false,
+    };
+
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function smoothstep(t) { return t * t * (3 - 2 * t); }
+    function hash2(x, y) {
+      let n = (x * 374761393) ^ (y * 668265263) ^ state.seed;
+      n = (n ^ (n >>> 13)) * 1274126177;
+      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+    }
+    function valueNoise2(x, y) {
+      const xi = Math.floor(x), yi = Math.floor(y);
+      const xf = x - xi, yf = y - yi;
+      const u = smoothstep(xf), v = smoothstep(yf);
+      const a = hash2(xi, yi);
+      const b = hash2(xi + 1, yi);
+      const c = hash2(xi, yi + 1);
+      const d = hash2(xi + 1, yi + 1);
+      const lerp = (p, q, t) => p + (q - p) * t;
+      return lerp(lerp(a, b, u), lerp(c, d, u), v);
+    }
+    function fbm(x, y) {
+      let f = 0;
+      let amp = 0.6;
+      let freq = 0.0022;
+      for (let i = 0; i < 5; i++) {
+        f += amp * valueNoise2(x * freq, y * freq);
+        freq *= 2.05;
+        amp *= 0.52;
+      }
+      return f;
+    }
+
+    function resize() {
+      const w = Math.max(1, window.innerWidth | 0);
+      const h = Math.max(1, window.innerHeight | 0);
+      const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+      state.w = w; state.h = h; state.dpr = dpr;
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+      canvas.style.width = w + 'px';
+      canvas.style.height = h + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    window.addEventListener('resize', resize);
+
+    function addRipple(x, y) {
+      state.ripples.push({ x, y, t0: state.t, a: 1 });
+      if (state.ripples.length > 8) state.ripples.shift();
+    }
+
+    window.addEventListener('pointerdown', (e) => {
+      addRipple(e.clientX, e.clientY);
+    }, { passive: true });
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        state.seed = (Math.random() * 1e9) | 0;
+        state.ripples = [];
+      }
+    });
+
+    function heightAt(x, y, t) {
+      // Base terrain with slow drift.
+      let h = fbm(x + 80 * Math.cos(t * 0.07), y + 80 * Math.sin(t * 0.06));
+
+      // Add ripple perturbations.
+      for (const r of state.ripples) {
+        const age = t - r.t0;
+        const dx = x - r.x;
+        const dy = y - r.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const wave = Math.sin(dist * 0.045 - age * 4.0);
+        const falloff = Math.exp(-dist * 0.006) * Math.exp(-age * 0.6);
+        h += 0.18 * wave * falloff * r.a;
+      }
+      return h;
+    }
+
+    function draw(t) {
+      state.t = t;
+      const w = state.w, h = state.h;
+      const dt = state.reduceMotion ? 0.012 : 0.018;
+      const time = t * dt;
+
+      // Paper-like base.
+      ctx.fillStyle = '#050608';
+      ctx.fillRect(0, 0, w, h);
+
+      // Subtle grain.
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.08;
+      for (let i = 0; i < 2600; i++) {
+        const x = Math.random() * w;
+        const y = Math.random() * h;
+        const g = 10 + (Math.random() * 25);
+        ctx.fillStyle = `rgba(${g},${g},${g},0.22)`;
+        ctx.fillRect(x, y, 1, 1);
+      }
+      ctx.globalAlpha = 1;
+
+      // Contours
+      const cell = state.reduceMotion ? 10 : 8;
+      const steps = 11;
+      ctx.lineWidth = 1;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      for (let s = 0; s < steps; s++) {
+        const level = (s / (steps - 1)) * 1.2;
+        const ink = 0.16 + s * 0.028;
+        ctx.strokeStyle = `rgba(235, 240, 255, ${ink})`;
+        ctx.beginPath();
+
+        for (let y = 0; y <= h; y += cell) {
+          let inLine = false;
+          for (let x = 0; x <= w; x += cell) {
+            const hh = heightAt(x, y, time);
+            const on = hh > level;
+            if (on && !inLine) {
+              ctx.moveTo(x, y);
+              inLine = true;
+            } else if (!on && inLine) {
+              ctx.lineTo(x, y);
+              inLine = false;
+            } else if (on && inLine) {
+              ctx.lineTo(x, y);
+            }
+          }
+          inLine = false;
+        }
+        ctx.stroke();
+      }
+
+      // Warm highlights (second pass).
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.6;
+      ctx.strokeStyle = 'rgba(255, 200, 150, 0.18)';
+      ctx.beginPath();
+      const stride = state.reduceMotion ? 22 : 18;
+      for (let y = 0; y <= h; y += stride) {
+        for (let x = 0; x <= w; x += stride) {
+          const hh = heightAt(x, y, time);
+          if (hh > 0.82) {
+            ctx.moveTo(x - 4, y);
+            ctx.lineTo(x + 4, y);
+          }
+        }
+      }
+      ctx.stroke();
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+
+      // Fade out old ripples.
+      state.ripples = state.ripples.filter(r => (time - r.t0) < 8);
+    }
+
+    resize();
+    function frame() {
+      draw(performance.now() / 1000);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+  </script>
+</body>
+</html>
