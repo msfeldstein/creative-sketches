@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aurora Weave</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #04070c;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    canvas { display: block; }
+    #legend {
+      position: fixed;
+      bottom: 18px;
+      left: 18px;
+      font-size: 12px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.35);
+      user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="aurora"></canvas>
+  <div id="legend">Aurora Weave</div>
+  <script>
+    const canvas = document.getElementById("aurora");
+    const ctx = canvas.getContext("2d", { alpha: false });
+    const strands = [];
+    const stars = [];
+    let width = 0;
+    let height = 0;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let startTime = performance.now();
+
+    function rand(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      initStrands();
+      initStars();
+    }
+
+    function initStrands() {
+      strands.length = 0;
+      const count = 9;
+      for (let i = 0; i < count; i += 1) {
+        const t = i / (count - 1);
+        strands.push({
+          baseY: height * (0.15 + 0.7 * t),
+          amplitude: height * rand(0.05, 0.12),
+          frequency: rand(0.0015, 0.0032),
+          secondaryFrequency: rand(0.002, 0.0045),
+          speed: rand(0.00015, 0.00035),
+          phase: rand(0, Math.PI * 2),
+          hue: rand(160, 280),
+          width: rand(1.2, 2.2),
+          glow: rand(8, 18)
+        });
+      }
+    }
+
+    function initStars() {
+      stars.length = 0;
+      const count = Math.floor((width * height) / 24000);
+      for (let i = 0; i < count; i += 1) {
+        stars.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          radius: rand(0.6, 1.6),
+          twinkle: rand(0.002, 0.008),
+          phase: rand(0, Math.PI * 2)
+        });
+      }
+    }
+
+    function drawStars(time) {
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+      stars.forEach((star) => {
+        const flicker = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(time * star.twinkle + star.phase));
+        ctx.globalAlpha = flicker * 0.8;
+        ctx.beginPath();
+        ctx.arc(star.x, star.y, star.radius, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+    }
+
+    function drawStrand(strand, time) {
+      const gradient = ctx.createLinearGradient(0, 0, width, 0);
+      const hueShift = 20 * Math.sin(time * 0.0002 + strand.phase);
+      gradient.addColorStop(0, `hsla(${strand.hue + hueShift}, 85%, 60%, 0.0)`);
+      gradient.addColorStop(0.2, `hsla(${strand.hue + hueShift}, 85%, 70%, 0.45)`);
+      gradient.addColorStop(0.5, `hsla(${strand.hue + hueShift + 25}, 90%, 65%, 0.75)`);
+      gradient.addColorStop(0.8, `hsla(${strand.hue + hueShift + 50}, 85%, 60%, 0.4)`);
+      gradient.addColorStop(1, `hsla(${strand.hue + hueShift + 80}, 85%, 60%, 0.0)`);
+
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = strand.width;
+      ctx.shadowBlur = strand.glow;
+      ctx.shadowColor = `hsla(${strand.hue + hueShift}, 90%, 70%, 0.6)`;
+      ctx.beginPath();
+      const steps = 140;
+      for (let i = 0; i <= steps; i += 1) {
+        const x = (i / steps) * width;
+        const sway = Math.sin(x * strand.frequency + time * strand.speed + strand.phase);
+        const shimmer = Math.sin(x * strand.secondaryFrequency - time * strand.speed * 1.3);
+        const y = strand.baseY + sway * strand.amplitude + shimmer * strand.amplitude * 0.35;
+        if (i === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      }
+      ctx.stroke();
+    }
+
+    function render(time) {
+      const elapsed = time - startTime;
+      ctx.fillStyle = "rgba(4, 7, 12, 0.18)";
+      ctx.fillRect(0, 0, width, height);
+      drawStars(elapsed);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      strands.forEach((strand) => drawStrand(strand, elapsed));
+      ctx.restore();
+      requestAnimationFrame(render);
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

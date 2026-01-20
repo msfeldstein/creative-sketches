@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Prism Rain</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #05040a;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    canvas { display: block; }
+    #legend {
+      position: fixed;
+      top: 18px;
+      left: 18px;
+      font-size: 12px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.35);
+      user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="rain"></canvas>
+  <div id="legend">Prism Rain</div>
+  <script>
+    const canvas = document.getElementById("rain");
+    const ctx = canvas.getContext("2d");
+    let width = 0;
+    let height = 0;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const drops = [];
+
+    function rand(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      initDrops();
+    }
+
+    function initDrops() {
+      drops.length = 0;
+      const count = Math.floor(width / 6);
+      for (let i = 0; i < count; i += 1) {
+        drops.push(createDrop(true));
+      }
+    }
+
+    function createDrop(randomY = false) {
+      return {
+        x: rand(-width * 0.1, width * 1.1),
+        y: randomY ? rand(-height, height) : rand(-height * 0.2, 0),
+        length: rand(height * 0.08, height * 0.25),
+        speed: rand(height * 0.0006, height * 0.0016),
+        width: rand(0.8, 2.2),
+        hue: rand(190, 320),
+        flicker: rand(0.002, 0.006)
+      };
+    }
+
+    function drawDrop(drop, time) {
+      const gradient = ctx.createLinearGradient(drop.x, drop.y, drop.x, drop.y + drop.length);
+      const pulse = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(time * drop.flicker));
+      gradient.addColorStop(0, "rgba(255, 255, 255, 0)");
+      gradient.addColorStop(0.2, `hsla(${drop.hue}, 85%, 70%, ${0.2 * pulse})`);
+      gradient.addColorStop(0.6, `hsla(${drop.hue + 40}, 90%, 70%, ${0.5 * pulse})`);
+      gradient.addColorStop(1, "rgba(255, 255, 255, 0)");
+
+      ctx.strokeStyle = gradient;
+      ctx.lineWidth = drop.width;
+      ctx.beginPath();
+      ctx.moveTo(drop.x, drop.y);
+      ctx.lineTo(drop.x, drop.y + drop.length);
+      ctx.stroke();
+    }
+
+    function update(time) {
+      ctx.fillStyle = "rgba(5, 4, 10, 0.2)";
+      ctx.fillRect(0, 0, width, height);
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.shadowBlur = 18;
+      drops.forEach((drop) => {
+        drawDrop(drop, time);
+        drop.y += drop.speed;
+        if (drop.y - drop.length > height) {
+          Object.assign(drop, createDrop());
+          drop.y = rand(-height * 0.2, 0);
+        }
+      });
+      ctx.restore();
+      requestAnimationFrame(update);
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+    requestAnimationFrame(update);
+  </script>
+</body>
+</html>

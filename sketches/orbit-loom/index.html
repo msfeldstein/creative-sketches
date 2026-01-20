@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orbit Loom</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #05060b;
+      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    canvas { display: block; }
+    #legend {
+      position: fixed;
+      right: 18px;
+      bottom: 18px;
+      font-size: 12px;
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.35);
+      user-select: none;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="loom"></canvas>
+  <div id="legend">Orbit Loom</div>
+  <script>
+    const canvas = document.getElementById("loom");
+    const ctx = canvas.getContext("2d");
+    let width = 0;
+    let height = 0;
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const nodes = [];
+    let startTime = performance.now();
+
+    function rand(min, max) {
+      return min + Math.random() * (max - min);
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      initNodes();
+    }
+
+    function initNodes() {
+      nodes.length = 0;
+      const count = 26;
+      const base = Math.min(width, height) * 0.16;
+      for (let i = 0; i < count; i += 1) {
+        nodes.push({
+          radius: base + rand(0, base * 1.8),
+          speed: rand(0.00015, 0.00045) * (Math.random() > 0.5 ? 1 : -1),
+          phase: rand(0, Math.PI * 2),
+          size: rand(1.8, 3.6),
+          hue: rand(190, 320),
+          tilt: rand(0.4, 1.2)
+        });
+      }
+    }
+
+    function positionNode(node, time) {
+      const angle = node.phase + time * node.speed;
+      const orbitX = Math.cos(angle) * node.radius;
+      const orbitY = Math.sin(angle * node.tilt) * node.radius * 0.6;
+      return {
+        x: width * 0.5 + orbitX,
+        y: height * 0.5 + orbitY
+      };
+    }
+
+    function draw() {
+      const time = performance.now() - startTime;
+      ctx.fillStyle = "rgba(5, 6, 11, 0.22)";
+      ctx.fillRect(0, 0, width, height);
+
+      const positions = nodes.map((node) => positionNode(node, time));
+
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.lineWidth = 1;
+      for (let i = 0; i < nodes.length; i += 1) {
+        for (let j = i + 1; j < nodes.length; j += 1) {
+          const dx = positions[i].x - positions[j].x;
+          const dy = positions[i].y - positions[j].y;
+          const dist = Math.hypot(dx, dy);
+          if (dist < 180) {
+            const alpha = 0.55 * (1 - dist / 180);
+            ctx.strokeStyle = `rgba(140, 200, 255, ${alpha})`;
+            ctx.beginPath();
+            ctx.moveTo(positions[i].x, positions[i].y);
+            ctx.lineTo(positions[j].x, positions[j].y);
+            ctx.stroke();
+          }
+        }
+      }
+
+      nodes.forEach((node, index) => {
+        const pos = positions[index];
+        ctx.shadowBlur = 18;
+        ctx.shadowColor = `hsla(${node.hue}, 80%, 60%, 0.7)`;
+        ctx.fillStyle = `hsla(${node.hue}, 90%, 70%, 0.9)`;
+        ctx.beginPath();
+        ctx.arc(pos.x, pos.y, node.size, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      ctx.restore();
+
+      requestAnimationFrame(draw);
+    }
+
+    window.addEventListener("resize", resize);
+    resize();
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
