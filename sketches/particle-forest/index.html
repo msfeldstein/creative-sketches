@@ -152,6 +152,10 @@
         <span>Trail Brightness <span id="trailBrightnessValue">100%</span></span>
         <input type="range" id="sliderTrailBrightness" min="10" max="200" value="100">
       </label>
+      <label class="slider-label">
+        <span>Branch Sway <span id="undulationValue">50%</span></span>
+        <input type="range" id="sliderUndulation" min="0" max="200" value="50">
+      </label>
     </div>
     <div class="section">
       <div class="section-title">Moon</div>
@@ -203,6 +207,7 @@
       particleSpeed: 186,
       colorShift: 0,
       trailBrightness: 100,
+      undulation: 50,
       moonPhase: 0,
       moonRotation: 333,
       moonOcclusion: 44,
@@ -720,7 +725,8 @@
         uTrailSegments: { value: TRAIL_SEGMENTS },
         uSpeedMult: { value: DEFAULT_CONFIG.particleSpeed / 100 },
         uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
-        uBrightness: { value: DEFAULT_CONFIG.trailBrightness / 100 }
+        uBrightness: { value: DEFAULT_CONFIG.trailBrightness / 100 },
+        uUndulation: { value: DEFAULT_CONFIG.undulation / 100 }
       },
       vertexShader: `
         attribute float pathIndex;
@@ -737,6 +743,7 @@
         uniform vec2 uPathSize;
         uniform float uTrailSegments;
         uniform float uSpeedMult;
+        uniform float uUndulation;
         
         varying float vAlpha;
         varying float vHeight;
@@ -805,6 +812,21 @@
             (2.0 * p0.xyz - 5.0 * p1.xyz + 4.0 * p2.xyz - p3.xyz) * t2 +
             (-p0.xyz + 3.0 * p1.xyz - 3.0 * p2.xyz + p3.xyz) * t3
           );
+          
+          // Undulation - branches sway gently
+          float heightFactor = smoothstep(0.0, 20.0, pos.y); // More sway at top
+          float branchPhase = pathIndex * 0.73 + segIdx * 0.31; // Unique phase per branch segment
+          float swayTime = uTime * 0.15;
+          
+          // Multi-frequency sway for organic feel
+          float swayX = sin(swayTime + branchPhase) * 0.7 
+                      + sin(swayTime * 1.7 + branchPhase * 2.3) * 0.3;
+          float swayZ = sin(swayTime * 0.8 + branchPhase * 1.5 + 1.57) * 0.7 
+                      + sin(swayTime * 1.3 + branchPhase * 1.8) * 0.3;
+          
+          float swayAmount = uUndulation * heightFactor * (0.5 + t * 0.5); // More sway toward branch tips
+          pos.x += swayX * swayAmount;
+          pos.z += swayZ * swayAmount;
           
           vHeight = pos.y;
           float thick = mix(p1.w, p2.w, segT);
@@ -1486,6 +1508,8 @@
     const moonRotationValue = document.getElementById('moonRotationValue');
     const sliderMoonOcclusion = document.getElementById('sliderMoonOcclusion');
     const moonOcclusionValue = document.getElementById('moonOcclusionValue');
+    const sliderUndulation = document.getElementById('sliderUndulation');
+    const undulationValue = document.getElementById('undulationValue');
     
     // LocalStorage persistence
     const STORAGE_KEY = 'particleForestSettings';
@@ -1499,6 +1523,7 @@
         particleSpeed: parseInt(sliderSpeed.value),
         colorShift: parseInt(sliderColorShift.value),
         trailBrightness: parseInt(sliderTrailBrightness.value),
+        undulation: parseInt(sliderUndulation.value),
         moonPhase: parseInt(sliderMoonPhase.value),
         moonRotation: parseInt(sliderMoonRotation.value),
         moonOcclusion: parseInt(sliderMoonOcclusion.value),
@@ -1523,6 +1548,7 @@
         speed: sliderSpeed.value,
         colorShift: sliderColorShift.value,
         trailBrightness: sliderTrailBrightness.value,
+        undulation: sliderUndulation.value,
         moonPhase: sliderMoonPhase.value,
         moonRotation: sliderMoonRotation.value,
         moonOcclusion: sliderMoonOcclusion.value
@@ -1553,6 +1579,9 @@
         
         sliderTrailBrightness.value = config.trailBrightness;
         trailBrightnessValue.textContent = config.trailBrightness + '%';
+        
+        sliderUndulation.value = config.undulation;
+        undulationValue.textContent = config.undulation + '%';
         
         sliderMoonPhase.value = config.moonPhase;
         const phasePercent = config.moonPhase;
@@ -1623,6 +1652,11 @@
           sliderTrailBrightness.value = settings.trailBrightness;
           treeMat.uniforms.uBrightness.value = settings.trailBrightness / 100;
           trailBrightnessValue.textContent = settings.trailBrightness + '%';
+        }
+        if (settings.undulation !== undefined) {
+          sliderUndulation.value = settings.undulation;
+          treeMat.uniforms.uUndulation.value = settings.undulation / 100;
+          undulationValue.textContent = settings.undulation + '%';
         }
         if (settings.moonPhase !== undefined) {
           sliderMoonPhase.value = settings.moonPhase;
@@ -1715,6 +1749,13 @@
     sliderTrailBrightness.addEventListener('input', () => {
       treeMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100;
       trailBrightnessValue.textContent = sliderTrailBrightness.value + '%';
+      saveSettings();
+    });
+    
+    // Branch undulation/sway
+    sliderUndulation.addEventListener('input', () => {
+      treeMat.uniforms.uUndulation.value = sliderUndulation.value / 100;
+      undulationValue.textContent = sliderUndulation.value + '%';
       saveSettings();
     });
     
