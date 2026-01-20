@@ -21,15 +21,24 @@
       min-width: 200px;
       display: none;
       z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
     }
     #debugPanel.visible { display: block; }
+    #debugPanel.dragging { user-select: none; }
     #debugPanel h3 {
-      margin: 0 0 12px 0;
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
       font-size: 14px;
       color: rgba(100, 200, 255, 0.9);
       text-transform: uppercase;
       letter-spacing: 1px;
+      cursor: grab;
+      background: rgba(100, 200, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
     }
+    #debugPanel h3:active { cursor: grabbing; }
     #debugPanel .section {
       margin-bottom: 16px;
     }
@@ -63,6 +72,34 @@
       background: rgba(100, 200, 255, 0.4);
       border-color: rgba(100, 200, 255, 0.7);
     }
+    #debugPanel .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #debugPanel .checkbox-label input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span {
+      display: flex;
+      justify-content: space-between;
+    }
+    #debugPanel .slider-label input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
     .hint {
       position: fixed;
       bottom: 20px;
@@ -83,6 +120,60 @@
       <button id="btnTopDownZoom">Top Down Zoom</button>
       <button id="btnResetCamera">Reset Camera</button>
     </div>
+    <div class="section">
+      <div class="section-title">Toggle Effects</div>
+      <label class="checkbox-label"><input type="checkbox" id="chkStars" checked> Background Stars</label>
+      <label class="slider-label">
+        <span>Star Density <span id="starDensityValue">25%</span></span>
+        <input type="range" id="sliderStarDensity" min="0" max="100" value="25">
+      </label>
+      <label class="checkbox-label"><input type="checkbox" id="chkRisingParticles" checked> Rising Sparks</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkShootingStars" checked> Shooting Stars</label>
+    </div>
+    <div class="section">
+      <div class="section-title">Visual Controls</div>
+      <label class="slider-label">
+        <span>Tree Rotation <span id="rotationValue">100%</span></span>
+        <input type="range" id="sliderRotation" min="0" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Bloom Intensity <span id="bloomValue">39%</span></span>
+        <input type="range" id="sliderBloom" min="0" max="150" value="39">
+      </label>
+      <label class="slider-label">
+        <span>Particle Speed <span id="speedValue">186%</span></span>
+        <input type="range" id="sliderSpeed" min="10" max="300" value="186">
+      </label>
+      <label class="slider-label">
+        <span>Color Shift <span id="colorShiftValue">0°</span></span>
+        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
+      </label>
+      <label class="slider-label">
+        <span>Trail Brightness <span id="trailBrightnessValue">100%</span></span>
+        <input type="range" id="sliderTrailBrightness" min="10" max="200" value="100">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Moon</div>
+      <label class="slider-label">
+        <span>Phase <span id="moonPhaseValue">New</span></span>
+        <input type="range" id="sliderMoonPhase" min="0" max="100" value="0">
+      </label>
+      <label class="slider-label">
+        <span>Rotation <span id="moonRotationValue">333°</span></span>
+        <input type="range" id="sliderMoonRotation" min="0" max="360" value="333">
+      </label>
+      <label class="slider-label">
+        <span>Occlusion <span id="moonOcclusionValue">44%</span></span>
+        <input type="range" id="sliderMoonOcclusion" min="30" max="60" value="44">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Dev Tools</div>
+      <button id="btnCopyConfig">Copy Config to Clipboard</button>
+      <button id="btnReload">Reload Page</button>
+      <label class="checkbox-label"><input type="checkbox" id="chkLiveReload"> Live Reload (2s)</label>
+    </div>
   </div>
   <div class="hint">Press D for debug panel</div>
   
@@ -101,6 +192,25 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // ===========================================
+    // DEFAULT CONFIG - Edit these values directly
+    // ===========================================
+    const DEFAULT_CONFIG = {
+      starDensity: 25,
+      treeRotation: 100,
+      bloom: 39,
+      particleSpeed: 186,
+      colorShift: 0,
+      trailBrightness: 100,
+      moonPhase: 0,
+      moonRotation: 333,
+      moonOcclusion: 44,
+      showStars: true,
+      showRisingSparks: true,
+      showShootingStars: true
+    };
+    // ===========================================
 
     // Setup
     const scene = new THREE.Scene();
@@ -124,7 +234,7 @@
 
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      0.5, 0.4, 0.3
+      DEFAULT_CONFIG.bloom / 100, 0.4, 0.3
     );
     composer.addPass(bloomPass);
 
@@ -184,14 +294,14 @@
     controls.enableDamping = true;
     controls.dampingFactor = 0.03;
     controls.target.set(0, 10, 0);
-    controls.autoRotate = true;
+    controls.autoRotate = false; // Tree rotates instead of camera
     controls.autoRotateSpeed = 0.15;
     controls.minDistance = 12;
     controls.maxDistance = 60;
 
     // Starfield
     function createStarfield() {
-      const count = 2500;
+      const count = 10000; // Many more stars available
       const positions = new Float32Array(count * 3);
       const sizes = new Float32Array(count);
       const phases = new Float32Array(count);
@@ -213,13 +323,22 @@
       geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
       
       const mat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0 } },
+        uniforms: { uTime: { value: 0 }, uDensity: { value: DEFAULT_CONFIG.starDensity / 100 } },
         vertexShader: `
           attribute float size;
           attribute float phase;
           varying float vAlpha;
           uniform float uTime;
+          uniform float uDensity;
           void main() {
+            // Use phase to determine if this star is visible based on density
+            float threshold = phase / 6.28318; // 0 to 1 based on phase
+            if (threshold > uDensity) {
+              gl_PointSize = 0.0;
+              vAlpha = 0.0;
+              gl_Position = vec4(0.0);
+              return;
+            }
             float twinkle = pow(sin(uTime * 1.5 + phase * 8.0) * 0.5 + 0.5, 2.0);
             vAlpha = 0.2 + twinkle * 0.8;
             vec4 mv = modelViewMatrix * vec4(position, 1.0);
@@ -230,6 +349,7 @@
         fragmentShader: `
           varying float vAlpha;
           void main() {
+            if (vAlpha < 0.01) discard;
             float d = length(gl_PointCoord - 0.5);
             float a = 1.0 - smoothstep(0.0, 0.5, d);
             a += exp(-d * 3.0) * 0.5;
@@ -246,7 +366,106 @@
     const stars = createStarfield();
     scene.add(stars);
 
-
+    // Crescent Moon with chromatic aberration
+    function createMoon() {
+      const moonGeo = new THREE.PlaneGeometry(1, 1);
+      const moonMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uPhase: { value: DEFAULT_CONFIG.moonPhase / 100 },
+          uRotation: { value: (DEFAULT_CONFIG.moonRotation / 360) * Math.PI * 2 },
+          uOcclusion: { value: DEFAULT_CONFIG.moonOcclusion / 100 }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform float uPhase;
+          uniform float uRotation;
+          uniform float uOcclusion;
+          varying vec2 vUv;
+          
+          vec2 rotate2D(vec2 v, float angle) {
+            float s = sin(angle);
+            float c = cos(angle);
+            return vec2(v.x * c - v.y * s, v.x * s + v.y * c);
+          }
+          
+          float moonShape(vec2 uv, vec2 offset, float phase, float rotation, float occlusion) {
+            vec2 centered = uv - 0.5 + offset;
+            // Apply rotation
+            centered = rotate2D(centered, rotation);
+            
+            float mainCircle = length(centered);
+            
+            // Cut circle offset based on phase
+            // phase 0 = new moon (cut circle fully overlaps)
+            // phase 1 = full moon (cut circle far away)
+            float cutDistance = mix(0.0, 1.2, phase);
+            vec2 cutOffset = centered + vec2(cutDistance, 0.0);
+            float cutCircle = length(cutOffset);
+            
+            // Moon edge
+            float moon = smoothstep(0.44, 0.40, mainCircle);
+            // Cut away to make crescent - occlusion controls size of cut circle
+            moon *= smoothstep(occlusion - 0.03, occlusion + 0.01, cutCircle);
+            
+            return moon;
+          }
+          
+          void main() {
+            // Chromatic aberration offsets
+            float aberration = 0.015;
+            
+            // Sample each color channel with slight offset
+            float r = moonShape(vUv, vec2(-aberration, aberration * 0.5), uPhase, uRotation, uOcclusion);
+            float g = moonShape(vUv, vec2(0.0, 0.0), uPhase, uRotation, uOcclusion);
+            float b = moonShape(vUv, vec2(aberration, -aberration * 0.5), uPhase, uRotation, uOcclusion);
+            
+            // Combine with slight color tint
+            vec3 color = vec3(r * 1.0, g * 0.97, b * 0.92);
+            
+            // Add subtle glow around the moon
+            vec2 centered = vUv - 0.5;
+            float dist = length(centered);
+            float glow = exp(-dist * 4.0) * 0.12;
+            color += vec3(0.6, 0.7, 0.9) * glow;
+            
+            // Soft edge glow on the crescent
+            float edgeGlow = moonShape(vUv, vec2(0.0), uPhase, uRotation, uOcclusion) * 0.25;
+            color += vec3(0.8, 0.85, 1.0) * edgeGlow * exp(-dist * 2.0);
+            
+            float alpha = max(max(r, g), b) + glow * 0.4;
+            
+            // Subtle shimmer
+            float shimmer = sin(uTime * 0.3 + dist * 10.0) * 0.02 + 1.0;
+            color *= shimmer;
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      
+      const moon = new THREE.Mesh(moonGeo, moonMat);
+      // Position in upper right area of sky
+      moon.position.set(35, 55, -60);
+      moon.scale.set(18, 18, 1);
+      // Face the camera roughly
+      moon.lookAt(0, 10, 0);
+      
+      return moon;
+    }
+    const moon = createMoon();
+    scene.add(moon);
 
     // Create particle texture
     function createParticleTexture() {
@@ -498,7 +717,10 @@
         uTime: { value: 0 },
         uPathTex: { value: pathTex },
         uPathSize: { value: new THREE.Vector2(pathTexW, pathTexH) },
-        uTrailSegments: { value: TRAIL_SEGMENTS }
+        uTrailSegments: { value: TRAIL_SEGMENTS },
+        uSpeedMult: { value: DEFAULT_CONFIG.particleSpeed / 100 },
+        uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+        uBrightness: { value: DEFAULT_CONFIG.trailBrightness / 100 }
       },
       vertexShader: `
         attribute float pathIndex;
@@ -514,6 +736,7 @@
         uniform sampler2D uPathTex;
         uniform vec2 uPathSize;
         uniform float uTrailSegments;
+        uniform float uSpeedMult;
         
         varying float vAlpha;
         varying float vHeight;
@@ -538,7 +761,7 @@
           vColorSeed = colorSeed;
           vPhase = phase;
           
-          float baseTime = uTime + timeOffset;
+          float baseTime = uTime * uSpeedMult + timeOffset;
           float noiseOffset = (noise(phase * 10.0) - 0.5) * 0.08;
           
           // Trail offset - each point is behind in time
@@ -623,6 +846,8 @@
       `,
       fragmentShader: `
         uniform float uTime;
+        uniform float uColorShift;
+        uniform float uBrightness;
         
         varying float vAlpha;
         varying float vHeight;
@@ -631,6 +856,22 @@
         varying float vPhase;
         varying float vTrailFade;
         varying float vWrap;
+        
+        // Hue shift function
+        vec3 hueShift(vec3 color, float shift) {
+          float angle = shift * 6.28318;
+          float s = sin(angle);
+          float c = cos(angle);
+          vec3 weights = vec3(0.299, 0.587, 0.114);
+          float wSum = dot(color, weights);
+          vec3 c1 = vec3(wSum);
+          vec3 c2 = color - c1;
+          return c1 + vec3(
+            c2.r * c - (c2.g * 0.328 - c2.b * 0.883) * s,
+            c2.g * c + (c2.r * 0.328 + c2.b * 0.557) * s,
+            c2.b * c - (c2.r * 0.883 + c2.g * 0.557) * s
+          );
+        }
         
         void main() {
           // Hide segments that wrap around
@@ -674,6 +915,10 @@
           // Core brightness
           color *= 0.95 + (1.0 - vProgress) * 0.1;
           
+          // Apply hue shift and brightness controls
+          color = hueShift(color, uColorShift);
+          color *= uBrightness;
+          
           gl_FragColor = vec4(color, vAlpha * 0.15);
         }
       `,
@@ -684,7 +929,11 @@
 
     const treeMesh = new THREE.LineSegments(geo, treeMat);
     treeMesh.frustumCulled = false;
-    scene.add(treeMesh);
+    
+    // Create a group for the tree and related elements so they can rotate together
+    const treeGroup = new THREE.Group();
+    treeGroup.add(treeMesh);
+    scene.add(treeGroup);
 
     // Tip sparks - single sparks shooting from random tips
     function createTipSparks() {
@@ -832,7 +1081,139 @@
     }
     
     const tipSparks = createTipSparks();
-    scene.add(tipSparks.mesh);
+    treeGroup.add(tipSparks.mesh);
+
+    // Shooting stars - streaking down and to the left
+    function createShootingStars() {
+      const NUM_STARS = 12;
+      const TRAIL_LENGTH = 15;
+      const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+      const TOTAL_VERTICES = NUM_STARS * TRAIL_SEGMENTS * 2;
+      
+      const geo = new THREE.BufferGeometry();
+      const positions = new Float32Array(TOTAL_VERTICES * 3);
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      const starIndices = new Float32Array(TOTAL_VERTICES);
+      const trailIndices = new Float32Array(TOTAL_VERTICES);
+      const starSpeeds = new Float32Array(TOTAL_VERTICES);
+      
+      let vertIdx = 0;
+      for (let star = 0; star < NUM_STARS; star++) {
+        const speed = 0.7 + Math.random() * 0.5;
+        for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+          starIndices[vertIdx] = star;
+          trailIndices[vertIdx] = seg;
+          starSpeeds[vertIdx] = speed;
+          vertIdx++;
+          starIndices[vertIdx] = star;
+          trailIndices[vertIdx] = seg + 1;
+          starSpeeds[vertIdx] = speed;
+          vertIdx++;
+        }
+      }
+      
+      geo.setAttribute('starIndex', new THREE.BufferAttribute(starIndices, 1));
+      geo.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
+      geo.setAttribute('starSpeed', new THREE.BufferAttribute(starSpeeds, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uNumStars: { value: NUM_STARS },
+          uTrailSegments: { value: TRAIL_SEGMENTS }
+        },
+        vertexShader: `
+          attribute float starIndex;
+          attribute float trailIndex;
+          attribute float starSpeed;
+          
+          uniform float uTime;
+          uniform float uNumStars;
+          uniform float uTrailSegments;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          float hash2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          
+          void main() {
+            // Each star fires every ~8 seconds, staggered
+            float starInterval = 8.0;
+            float starOffset = starIndex * starInterval / uNumStars;
+            
+            float globalTime = uTime + starOffset;
+            float cycleIndex = floor(globalTime / starInterval);
+            float localTime = mod(globalTime, starInterval);
+            
+            // Random start position in sky for this cycle
+            float randX = hash(cycleIndex * 7.0 + starIndex * 13.0);
+            float randY = hash(cycleIndex * 11.0 + starIndex * 17.0);
+            float randZ = hash(cycleIndex * 19.0 + starIndex * 23.0);
+            
+            // Start high up and spread across sky
+            vec3 startPos = vec3(
+              (randX - 0.5) * 80.0 + 20.0,  // Shifted right so they enter from right
+              30.0 + randY * 30.0,           // High up
+              (randZ - 0.5) * 60.0 - 30.0    // Spread in Z, shifted back
+            );
+            
+            // Direction: down and to the left (negative X, negative Y)
+            vec3 direction = normalize(vec3(-1.0, -0.7, 0.3));
+            float speed = 25.0 * starSpeed;
+            
+            // Trail offset
+            float trailOffset = trailIndex * 0.02;
+            float t = localTime - trailOffset;
+            
+            // Visible for ~2 seconds
+            float lifetime = 2.5;
+            float life = t / lifetime;
+            
+            vec3 pos = startPos + direction * t * speed;
+            
+            // Trail fade
+            vTrailFade = 1.0 - (trailIndex / uTrailSegments);
+            vTrailFade = pow(max(vTrailFade, 0.0), 0.4);
+            
+            // Alpha
+            float fadeIn = smoothstep(0.0, 0.05, life);
+            float fadeOut = 1.0 - smoothstep(0.7, 1.0, life);
+            vAlpha = fadeIn * fadeOut * vTrailFade;
+            
+            if (t < 0.0 || life > 1.0) vAlpha = 0.0;
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          varying float vTrailFade;
+          
+          void main() {
+            if (vAlpha < 0.01) discard;
+            
+            // White/blue shooting star
+            vec3 white = vec3(1.0, 1.0, 1.0);
+            vec3 blue = vec3(0.7, 0.85, 1.0);
+            vec3 color = mix(blue, white, vTrailFade);
+            
+            gl_FragColor = vec4(color, vAlpha * 0.8);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.LineSegments(geo, mat);
+      mesh.frustumCulled = false;
+      return { mesh, material: mat };
+    }
+    
+    const shootingStars = createShootingStars();
+    scene.add(shootingStars.mesh);
 
     // Horizontal flowing fog - subtle and cloudlike
     function createFog() {
@@ -1027,10 +1408,13 @@
       return new THREE.Points(geo, mat);
     }
     const risingEnergy = createRisingEnergy();
-    scene.add(risingEnergy);
+    treeGroup.add(risingEnergy);
 
     // Camera animation state
     let cameraAnimation = null;
+    
+    // Rotation speed (controlled by slider)
+    let rotationSpeed = (DEFAULT_CONFIG.treeRotation / 100) * 0.05;
     
     // Animation
     function animate(time) {
@@ -1038,8 +1422,10 @@
       
       treeMat.uniforms.uTime.value = t;
       stars.material.uniforms.uTime.value = t;
+      moon.material.uniforms.uTime.value = t;
       risingEnergy.material.uniforms.uTime.value = t;
       tipSparks.material.uniforms.uTime.value = t;
+      shootingStars.material.uniforms.uTime.value = t;
       
       // Fog layers billboard - always face camera but don't rotate
       fogLayers.forEach(layer => {
@@ -1049,6 +1435,9 @@
       });
       
       etherealPass.uniforms.uTime.value = t;
+      
+      // Rotate the tree group slowly (stars stay fixed)
+      treeGroup.rotation.y = t * rotationSpeed;
       
       // Update camera animation if active
       if (cameraAnimation && cameraAnimation.active) {
@@ -1074,11 +1463,384 @@
     const btnRegenerate = document.getElementById('btnRegenerate');
     const btnTopDownZoom = document.getElementById('btnTopDownZoom');
     const btnResetCamera = document.getElementById('btnResetCamera');
+    const chkStars = document.getElementById('chkStars');
+    const chkRisingParticles = document.getElementById('chkRisingParticles');
+    const chkShootingStars = document.getElementById('chkShootingStars');
+    const sliderStarDensity = document.getElementById('sliderStarDensity');
+    const starDensityValue = document.getElementById('starDensityValue');
+    
+    // New slider references
+    const sliderRotation = document.getElementById('sliderRotation');
+    const rotationValue = document.getElementById('rotationValue');
+    const sliderBloom = document.getElementById('sliderBloom');
+    const bloomValue = document.getElementById('bloomValue');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const speedValue = document.getElementById('speedValue');
+    const sliderColorShift = document.getElementById('sliderColorShift');
+    const colorShiftValue = document.getElementById('colorShiftValue');
+    const sliderTrailBrightness = document.getElementById('sliderTrailBrightness');
+    const trailBrightnessValue = document.getElementById('trailBrightnessValue');
+    const sliderMoonPhase = document.getElementById('sliderMoonPhase');
+    const moonPhaseValue = document.getElementById('moonPhaseValue');
+    const sliderMoonRotation = document.getElementById('sliderMoonRotation');
+    const moonRotationValue = document.getElementById('moonRotationValue');
+    const sliderMoonOcclusion = document.getElementById('sliderMoonOcclusion');
+    const moonOcclusionValue = document.getElementById('moonOcclusionValue');
+    
+    // LocalStorage persistence
+    const STORAGE_KEY = 'particleForestSettings';
+    
+    // Get current config in the same format as DEFAULT_CONFIG
+    function getCurrentConfig() {
+      return {
+        starDensity: parseInt(sliderStarDensity.value),
+        treeRotation: parseInt(sliderRotation.value),
+        bloom: parseInt(sliderBloom.value),
+        particleSpeed: parseInt(sliderSpeed.value),
+        colorShift: parseInt(sliderColorShift.value),
+        trailBrightness: parseInt(sliderTrailBrightness.value),
+        moonPhase: parseInt(sliderMoonPhase.value),
+        moonRotation: parseInt(sliderMoonRotation.value),
+        moonOcclusion: parseInt(sliderMoonOcclusion.value),
+        showStars: chkStars.checked,
+        showRisingSparks: chkRisingParticles.checked,
+        showShootingStars: chkShootingStars.checked
+      };
+    }
+    
+    function saveSettings() {
+      const rect = debugPanel.getBoundingClientRect();
+      const settings = {
+        debugOpen: debugPanel.classList.contains('visible'),
+        panelX: debugPanel.style.left ? rect.left : null,
+        panelY: debugPanel.style.top ? rect.top : null,
+        chkStars: chkStars.checked,
+        chkRisingParticles: chkRisingParticles.checked,
+        chkShootingStars: chkShootingStars.checked,
+        starDensity: sliderStarDensity.value,
+        rotation: sliderRotation.value,
+        bloom: sliderBloom.value,
+        speed: sliderSpeed.value,
+        colorShift: sliderColorShift.value,
+        trailBrightness: sliderTrailBrightness.value,
+        moonPhase: sliderMoonPhase.value,
+        moonRotation: sliderMoonRotation.value,
+        moonOcclusion: sliderMoonOcclusion.value
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    }
+    
+    function loadSettings() {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      
+      // Always sync UI with current values (from DEFAULT_CONFIG or localStorage)
+      function applyConfig(config) {
+        // Sliders
+        sliderStarDensity.value = config.starDensity;
+        starDensityValue.textContent = config.starDensity + '%';
+        
+        sliderRotation.value = config.treeRotation;
+        rotationValue.textContent = config.treeRotation + '%';
+        
+        sliderBloom.value = config.bloom;
+        bloomValue.textContent = config.bloom + '%';
+        
+        sliderSpeed.value = config.particleSpeed;
+        speedValue.textContent = config.particleSpeed + '%';
+        
+        sliderColorShift.value = config.colorShift;
+        colorShiftValue.textContent = config.colorShift + '°';
+        
+        sliderTrailBrightness.value = config.trailBrightness;
+        trailBrightnessValue.textContent = config.trailBrightness + '%';
+        
+        sliderMoonPhase.value = config.moonPhase;
+        const phasePercent = config.moonPhase;
+        moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
+        
+        sliderMoonRotation.value = config.moonRotation;
+        moonRotationValue.textContent = config.moonRotation + '°';
+        
+        sliderMoonOcclusion.value = config.moonOcclusion;
+        moonOcclusionValue.textContent = config.moonOcclusion + '%';
+        
+        // Checkboxes
+        chkStars.checked = config.showStars;
+        stars.visible = config.showStars;
+        
+        chkRisingParticles.checked = config.showRisingSparks;
+        tipSparks.mesh.visible = config.showRisingSparks;
+        
+        chkShootingStars.checked = config.showShootingStars;
+        shootingStars.mesh.visible = config.showShootingStars;
+      }
+      
+      // Start with DEFAULT_CONFIG
+      applyConfig(DEFAULT_CONFIG);
+      
+      if (!saved) return;
+      
+      try {
+        const settings = JSON.parse(saved);
+        
+        // Debug panel visibility and position
+        if (settings.debugOpen) {
+          debugPanel.classList.add('visible');
+        }
+        if (settings.panelX !== null && settings.panelY !== null) {
+          debugPanel.style.left = settings.panelX + 'px';
+          debugPanel.style.top = settings.panelY + 'px';
+          debugPanel.style.right = 'auto';
+        }
+        
+        // Override with saved settings
+        if (settings.starDensity !== undefined) {
+          sliderStarDensity.value = settings.starDensity;
+          stars.material.uniforms.uDensity.value = settings.starDensity / 100;
+          starDensityValue.textContent = settings.starDensity + '%';
+        }
+        if (settings.rotation !== undefined) {
+          sliderRotation.value = settings.rotation;
+          rotationSpeed = (settings.rotation / 100) * 0.05;
+          rotationValue.textContent = settings.rotation + '%';
+        }
+        if (settings.bloom !== undefined) {
+          sliderBloom.value = settings.bloom;
+          bloomPass.strength = settings.bloom / 100;
+          bloomValue.textContent = settings.bloom + '%';
+        }
+        if (settings.speed !== undefined) {
+          sliderSpeed.value = settings.speed;
+          treeMat.uniforms.uSpeedMult.value = settings.speed / 100;
+          speedValue.textContent = settings.speed + '%';
+        }
+        if (settings.colorShift !== undefined) {
+          sliderColorShift.value = settings.colorShift;
+          treeMat.uniforms.uColorShift.value = settings.colorShift / 360;
+          colorShiftValue.textContent = settings.colorShift + '°';
+        }
+        if (settings.trailBrightness !== undefined) {
+          sliderTrailBrightness.value = settings.trailBrightness;
+          treeMat.uniforms.uBrightness.value = settings.trailBrightness / 100;
+          trailBrightnessValue.textContent = settings.trailBrightness + '%';
+        }
+        if (settings.moonPhase !== undefined) {
+          sliderMoonPhase.value = settings.moonPhase;
+          moon.material.uniforms.uPhase.value = settings.moonPhase / 100;
+          const phasePercent = parseInt(settings.moonPhase);
+          moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
+        }
+        if (settings.moonRotation !== undefined) {
+          sliderMoonRotation.value = settings.moonRotation;
+          moon.material.uniforms.uRotation.value = (settings.moonRotation / 360) * Math.PI * 2;
+          moonRotationValue.textContent = settings.moonRotation + '°';
+        }
+        if (settings.moonOcclusion !== undefined) {
+          sliderMoonOcclusion.value = settings.moonOcclusion;
+          moon.material.uniforms.uOcclusion.value = settings.moonOcclusion / 100;
+          moonOcclusionValue.textContent = settings.moonOcclusion + '%';
+        }
+        if (settings.chkStars !== undefined) {
+          chkStars.checked = settings.chkStars;
+          stars.visible = settings.chkStars;
+        }
+        if (settings.chkRisingParticles !== undefined) {
+          chkRisingParticles.checked = settings.chkRisingParticles;
+          tipSparks.mesh.visible = settings.chkRisingParticles;
+        }
+        if (settings.chkShootingStars !== undefined) {
+          chkShootingStars.checked = settings.chkShootingStars;
+          shootingStars.mesh.visible = settings.chkShootingStars;
+        }
+      } catch (e) {
+        console.error('Failed to load settings:', e);
+      }
+    }
+    
+    // Load saved settings on startup
+    loadSettings();
+    
+    // Toggle visibility checkboxes
+    chkStars.addEventListener('change', () => {
+      stars.visible = chkStars.checked;
+      saveSettings();
+    });
+    
+    // Star density slider
+    sliderStarDensity.addEventListener('input', () => {
+      const density = sliderStarDensity.value / 100;
+      stars.material.uniforms.uDensity.value = density;
+      starDensityValue.textContent = sliderStarDensity.value + '%';
+      saveSettings();
+    });
+    chkRisingParticles.addEventListener('change', () => {
+      tipSparks.mesh.visible = chkRisingParticles.checked;
+      saveSettings();
+    });
+    chkShootingStars.addEventListener('change', () => {
+      shootingStars.mesh.visible = chkShootingStars.checked;
+      saveSettings();
+    });
+    
+    // Tree rotation speed
+    sliderRotation.addEventListener('input', () => {
+      rotationSpeed = (sliderRotation.value / 100) * 0.05;
+      rotationValue.textContent = sliderRotation.value + '%';
+      saveSettings();
+    });
+    
+    // Bloom intensity
+    sliderBloom.addEventListener('input', () => {
+      bloomPass.strength = sliderBloom.value / 100;
+      bloomValue.textContent = sliderBloom.value + '%';
+      saveSettings();
+    });
+    
+    // Particle speed
+    sliderSpeed.addEventListener('input', () => {
+      treeMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100;
+      speedValue.textContent = sliderSpeed.value + '%';
+      saveSettings();
+    });
+    
+    // Color shift
+    sliderColorShift.addEventListener('input', () => {
+      const degrees = parseInt(sliderColorShift.value);
+      treeMat.uniforms.uColorShift.value = degrees / 360;
+      colorShiftValue.textContent = degrees + '°';
+      saveSettings();
+    });
+    
+    // Trail brightness
+    sliderTrailBrightness.addEventListener('input', () => {
+      treeMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100;
+      trailBrightnessValue.textContent = sliderTrailBrightness.value + '%';
+      saveSettings();
+    });
+    
+    // Moon phase
+    sliderMoonPhase.addEventListener('input', () => {
+      const phase = sliderMoonPhase.value / 100;
+      moon.material.uniforms.uPhase.value = phase;
+      const phasePercent = parseInt(sliderMoonPhase.value);
+      moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
+      saveSettings();
+    });
+    
+    // Moon rotation
+    sliderMoonRotation.addEventListener('input', () => {
+      const degrees = parseInt(sliderMoonRotation.value);
+      moon.material.uniforms.uRotation.value = (degrees / 360) * Math.PI * 2;
+      moonRotationValue.textContent = degrees + '°';
+      saveSettings();
+    });
+    
+    // Moon occlusion size
+    sliderMoonOcclusion.addEventListener('input', () => {
+      moon.material.uniforms.uOcclusion.value = sliderMoonOcclusion.value / 100;
+      moonOcclusionValue.textContent = sliderMoonOcclusion.value + '%';
+      saveSettings();
+    });
     
     // Toggle debug panel with 'D' key
     window.addEventListener('keydown', (e) => {
       if (e.key === 'd' || e.key === 'D') {
         debugPanel.classList.toggle('visible');
+        saveSettings();
+      }
+    });
+    
+    // Make debug panel draggable
+    const panelHeader = debugPanel.querySelector('h3');
+    let isDragging = false;
+    let dragStartX, dragStartY, panelStartX, panelStartY;
+    
+    panelHeader.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      debugPanel.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = debugPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      e.preventDefault();
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      let newX = panelStartX + dx;
+      let newY = panelStartY + dy;
+      
+      // Keep panel on screen
+      const rect = debugPanel.getBoundingClientRect();
+      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
+      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
+      
+      debugPanel.style.left = newX + 'px';
+      debugPanel.style.top = newY + 'px';
+      debugPanel.style.right = 'auto';
+    });
+    
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        debugPanel.classList.remove('dragging');
+        saveSettings();
+      }
+    });
+    
+    // Dev tools buttons
+    const btnCopyConfig = document.getElementById('btnCopyConfig');
+    const btnReload = document.getElementById('btnReload');
+    const chkLiveReload = document.getElementById('chkLiveReload');
+    let liveReloadInterval = null;
+    
+    btnCopyConfig.addEventListener('click', async () => {
+      const config = getCurrentConfig();
+      const configStr = `const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};`;
+      try {
+        await navigator.clipboard.writeText(configStr);
+        btnCopyConfig.textContent = 'Copied!';
+        setTimeout(() => {
+          btnCopyConfig.textContent = 'Copy Config to Clipboard';
+        }, 1500);
+      } catch (e) {
+        // Fallback: show in console
+        console.log('Copy this to DEFAULT_CONFIG:\n', configStr);
+        btnCopyConfig.textContent = 'Check Console';
+        setTimeout(() => {
+          btnCopyConfig.textContent = 'Copy Config to Clipboard';
+        }, 1500);
+      }
+    });
+    
+    btnReload.addEventListener('click', () => {
+      location.reload();
+    });
+    
+    chkLiveReload.addEventListener('change', () => {
+      if (chkLiveReload.checked) {
+        // Start polling for file changes
+        let lastModified = null;
+        liveReloadInterval = setInterval(async () => {
+          try {
+            const response = await fetch(location.href, { method: 'HEAD' });
+            const modified = response.headers.get('last-modified');
+            if (lastModified && modified !== lastModified) {
+              location.reload();
+            }
+            lastModified = modified;
+          } catch (e) {
+            // Ignore fetch errors
+          }
+        }, 2000);
+      } else {
+        if (liveReloadInterval) {
+          clearInterval(liveReloadInterval);
+          liveReloadInterval = null;
+        }
       }
     });
     
@@ -1213,7 +1975,6 @@
       }
       
       controls.enabled = true;
-      controls.autoRotate = true;
       camera.position.set(0, 10, 35);
       camera.lookAt(0, 12, 0);
       controls.target.set(0, 10, 0);
