@@ -52,6 +52,10 @@
       stir: 0,
       seed: (Math.random() * 1e9) | 0,
       reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false,
+      drawStride: 2,
+      drawOffset: 0,
+      avgCostMs: 0,
+      lastTuneAt: 0,
     };
 
     function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
@@ -77,7 +81,8 @@
     function resize() {
       const w = Math.max(1, window.innerWidth | 0);
       const h = Math.max(1, window.innerHeight | 0);
-      const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+      // Cap DPR lower to keep CPU+memory stable in software-rendered environments.
+      const dpr = clamp(window.devicePixelRatio || 1, 1, 1.5);
       state.w = w; state.h = h; state.dpr = dpr;
       canvas.width = Math.floor(w * dpr);
       canvas.height = Math.floor(h * dpr);
@@ -90,8 +95,9 @@
     let particles = [];
     function initParticles() {
       const area = state.w * state.h;
-      const base = clamp(Math.floor(area / 5000), 12000, 52000);
-      const count = state.reduceMotion ? Math.floor(base * 0.35) : base;
+      // Keep this sketch stable even without GPU acceleration.
+      const base = clamp(Math.floor(area / 11000), 6000, 22000);
+      const count = state.reduceMotion ? Math.floor(base * 0.45) : base;
       particles = new Array(count);
       for (let i = 0; i < count; i++) {
         particles[i] = {
@@ -108,6 +114,10 @@
       // Start with a subtle vignette background.
       ctx.fillStyle = '#07070a';
       ctx.fillRect(0, 0, state.w, state.h);
+      state.drawStride = state.reduceMotion ? 3 : 2;
+      state.drawOffset = 0;
+      state.avgCostMs = 0;
+      state.lastTuneAt = performance.now();
     }
 
     function flowAngle(x, y, t) {
@@ -138,11 +148,12 @@
     }
 
     function step(dt) {
+      const t0 = performance.now();
       state.t += dt;
 
       // Gentle persistence/fade.
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(7,7,10,0.06)';
+      ctx.fillStyle = 'rgba(7,7,10,0.08)';
       ctx.fillRect(0, 0, state.w, state.h);
 
       // Additive strokes.
@@ -153,7 +164,12 @@
       const speed = state.reduceMotion ? 0.9 : 1.35;
       const jitter = state.reduceMotion ? 0.05 : 0.12;
 
-      for (let i = 0; i < particles.length; i++) {
+      const stride = state.drawStride;
+      // Rotate which subset is updated/drawn each frame for stability.
+      const startIdx = (state.drawOffset % stride + stride) % stride;
+      state.drawOffset = (state.drawOffset + 1) % stride;
+
+      for (let i = startIdx; i < particles.length; i += stride) {
         const p = particles[i];
         p.px = p.x; p.py = p.y;
         const a = flowAngle(p.x, p.y, state.t);
@@ -179,7 +195,7 @@
 
         // Hue slowly drifts with flow.
         p.h = (p.h + 0.0008 + 0.00035 * vx) % 1;
-        const alpha = 0.10 + 0.12 * (0.5 + 0.5 * vy);
+        const alpha = 0.06 + 0.10 * (0.5 + 0.5 * vy);
 
         ctx.strokeStyle = colorFor(p.h);
         ctx.globalAlpha = alpha;
@@ -195,6 +211,26 @@
 
       // Decay stir.
       state.stir *= 0.94;
+
+      // Adaptive quality tuning to avoid renderer crashes in constrained environments.
+      const cost = performance.now() - t0;
+      state.avgCostMs = state.avgCostMs * 0.9 + cost * 0.1;
+      const now = performance.now();
+      if (now - state.lastTuneAt > 750) {
+        state.lastTuneAt = now;
+        if (state.avgCostMs > 20 && state.drawStride < 5) {
+          state.drawStride += 1;
+          state.drawOffset = 0;
+        }
+        if (state.avgCostMs > 28 && particles.length > 7000) {
+          const nextCount = Math.max(6500, Math.floor(particles.length * 0.85));
+          particles = particles.slice(0, nextCount);
+        }
+        if (state.avgCostMs < 12 && state.drawStride > 1) {
+          state.drawStride -= 1;
+          state.drawOffset = 0;
+        }
+      }
     }
 
     function onPointer(e) {

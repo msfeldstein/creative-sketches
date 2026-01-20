@@ -35,219 +35,442 @@
   </div>
 
   <script type="module">
-    import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-
     const canvas = document.getElementById('c');
-    const renderer = new THREE.WebGLRenderer({
-      canvas,
-      antialias: true,
-      alpha: true,
-      powerPreference: 'high-performance',
-    });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setClearColor(0x000000, 0);
+    const hintEl = document.querySelector('.hud .hint');
 
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x050508, 0.06);
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function smoothstep(t) { return t * t * (3 - 2 * t); }
 
-    const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
-    camera.position.set(0, 0.9, 6.5);
+    function runCanvasFallback() {
+      // Fallback for environments without a usable WebGL context (e.g. llvmpipe / blocked GPU).
+      if (hintEl) hintEl.textContent = 'Drag to drift • Scroll to zoom • Space to shuffle';
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.06;
-    controls.rotateSpeed = 0.55;
-    controls.zoomSpeed = 0.9;
-    controls.minDistance = 3.4;
-    controls.maxDistance = 11;
-    controls.target.set(0, 0, 0);
+      const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
+      const state = {
+        w: 1, h: 1, dpr: 1,
+        yaw: 0.2, pitch: 0.12,
+        vyaw: 0, vpitch: 0,
+        zoom: 1.0,
+        dragging: false,
+        lx: 0, ly: 0,
+        seed: (Math.random() * 1e9) | 0,
+        t: 0,
+        reduceMotion: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ?? false,
+      };
 
-    // Lights
-    const ambient = new THREE.AmbientLight(0xffffff, 0.18);
-    scene.add(ambient);
-    const key = new THREE.DirectionalLight(0xffffff, 1.25);
-    key.position.set(3, 4, 2);
-    scene.add(key);
-    const rim = new THREE.DirectionalLight(0x88aaff, 0.8);
-    rim.position.set(-4, 1, -3);
-    scene.add(rim);
-
-    // Background star dust
-    const starGeo = new THREE.BufferGeometry();
-    const starCount = 1600;
-    const starPos = new Float32Array(starCount * 3);
-    for (let i = 0; i < starCount; i++) {
-      const r = 22 * Math.pow(Math.random(), 0.55);
-      const a = Math.random() * Math.PI * 2;
-      const b = (Math.random() - 0.5) * Math.PI;
-      starPos[i * 3 + 0] = Math.cos(a) * Math.cos(b) * r;
-      starPos[i * 3 + 1] = Math.sin(b) * r * 0.65;
-      starPos[i * 3 + 2] = Math.sin(a) * Math.cos(b) * r;
-    }
-    starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-    const starMat = new THREE.PointsMaterial({
-      color: 0xaab7ff,
-      size: 0.02,
-      transparent: true,
-      opacity: 0.35,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const stars = new THREE.Points(starGeo, starMat);
-    scene.add(stars);
-
-    // Central "core" glow sphere.
-    const core = new THREE.Mesh(
-      new THREE.SphereGeometry(0.18, 64, 64),
-      new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0x8ad0ff,
-        emissiveIntensity: 1.5,
-        metalness: 0.1,
-        roughness: 0.2,
-      })
-    );
-    scene.add(core);
-
-    // Instanced orbit ribbons (torus segments).
-    const ringCount = 220;
-    const ringGeo = new THREE.TorusGeometry(1, 0.018, 16, 220);
-    const ringMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      metalness: 0.85,
-      roughness: 0.22,
-      transparent: true,
-      opacity: 0.85,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
-    const rings = new THREE.InstancedMesh(ringGeo, ringMat, ringCount);
-    rings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    scene.add(rings);
-
-    const ringColor = new THREE.InstancedBufferAttribute(new Float32Array(ringCount * 3), 3);
-    rings.instanceColor = ringColor;
-
-    const tmpMat = new THREE.Matrix4();
-    const tmpQ = new THREE.Quaternion();
-    const tmpS = new THREE.Vector3();
-    const tmpP = new THREE.Vector3();
-
-    const params = { seed: (Math.random() * 1e9) | 0, phase: 0 };
-    function rand(i) {
-      // Deterministic RNG from seed + i.
-      let n = (params.seed ^ (i * 2654435761)) >>> 0;
-      n = (n ^ (n >>> 16)) * 2246822507;
-      n = (n ^ (n >>> 13)) * 3266489909;
-      return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
-    }
-    function palette(t) {
-      // cosine palette
-      const a = 0.55, b = 0.45;
-      const r = a + b * Math.cos(Math.PI * 2 * (t + 0.00));
-      const g = a + b * Math.cos(Math.PI * 2 * (t + 0.33));
-      const bb = a + b * Math.cos(Math.PI * 2 * (t + 0.67));
-      return [r, g, bb];
-    }
-    function rebuild() {
-      for (let i = 0; i < ringCount; i++) {
-        const u = i / (ringCount - 1);
-        const radius = 0.55 + 2.0 * Math.pow(rand(i), 1.6);
-        const thickness = 0.65 + 1.55 * Math.pow(rand(i + 31), 1.2);
-
-        const ax = (rand(i + 97) * 2 - 1) * Math.PI;
-        const ay = (rand(i + 193) * 2 - 1) * Math.PI;
-        const az = (rand(i + 307) * 2 - 1) * Math.PI;
-        tmpQ.setFromEuler(new THREE.Euler(ax, ay, az));
-
-        tmpP.set(0, (rand(i + 811) * 2 - 1) * 0.12, 0);
-        tmpS.set(radius, radius, radius);
-        tmpMat.compose(tmpP, tmpQ, tmpS);
-        rings.setMatrixAt(i, tmpMat);
-
-        const [cr, cg, cb] = palette((u + rand(i + 509) * 0.22) % 1);
-        ringColor.setXYZ(i, cr, cg, cb);
-
-        // Per-instance opacity gradient by scaling the core material a bit.
-        // (Actual opacity is global; color intensity gives the gradient feel.)
+      function rand(i) {
+        let n = (state.seed ^ (i * 2654435761)) >>> 0;
+        n = (n ^ (n >>> 16)) * 2246822507;
+        n = (n ^ (n >>> 13)) * 3266489909;
+        return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
       }
-      ringColor.needsUpdate = true;
-      rings.instanceMatrix.needsUpdate = true;
-    }
-    rebuild();
+      function palette(t) {
+        const a = 0.55, b = 0.45;
+        const r = a + b * Math.cos(Math.PI * 2 * (t + 0.00));
+        const g = a + b * Math.cos(Math.PI * 2 * (t + 0.33));
+        const bb = a + b * Math.cos(Math.PI * 2 * (t + 0.67));
+        return [r, g, bb];
+      }
 
-    // Soft "halo" plane using a small generated canvas texture.
-    function makeHaloTexture() {
-      const size = 256;
-      const c = document.createElement('canvas');
-      c.width = size; c.height = size;
-      const g = c.getContext('2d');
-      const grad = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-      grad.addColorStop(0.0, 'rgba(255,255,255,0.95)');
-      grad.addColorStop(0.20, 'rgba(170,220,255,0.55)');
-      grad.addColorStop(0.55, 'rgba(120,110,255,0.22)');
-      grad.addColorStop(1.0, 'rgba(0,0,0,0)');
-      g.fillStyle = grad;
-      g.fillRect(0, 0, size, size);
-      const tex = new THREE.CanvasTexture(c);
-      tex.colorSpace = THREE.SRGBColorSpace;
-      return tex;
+      let rings = [];
+      let stars = [];
+
+      function rebuild() {
+        const ringCount = state.reduceMotion ? 90 : 140;
+        rings = new Array(ringCount);
+        for (let i = 0; i < ringCount; i++) {
+          const u = i / (ringCount - 1);
+          const r = 0.45 + 1.9 * Math.pow(rand(i + 1), 1.55);
+          const tilt = (rand(i + 97) * 2 - 1) * 0.9;
+          const roll = (rand(i + 193) * 2 - 1) * Math.PI;
+          const width = 0.7 + 1.6 * Math.pow(rand(i + 31), 1.2);
+          const hue = (u + rand(i + 509) * 0.22) % 1;
+          rings[i] = { r, tilt, roll, width, hue, u };
+        }
+
+        const starCount = state.reduceMotion ? 600 : 900;
+        stars = new Array(starCount);
+        for (let i = 0; i < starCount; i++) {
+          const rr = 1.2 + 12 * Math.pow(rand(i + 3001), 0.58);
+          const a = rand(i + 4001) * Math.PI * 2;
+          const b = (rand(i + 5001) - 0.5) * Math.PI;
+          stars[i] = { x: Math.cos(a) * Math.cos(b) * rr, y: Math.sin(b) * rr * 0.65, z: Math.sin(a) * Math.cos(b) * rr };
+        }
+      }
+
+      function resize() {
+        const w = Math.max(1, window.innerWidth | 0);
+        const h = Math.max(1, window.innerHeight | 0);
+        const dpr = clamp(window.devicePixelRatio || 1, 1, 2);
+        state.w = w; state.h = h; state.dpr = dpr;
+        canvas.width = Math.floor(w * dpr);
+        canvas.height = Math.floor(h * dpr);
+        canvas.style.width = w + 'px';
+        canvas.style.height = h + 'px';
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function project(p) {
+        // Simple yaw/pitch rotation + perspective-ish projection.
+        let x = p.x, y = p.y, z = p.z;
+        const cy = Math.cos(state.yaw), sy = Math.sin(state.yaw);
+        const cp = Math.cos(state.pitch), sp = Math.sin(state.pitch);
+        // yaw
+        let x1 = x * cy - z * sy;
+        let z1 = x * sy + z * cy;
+        // pitch
+        let y2 = y * cp - z1 * sp;
+        let z2 = y * sp + z1 * cp;
+        const k = 1 / (1 + z2 * 0.09);
+        return { x: x1 * k, y: y2 * k, k };
+      }
+
+      function draw(now) {
+        const dt = Math.min(0.05, (now - (state._last || now)) / 1000);
+        state._last = now;
+        state.t += dt;
+
+        // Inertia.
+        state.yaw += state.vyaw;
+        state.pitch = clamp(state.pitch + state.vpitch, -1.1, 1.1);
+        state.vyaw *= 0.92;
+        state.vpitch *= 0.92;
+
+        const w = state.w, h = state.h;
+        const cx = w * 0.5, cy = h * 0.52;
+        const scale = Math.min(w, h) * 0.16 * state.zoom;
+
+        // Background.
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = '#050508';
+        ctx.fillRect(0, 0, w, h);
+        const vign = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(w, h) * 0.7);
+        vign.addColorStop(0, 'rgba(20,12,26,0.85)');
+        vign.addColorStop(0.55, 'rgba(6,6,10,0.95)');
+        vign.addColorStop(1, 'rgba(2,2,5,1)');
+        ctx.fillStyle = vign;
+        ctx.fillRect(0, 0, w, h);
+
+        // Stars.
+        ctx.globalAlpha = 0.55;
+        for (let i = 0; i < stars.length; i++) {
+          const s = stars[i];
+          const p = project({ x: s.x, y: s.y, z: s.z + Math.sin(state.t * 0.18) * 0.3 });
+          const sx = cx + p.x * scale * 2.1;
+          const sy = cy + p.y * scale * 2.1;
+          const a = 0.12 + 0.35 * smoothstep(clamp(1 - Math.abs(p.k - 1), 0, 1));
+          ctx.fillStyle = `rgba(170,185,255,${a})`;
+          ctx.fillRect(sx, sy, 1, 1);
+        }
+        ctx.globalAlpha = 1;
+
+        // Core glow.
+        ctx.globalCompositeOperation = 'lighter';
+        const coreR = 22 * state.zoom;
+        const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR * 2.4);
+        cg.addColorStop(0, 'rgba(255,255,255,0.75)');
+        cg.addColorStop(0.25, 'rgba(138,208,255,0.35)');
+        cg.addColorStop(0.55, 'rgba(120,110,255,0.12)');
+        cg.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = cg;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreR * 2.4, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Rings (sorted by pseudo-depth).
+        const ringPhase = state.t * 0.55;
+        const sorted = rings
+          .map((r) => {
+            const z = Math.sin(r.roll + ringPhase) * 0.8 + Math.cos(r.tilt) * 0.3;
+            return { ...r, z };
+          })
+          .sort((a, b) => a.z - b.z);
+
+        for (let i = 0; i < sorted.length; i++) {
+          const r = sorted[i];
+          const [cr, cg2, cb] = palette(r.hue);
+          const alpha = 0.08 + 0.18 * (0.5 + 0.5 * r.z);
+          ctx.strokeStyle = `rgba(${Math.floor(cr*255)},${Math.floor(cg2*255)},${Math.floor(cb*255)},${alpha})`;
+          ctx.lineWidth = 1 + (r.width * 0.15) * state.zoom;
+          ctx.beginPath();
+          const tilt = r.tilt + state.pitch * 0.45;
+          const roll = r.roll + ringPhase + state.yaw * 0.22;
+          const ex = (Math.cos(roll) * 0.35);
+          const ey = (Math.sin(roll) * 0.22);
+          ctx.ellipse(
+            cx + ex * scale,
+            cy + ey * scale,
+            r.r * scale * (1.02 + 0.04 * Math.sin(state.t * 1.3)),
+            r.r * scale * (0.46 + 0.26 * Math.cos(tilt)),
+            roll,
+            0,
+            Math.PI * 2
+          );
+          ctx.stroke();
+        }
+
+        // Reset composite.
+        ctx.globalCompositeOperation = 'source-over';
+        requestAnimationFrame(draw);
+      }
+
+      window.addEventListener('resize', resize);
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+          state.seed = (Math.random() * 1e9) | 0;
+          rebuild();
+        }
+      });
+      window.addEventListener('pointerdown', (e) => {
+        state.dragging = true;
+        state.lx = e.clientX;
+        state.ly = e.clientY;
+      }, { passive: true });
+      window.addEventListener('pointerup', () => { state.dragging = false; }, { passive: true });
+      window.addEventListener('pointermove', (e) => {
+        if (!state.dragging) return;
+        const dx = e.clientX - state.lx;
+        const dy = e.clientY - state.ly;
+        state.lx = e.clientX;
+        state.ly = e.clientY;
+        state.vyaw += dx * 0.0022;
+        state.vpitch += dy * 0.0019;
+      }, { passive: true });
+      window.addEventListener('wheel', (e) => {
+        const delta = Math.sign(e.deltaY);
+        state.zoom = clamp(state.zoom * (delta > 0 ? 0.93 : 1.07), 0.65, 1.55);
+      }, { passive: true });
+
+      resize();
+      rebuild();
+      requestAnimationFrame(draw);
     }
 
-    const halo = new THREE.Mesh(
-      new THREE.PlaneGeometry(6.5, 6.5),
-      new THREE.MeshBasicMaterial({
-        map: makeHaloTexture(),
+    async function run() {
+      // Try WebGL first. If context creation fails (common in headless/llvmpipe), fallback to 2D.
+      let THREE, OrbitControls;
+      try {
+        THREE = await import('three');
+        ({ OrbitControls } = await import('three/addons/controls/OrbitControls.js'));
+      } catch {
+        runCanvasFallback();
+        return;
+      }
+
+      let renderer;
+      try {
+        renderer = new THREE.WebGLRenderer({
+          canvas,
+          antialias: true,
+          alpha: true,
+          powerPreference: 'high-performance',
+          failIfMajorPerformanceCaveat: true,
+        });
+      } catch {
+        runCanvasFallback();
+        return;
+      }
+
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+      renderer.setClearColor(0x000000, 0);
+
+      const scene = new THREE.Scene();
+      scene.fog = new THREE.FogExp2(0x050508, 0.06);
+
+      const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 120);
+      camera.position.set(0, 0.9, 6.5);
+
+      const controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.06;
+      controls.rotateSpeed = 0.55;
+      controls.zoomSpeed = 0.9;
+      controls.minDistance = 3.4;
+      controls.maxDistance = 11;
+      controls.target.set(0, 0, 0);
+
+      // Lights
+      const ambient = new THREE.AmbientLight(0xffffff, 0.18);
+      scene.add(ambient);
+      const key = new THREE.DirectionalLight(0xffffff, 1.25);
+      key.position.set(3, 4, 2);
+      scene.add(key);
+      const rim = new THREE.DirectionalLight(0x88aaff, 0.8);
+      rim.position.set(-4, 1, -3);
+      scene.add(rim);
+
+      // Background star dust
+      const starGeo = new THREE.BufferGeometry();
+      const starCount = 1600;
+      const starPos = new Float32Array(starCount * 3);
+      for (let i = 0; i < starCount; i++) {
+        const r = 22 * Math.pow(Math.random(), 0.55);
+        const a = Math.random() * Math.PI * 2;
+        const b = (Math.random() - 0.5) * Math.PI;
+        starPos[i * 3 + 0] = Math.cos(a) * Math.cos(b) * r;
+        starPos[i * 3 + 1] = Math.sin(b) * r * 0.65;
+        starPos[i * 3 + 2] = Math.sin(a) * Math.cos(b) * r;
+      }
+      starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+      const starMat = new THREE.PointsMaterial({
+        color: 0xaab7ff,
+        size: 0.02,
         transparent: true,
         opacity: 0.35,
         depthWrite: false,
         blending: THREE.AdditiveBlending,
-      })
-    );
-    halo.rotation.x = Math.PI * 0.5;
-    scene.add(halo);
+      });
+      const stars = new THREE.Points(starGeo, starMat);
+      scene.add(stars);
 
-    function resize() {
-      const w = Math.max(1, window.innerWidth | 0);
-      const h = Math.max(1, window.innerHeight | 0);
-      renderer.setSize(w, h, false);
-      camera.aspect = w / h;
-      camera.updateProjectionMatrix();
-    }
-    window.addEventListener('resize', resize);
-    resize();
+      // Central "core" glow sphere.
+      const core = new THREE.Mesh(
+        new THREE.SphereGeometry(0.18, 64, 64),
+        new THREE.MeshStandardMaterial({
+          color: 0xffffff,
+          emissive: 0x8ad0ff,
+          emissiveIntensity: 1.5,
+          metalness: 0.1,
+          roughness: 0.2,
+        })
+      );
+      scene.add(core);
 
-    window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space') {
-        params.seed = (Math.random() * 1e9) | 0;
-        rebuild();
+      // Instanced orbit ribbons (torus segments).
+      const ringCount = 220;
+      const ringGeo = new THREE.TorusGeometry(1, 0.018, 16, 220);
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 0.85,
+        roughness: 0.22,
+        transparent: true,
+        opacity: 0.85,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const rings = new THREE.InstancedMesh(ringGeo, ringMat, ringCount);
+      rings.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      scene.add(rings);
+
+      const ringColor = new THREE.InstancedBufferAttribute(new Float32Array(ringCount * 3), 3);
+      rings.instanceColor = ringColor;
+
+      const tmpMat = new THREE.Matrix4();
+      const tmpQ = new THREE.Quaternion();
+      const tmpS = new THREE.Vector3();
+      const tmpP = new THREE.Vector3();
+
+      const params = { seed: (Math.random() * 1e9) | 0, phase: 0 };
+      function rand(i) {
+        let n = (params.seed ^ (i * 2654435761)) >>> 0;
+        n = (n ^ (n >>> 16)) * 2246822507;
+        n = (n ^ (n >>> 13)) * 3266489909;
+        return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
       }
-    });
+      function palette(t) {
+        const a = 0.55, b = 0.45;
+        const r = a + b * Math.cos(Math.PI * 2 * (t + 0.00));
+        const g = a + b * Math.cos(Math.PI * 2 * (t + 0.33));
+        const bb = a + b * Math.cos(Math.PI * 2 * (t + 0.67));
+        return [r, g, bb];
+      }
+      function rebuild() {
+        for (let i = 0; i < ringCount; i++) {
+          const u = i / (ringCount - 1);
+          const radius = 0.55 + 2.0 * Math.pow(rand(i), 1.6);
 
-    const clock = new THREE.Clock();
-    function animate() {
-      const dt = Math.min(0.05, clock.getDelta());
-      params.phase += dt;
-      controls.update();
+          const ax = (rand(i + 97) * 2 - 1) * Math.PI;
+          const ay = (rand(i + 193) * 2 - 1) * Math.PI;
+          const az = (rand(i + 307) * 2 - 1) * Math.PI;
+          tmpQ.setFromEuler(new THREE.Euler(ax, ay, az));
 
-      stars.rotation.y += dt * 0.03;
-      stars.rotation.x += dt * 0.01;
+          tmpP.set(0, (rand(i + 811) * 2 - 1) * 0.12, 0);
+          tmpS.set(radius, radius, radius);
+          tmpMat.compose(tmpP, tmpQ, tmpS);
+          rings.setMatrixAt(i, tmpMat);
 
-      core.rotation.y += dt * 0.7;
-      core.rotation.x += dt * 0.4;
-      halo.material.opacity = 0.28 + 0.10 * Math.sin(params.phase * 0.9);
+          const [cr, cg, cb] = palette((u + rand(i + 509) * 0.22) % 1);
+          ringColor.setXYZ(i, cr, cg, cb);
+        }
+        ringColor.needsUpdate = true;
+        rings.instanceMatrix.needsUpdate = true;
+      }
+      rebuild();
 
-      // Ring breathing + slow global precession.
-      rings.rotation.y += dt * 0.08;
-      rings.rotation.x += dt * 0.03;
-      const breathe = 1.0 + 0.04 * Math.sin(params.phase * 1.35);
-      rings.scale.setScalar(breathe);
+      // Soft "halo" plane using a small generated canvas texture.
+      function makeHaloTexture() {
+        const size = 256;
+        const c = document.createElement('canvas');
+        c.width = size; c.height = size;
+        const g = c.getContext('2d');
+        const grad = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+        grad.addColorStop(0.0, 'rgba(255,255,255,0.95)');
+        grad.addColorStop(0.20, 'rgba(170,220,255,0.55)');
+        grad.addColorStop(0.55, 'rgba(120,110,255,0.22)');
+        grad.addColorStop(1.0, 'rgba(0,0,0,0)');
+        g.fillStyle = grad;
+        g.fillRect(0, 0, size, size);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+      }
 
-      renderer.render(scene, camera);
+      const halo = new THREE.Mesh(
+        new THREE.PlaneGeometry(6.5, 6.5),
+        new THREE.MeshBasicMaterial({
+          map: makeHaloTexture(),
+          transparent: true,
+          opacity: 0.35,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        })
+      );
+      halo.rotation.x = Math.PI * 0.5;
+      scene.add(halo);
+
+      function resize() {
+        const w = Math.max(1, window.innerWidth | 0);
+        const h = Math.max(1, window.innerHeight | 0);
+        renderer.setSize(w, h, false);
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+      }
+      window.addEventListener('resize', resize);
+      resize();
+
+      window.addEventListener('keydown', (e) => {
+        if (e.code === 'Space') {
+          params.seed = (Math.random() * 1e9) | 0;
+          rebuild();
+        }
+      });
+
+      const clock = new THREE.Clock();
+      function animate() {
+        const dt = Math.min(0.05, clock.getDelta());
+        params.phase += dt;
+        controls.update();
+
+        stars.rotation.y += dt * 0.03;
+        stars.rotation.x += dt * 0.01;
+
+        core.rotation.y += dt * 0.7;
+        core.rotation.x += dt * 0.4;
+        halo.material.opacity = 0.28 + 0.10 * Math.sin(params.phase * 0.9);
+
+        // Ring breathing + slow global precession.
+        rings.rotation.y += dt * 0.08;
+        rings.rotation.x += dt * 0.03;
+        const breathe = 1.0 + 0.04 * Math.sin(params.phase * 1.35);
+        rings.scale.setScalar(breathe);
+
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+      }
       requestAnimationFrame(animate);
     }
-    requestAnimationFrame(animate);
+
+    run();
   </script>
 </body>
 </html>
