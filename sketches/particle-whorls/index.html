@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Particle Whorls</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      overflow: hidden;
+      background: #050508;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      color: rgba(255,255,255,0.85);
+    }
+    canvas { display: block; }
+    .hud {
+      position: fixed;
+      left: 16px;
+      bottom: 16px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.55);
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(8px);
+      font-size: 12px;
+      line-height: 1.35;
+      letter-spacing: 0.01em;
+      user-select: none;
+      pointer-events: none;
+      max-width: min(520px, calc(100vw - 32px));
+    }
+    .hud strong { font-weight: 650; color: rgba(255,255,255,0.95); }
+    .hud kbd {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      font-size: 11px;
+      padding: 2px 6px;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.08);
+      border: 1px solid rgba(255,255,255,0.10);
+    }
+  </style>
+</head>
+<body>
+  <div class="hud">
+    <div><strong>Particle Whorls</strong> — flow-field vortices + gentle trails.</div>
+    <div>Move the mouse to “stir” a vortex. Click to seed a burst. Press <kbd>R</kbd> to reshuffle.</div>
+  </div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+      }
+    }
+  </script>
+
+  <script type="module">
+    import * as THREE from 'three';
+
+    // --------------------------------------------
+    // Renderer / Scenes
+    // --------------------------------------------
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setClearColor(0x050508, 1);
+    renderer.autoClear = false;
+    document.body.appendChild(renderer.domElement);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, -10, 10);
+    camera.position.z = 1;
+
+    // Fade pass: draw a translucent fullscreen quad each frame.
+    const fadeScene = new THREE.Scene();
+    const fadeCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const fadeMaterial = new THREE.MeshBasicMaterial({
+      color: 0x050508,
+      transparent: true,
+      opacity: 0.075, // lower = longer trails
+      depthWrite: false,
+      depthTest: false
+    });
+    const fadeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fadeMaterial);
+    fadeScene.add(fadeQuad);
+
+    // --------------------------------------------
+    // Coordinate helpers
+    // --------------------------------------------
+    let aspect = window.innerWidth / window.innerHeight;
+    function setCameraFrustum() {
+      aspect = window.innerWidth / window.innerHeight;
+      if (aspect >= 1) {
+        camera.left = -aspect;
+        camera.right = aspect;
+        camera.top = 1;
+        camera.bottom = -1;
+      } else {
+        camera.left = -1;
+        camera.right = 1;
+        camera.top = 1 / aspect;
+        camera.bottom = -1 / aspect;
+      }
+      camera.updateProjectionMatrix();
+    }
+    setCameraFrustum();
+
+    function ndcToWorld(xNdc, yNdc) {
+      // NDC [-1..1] -> orthographic world
+      const x = THREE.MathUtils.lerp(camera.left, camera.right, (xNdc + 1) * 0.5);
+      const y = THREE.MathUtils.lerp(camera.bottom, camera.top, (yNdc + 1) * 0.5);
+      return { x, y };
+    }
+
+    // --------------------------------------------
+    // Flow field (fast "curl-ish" field + vortices)
+    // --------------------------------------------
+    function smoothstep(edge0, edge1, x) {
+      const t = THREE.MathUtils.clamp((x - edge0) / (edge1 - edge0), 0, 1);
+      return t * t * (3 - 2 * t);
+    }
+
+    function hash1(n) {
+      // Deterministic pseudo-random in [0,1)
+      return (Math.sin(n * 127.1) * 43758.5453123) % 1 + 1;
+    }
+
+    function fract(x) {
+      return x - Math.floor(x);
+    }
+
+    function rand01(n) {
+      return fract(Math.sin(n) * 43758.5453123);
+    }
+
+    function baseField(x, y, t, freq) {
+      // A cheap, smooth field with some curl-like behavior.
+      // The "v = (b, -a)" trick creates swirling motion without heavy noise.
+      const a =
+        Math.sin(x * freq + t * 0.55) +
+        Math.cos(y * freq * 1.33 - t * 0.41) +
+        Math.sin((x + y) * freq * 0.65 + t * 0.22) * 0.6;
+      const b =
+        Math.sin(y * freq - t * 0.48) -
+        Math.cos(x * freq * 0.77 + t * 0.36) +
+        Math.cos((x - y) * freq * 0.52 - t * 0.27) * 0.6;
+      return { vx: b, vy: -a };
+    }
+
+    function rotate90(vx, vy) {
+      return { x: -vy, y: vx };
+    }
+
+    // Vortices are "swirl around point" + mild attraction (keeps structure coherent).
+    class Vortex {
+      constructor(x, y, strength, pull, radius, phase) {
+        this.x = x;
+        this.y = y;
+        this.strength = strength;
+        this.pull = pull;
+        this.radius = radius;
+        this.phase = phase;
+      }
+    }
+
+    let seed = Math.random() * 1000;
+    const vortices = [];
+    const VORTEX_COUNT = 6;
+
+    function reseed() {
+      seed = Math.random() * 1000;
+      vortices.length = 0;
+      for (let i = 0; i < VORTEX_COUNT; i++) {
+        const r = 0.25 + rand01(seed + i * 11.1) * 0.75;
+        const a = rand01(seed + i * 29.3) * Math.PI * 2;
+        const x = Math.cos(a) * r * (aspect >= 1 ? aspect : 1);
+        const y = Math.sin(a) * r * (aspect >= 1 ? 1 : 1 / aspect);
+        const strength = 0.65 + rand01(seed + i * 3.7) * 1.15;
+        const pull = 0.18 + rand01(seed + i * 8.9) * 0.22;
+        const radius = 0.35 + rand01(seed + i * 15.9) * 0.55;
+        vortices.push(new Vortex(x, y, strength, pull, radius, rand01(seed + i * 99.1) * Math.PI * 2));
+      }
+    }
+    reseed();
+
+    // Mouse “stir” vortex.
+    const mouseVortex = new Vortex(0, 0, 1.8, 0.35, 0.9, 0);
+    let mouseActive = false;
+
+    // --------------------------------------------
+    // Particles
+    // --------------------------------------------
+    const PARTICLE_COUNT = 45000;
+    const positions = new Float32Array(PARTICLE_COUNT * 3);
+    const colors = new Float32Array(PARTICLE_COUNT * 3);
+    const speeds = new Float32Array(PARTICLE_COUNT);
+    const phases = new Float32Array(PARTICLE_COUNT);
+
+    function respawn(i, burst = false, bx = 0, by = 0) {
+      const idx = i * 3;
+      const jitter = burst ? 0.06 : 1.0;
+      const x = (burst ? bx : 0) + (rand01(seed + i * 0.73 + 1.23) * 2 - 1) * (aspect >= 1 ? aspect : 1) * jitter;
+      const y = (burst ? by : 0) + (rand01(seed + i * 0.41 + 9.87) * 2 - 1) * (aspect >= 1 ? 1 : 1 / aspect) * jitter;
+
+      positions[idx + 0] = x;
+      positions[idx + 1] = y;
+      positions[idx + 2] = 0;
+
+      speeds[i] = 0.22 + Math.pow(rand01(seed + i * 1.31 + 2.71), 2) * 0.75; // many slow, few fast
+      phases[i] = rand01(seed + i * 4.17 + 6.66) * Math.PI * 2;
+
+      // Color palette leans into cool neon, with a pineapple-gold accent in highlights.
+      const hue = (0.55 + 0.18 * Math.sin(phases[i]) + 0.12 * rand01(seed + i * 2.19)) % 1;
+      const sat = 0.65 + 0.25 * rand01(seed + i * 6.11);
+      const light = 0.40 + 0.22 * Math.pow(rand01(seed + i * 9.11), 2);
+      const c = new THREE.Color().setHSL(hue, sat, light);
+      // Subtle "pineapple" warmth: bias a little toward gold.
+      c.lerp(new THREE.Color(0xffc94a), 0.08);
+
+      colors[idx + 0] = c.r;
+      colors[idx + 1] = c.g;
+      colors[idx + 2] = c.b;
+    }
+
+    for (let i = 0; i < PARTICLE_COUNT; i++) respawn(i);
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+      size: 1.6,
+      sizeAttenuation: false,
+      vertexColors: true,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+
+    function wrap(x, min, max) {
+      const range = max - min;
+      let v = x;
+      if (v < min) v += range;
+      if (v > max) v -= range;
+      return v;
+    }
+
+    function stepParticles(t, dt) {
+      const left = camera.left, right = camera.right;
+      const bottom = camera.bottom, top = camera.top;
+      const freq = 2.25;
+
+      // Animate the "fixed" vortices slowly to keep it alive.
+      for (let i = 0; i < vortices.length; i++) {
+        const v = vortices[i];
+        const wobble = 0.12 + i * 0.01;
+        v.x += Math.cos(t * 0.12 + v.phase + i * 1.7) * wobble * dt * 0.2;
+        v.y += Math.sin(t * 0.10 + v.phase + i * 1.1) * wobble * dt * 0.2;
+        v.x = wrap(v.x, left, right);
+        v.y = wrap(v.y, bottom, top);
+      }
+
+      const useMouse = mouseActive;
+      const mx = mouseVortex.x, my = mouseVortex.y;
+
+      for (let i = 0; i < PARTICLE_COUNT; i++) {
+        const idx = i * 3;
+        let x = positions[idx + 0];
+        let y = positions[idx + 1];
+
+        // Base field
+        const bf = baseField(x, y, t + phases[i] * 0.05, freq);
+        let vx = bf.vx;
+        let vy = bf.vy;
+
+        // Add vortices
+        for (let j = 0; j < vortices.length; j++) {
+          const v = vortices[j];
+          const dx = x - v.x;
+          const dy = y - v.y;
+          const d2 = dx * dx + dy * dy + 1e-4;
+          const d = Math.sqrt(d2);
+          const falloff = 1.0 - smoothstep(v.radius * 0.25, v.radius, d);
+          if (falloff <= 0) continue;
+
+          const swirl = rotate90(dx, dy);
+          const inv = 1.0 / (d2);
+          vx += swirl.x * (v.strength * falloff) * inv * 0.35;
+          vy += swirl.y * (v.strength * falloff) * inv * 0.35;
+
+          vx -= dx * (v.pull * falloff) * inv * 0.05;
+          vy -= dy * (v.pull * falloff) * inv * 0.05;
+        }
+
+        if (useMouse) {
+          const dx = x - mx;
+          const dy = y - my;
+          const d2 = dx * dx + dy * dy + 1e-4;
+          const d = Math.sqrt(d2);
+          const falloff = 1.0 - smoothstep(mouseVortex.radius * 0.1, mouseVortex.radius, d);
+          const swirl = rotate90(dx, dy);
+          const inv = 1.0 / d2;
+          vx += swirl.x * mouseVortex.strength * falloff * inv * 0.45;
+          vy += swirl.y * mouseVortex.strength * falloff * inv * 0.45;
+          vx -= dx * mouseVortex.pull * falloff * inv * 0.05;
+          vy -= dy * mouseVortex.pull * falloff * inv * 0.05;
+        }
+
+        // Normalize and integrate
+        const vmag = Math.hypot(vx, vy) + 1e-6;
+        const s = speeds[i];
+        x += (vx / vmag) * dt * s * 0.9;
+        y += (vy / vmag) * dt * s * 0.9;
+
+        // Slight "breath" drift
+        x += Math.sin(t * 0.3 + phases[i]) * dt * 0.02;
+        y += Math.cos(t * 0.27 + phases[i] * 0.9) * dt * 0.02;
+
+        // Wrap world
+        x = wrap(x, left, right);
+        y = wrap(y, bottom, top);
+
+        positions[idx + 0] = x;
+        positions[idx + 1] = y;
+      }
+
+      geometry.attributes.position.needsUpdate = true;
+    }
+
+    // --------------------------------------------
+    // Interaction
+    // --------------------------------------------
+    const pointer = { x: 0, y: 0 };
+    function onPointerMove(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      const xNdc = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      const yNdc = -(((e.clientY - rect.top) / rect.height) * 2 - 1);
+      pointer.x = xNdc;
+      pointer.y = yNdc;
+      const w = ndcToWorld(pointer.x, pointer.y);
+      mouseVortex.x = w.x;
+      mouseVortex.y = w.y;
+      mouseActive = true;
+    }
+
+    function onPointerLeave() {
+      mouseActive = false;
+    }
+
+    function onClick() {
+      const w = ndcToWorld(pointer.x, pointer.y);
+      // Burst: respawn a chunk near the click.
+      const burstCount = Math.floor(PARTICLE_COUNT * 0.12);
+      const start = Math.floor(rand01(seed + performance.now()) * (PARTICLE_COUNT - burstCount));
+      for (let i = start; i < start + burstCount; i++) {
+        respawn(i, true, w.x, w.y);
+      }
+      geometry.attributes.position.needsUpdate = true;
+      geometry.attributes.color.needsUpdate = true;
+    }
+
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerleave', onPointerLeave, { passive: true });
+    window.addEventListener('click', onClick);
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'r' || e.key === 'R') {
+        reseed();
+        for (let i = 0; i < PARTICLE_COUNT; i++) respawn(i);
+        geometry.attributes.position.needsUpdate = true;
+        geometry.attributes.color.needsUpdate = true;
+      }
+    });
+
+    // --------------------------------------------
+    // Render loop
+    // --------------------------------------------
+    let last = performance.now();
+    function animate() {
+      const now = performance.now();
+      const dt = Math.min((now - last) / 1000, 0.033);
+      last = now;
+      const t = now / 1000;
+
+      stepParticles(t, dt);
+
+      renderer.render(fadeScene, fadeCamera);
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+
+    // Clear once at start.
+    renderer.clear(true, true, true);
+    animate();
+
+    window.addEventListener('resize', () => {
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      setCameraFrustum();
+    });
+  </script>
+</body>
+</html>
+
