@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid Circles</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { 
+      overflow: hidden; 
+      background: #000000; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+    }
+    canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 200px;
+      display: none;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel.dragging { user-select: none; }
+    #debugPanel h3 {
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: rgba(100, 200, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: grab;
+      background: rgba(100, 200, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+    }
+    #debugPanel h3:active { cursor: grabbing; }
+    #debugPanel .section {
+      margin-bottom: 16px;
+    }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span {
+      display: flex;
+      justify-content: space-between;
+    }
+    #debugPanel .slider-label input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  
+  <div id="debugPanel">
+    <h3>Grid Controls</h3>
+    <div class="section">
+      <div class="section-title">Grid</div>
+      <label class="slider-label">
+        <span>Cell Size <span id="cellSizeValue">60</span></span>
+        <input type="range" id="sliderCellSize" min="20" max="120" step="5" value="60">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Animation</div>
+      <label class="slider-label">
+        <span>Speed <span id="speedValue">100%</span></span>
+        <input type="range" id="sliderSpeed" min="20" max="300" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Wave Delay <span id="waveDelayValue">0.15</span></span>
+        <input type="range" id="sliderWaveDelay" min="0" max="50" step="1" value="15">
+      </label>
+      <label class="slider-label">
+        <span>Cycle Duration <span id="cycleDurationValue">2.0s</span></span>
+        <input type="range" id="sliderCycleDuration" min="50" max="400" step="10" value="200">
+      </label>
+    </div>
+  </div>
+  <div class="hint">Press D for controls</div>
+  
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // ===========================================
+    // CONFIG
+    // ===========================================
+    const CONFIG = {
+      cellSize: 60,
+      speed: 1.0,
+      waveDelay: 0.15,        // delay factor per unit distance from center
+      cycleDuration: 2.0      // seconds for one full grow/shrink cycle
+    };
+    
+    let width, height, cols, rows, centerCol, centerRow, maxDist;
+    
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      
+      // Calculate grid dimensions (no gap between cells)
+      cols = Math.ceil(width / CONFIG.cellSize) + 2;
+      rows = Math.ceil(height / CONFIG.cellSize) + 2;
+      
+      // Center of the grid
+      centerCol = (cols - 1) / 2;
+      centerRow = (rows - 1) / 2;
+      
+      // Maximum distance from center (for normalization)
+      maxDist = Math.sqrt(centerCol * centerCol + centerRow * centerRow);
+    }
+    
+    resize();
+    window.addEventListener('resize', resize);
+    
+    // ===========================================
+    // EASING FUNCTIONS
+    // ===========================================
+    function easeInOutCubic(t) {
+      return t < 0.5
+        ? 4 * t * t * t
+        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+    
+    function easeOutQuad(t) {
+      return 1 - (1 - t) * (1 - t);
+    }
+    
+    // ===========================================
+    // RENDER
+    // ===========================================
+    function render(time) {
+      const t = time * 0.001 * CONFIG.speed;
+      
+      // Clear background (black)
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, width, height);
+      
+      // Calculate offset to center the grid
+      const gridWidth = cols * CONFIG.cellSize;
+      const gridHeight = rows * CONFIG.cellSize;
+      const offsetX = (width - gridWidth) / 2;
+      const offsetY = (height - gridHeight) / 2;
+      
+      // Draw each cell
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          // Distance from center of grid
+          const dx = col - centerCol;
+          const dy = row - centerRow;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+          
+          // Time offset based on distance (ripple effect)
+          const timeOffset = dist * CONFIG.waveDelay;
+          const localTime = t - timeOffset;
+          
+          // Calculate animation progress (0 to 1 to 0)
+          const cycleProgress = ((localTime % CONFIG.cycleDuration) + CONFIG.cycleDuration) % CONFIG.cycleDuration;
+          const normalizedProgress = cycleProgress / CONFIG.cycleDuration;
+          
+          // Grow from 0 to 1 in first half, shrink from 1 to 0 in second half
+          let animScale;
+          if (normalizedProgress < 0.5) {
+            animScale = easeInOutCubic(normalizedProgress * 2);
+          } else {
+            animScale = easeInOutCubic((1 - normalizedProgress) * 2);
+          }
+          
+          // Calculate position
+          // Use Math.floor for pixel-perfect positioning to avoid anti-aliasing gaps
+          const x = Math.floor(offsetX + col * CONFIG.cellSize);
+          const y = Math.floor(offsetY + row * CONFIG.cellSize);
+          // Add 1px overlap to prevent anti-aliasing gaps between squares
+          const size = CONFIG.cellSize + 1;
+          
+          // Draw cell background (white square)
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(x, y, size, size);
+          
+          // Draw circle clipped to square (black circle)
+          if (animScale > 0.001) {
+            ctx.save();
+            
+            // Create clipping region (the square)
+            ctx.beginPath();
+            ctx.rect(x, y, size, size);
+            ctx.clip();
+            
+            // Calculate circle properties
+            const centerX = x + CONFIG.cellSize / 2;
+            const centerY = y + CONFIG.cellSize / 2;
+            // Max radius is slightly larger than half diagonal so circle fills square
+            const maxRadius = CONFIG.cellSize * 0.75;
+            const radius = maxRadius * animScale;
+            
+            // Draw the black circle
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#000000';
+            ctx.fill();
+            
+            ctx.restore();
+          }
+        }
+      }
+      
+      requestAnimationFrame(render);
+    }
+    
+    requestAnimationFrame(render);
+    
+    // ===========================================
+    // DEBUG PANEL
+    // ===========================================
+    const debugPanel = document.getElementById('debugPanel');
+    
+    // Toggle debug panel
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') {
+        debugPanel.classList.toggle('visible');
+      }
+    });
+    
+    // Make panel draggable
+    const panelHeader = debugPanel.querySelector('h3');
+    let isDragging = false;
+    let dragStartX, dragStartY, panelStartX, panelStartY;
+    
+    panelHeader.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      debugPanel.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = debugPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      e.preventDefault();
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      let newX = panelStartX + dx;
+      let newY = panelStartY + dy;
+      
+      const rect = debugPanel.getBoundingClientRect();
+      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
+      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
+      
+      debugPanel.style.left = newX + 'px';
+      debugPanel.style.top = newY + 'px';
+      debugPanel.style.right = 'auto';
+    });
+    
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        debugPanel.classList.remove('dragging');
+      }
+    });
+    
+    // Slider handlers
+    const sliderCellSize = document.getElementById('sliderCellSize');
+    const cellSizeValue = document.getElementById('cellSizeValue');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const speedValue = document.getElementById('speedValue');
+    const sliderWaveDelay = document.getElementById('sliderWaveDelay');
+    const waveDelayValue = document.getElementById('waveDelayValue');
+    const sliderCycleDuration = document.getElementById('sliderCycleDuration');
+    const cycleDurationValue = document.getElementById('cycleDurationValue');
+    
+    sliderCellSize.addEventListener('input', () => {
+      CONFIG.cellSize = parseInt(sliderCellSize.value);
+      cellSizeValue.textContent = CONFIG.cellSize;
+      resize();
+    });
+    
+    sliderSpeed.addEventListener('input', () => {
+      CONFIG.speed = sliderSpeed.value / 100;
+      speedValue.textContent = sliderSpeed.value + '%';
+    });
+    
+    sliderWaveDelay.addEventListener('input', () => {
+      CONFIG.waveDelay = sliderWaveDelay.value / 100;
+      waveDelayValue.textContent = CONFIG.waveDelay.toFixed(2);
+    });
+    
+    sliderCycleDuration.addEventListener('input', () => {
+      CONFIG.cycleDuration = sliderCycleDuration.value / 100;
+      cycleDurationValue.textContent = CONFIG.cycleDuration.toFixed(1) + 's';
+    });
+  </script>
+</body>
+</html>
