@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Aurora Waves</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000510, 0.008);
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 30);
+    camera.lookAt(0, 8, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000510);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.2, 0.4, 0.2
+    );
+    composer.addPass(bloomPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 8, 0);
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.3;
+
+    // Starfield
+    function createStarfield() {
+      const count = 5000;
+      const positions = new Float32Array(count * 3);
+      const sizes = new Float32Array(count);
+      const phases = new Float32Array(count);
+      
+      for (let i = 0; i < count; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 60 + Math.random() * 100;
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = Math.abs(r * Math.sin(phi) * Math.sin(theta) * 0.5) + 5;
+        positions[i * 3 + 2] = r * Math.cos(phi);
+        sizes[i] = 0.3 + Math.pow(Math.random(), 3) * 2;
+        phases[i] = Math.random() * Math.PI * 2;
+      }
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+      geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          attribute float size;
+          attribute float phase;
+          varying float vAlpha;
+          uniform float uTime;
+          void main() {
+            float twinkle = pow(sin(uTime * 1.5 + phase * 8.0) * 0.5 + 0.5, 2.0);
+            vAlpha = 0.3 + twinkle * 0.7;
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (1.0 + twinkle * 0.3) * (150.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 3.0) * 0.5;
+            gl_FragColor = vec4(0.8, 0.9, 1.0, a * vAlpha * 0.5);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+    const stars = createStarfield();
+    scene.add(stars);
+
+    // Aurora ribbons
+    const NUM_RIBBONS = 8;
+    const RIBBON_SEGMENTS = 200;
+    const ribbons = [];
+
+    function createAuroraRibbon(index) {
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(RIBBON_SEGMENTS * 6); // 2 vertices per segment (top/bottom)
+      const uvs = new Float32Array(RIBBON_SEGMENTS * 4);
+      const indices = [];
+
+      for (let i = 0; i < RIBBON_SEGMENTS; i++) {
+        const t = i / (RIBBON_SEGMENTS - 1);
+        uvs[i * 4] = t;
+        uvs[i * 4 + 1] = 0;
+        uvs[i * 4 + 2] = t;
+        uvs[i * 4 + 3] = 1;
+
+        if (i < RIBBON_SEGMENTS - 1) {
+          const base = i * 2;
+          indices.push(base, base + 1, base + 2);
+          indices.push(base + 1, base + 3, base + 2);
+        }
+      }
+
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+      geometry.setIndex(indices);
+
+      const hueOffset = index / NUM_RIBBONS;
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uIndex: { value: index },
+          uHueOffset: { value: hueOffset },
+          uNoiseScale: { value: 0.8 + Math.random() * 0.4 }
+        },
+        vertexShader: `
+          uniform float uTime;
+          uniform float uIndex;
+          varying vec2 vUv;
+          varying float vHeight;
+          varying float vBrightness;
+          
+          // Simplex noise functions
+          vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+          vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+          vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+          vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+          
+          float snoise(vec3 v) {
+            const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+            const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+            vec3 i  = floor(v + dot(v, C.yyy));
+            vec3 x0 = v - i + dot(i, C.xxx);
+            vec3 g = step(x0.yzx, x0.xyz);
+            vec3 l = 1.0 - g;
+            vec3 i1 = min(g.xyz, l.zxy);
+            vec3 i2 = max(g.xyz, l.zxy);
+            vec3 x1 = x0 - i1 + C.xxx;
+            vec3 x2 = x0 - i2 + C.yyy;
+            vec3 x3 = x0 - D.yyy;
+            i = mod289(i);
+            vec4 p = permute(permute(permute(
+                     i.z + vec4(0.0, i1.z, i2.z, 1.0))
+                   + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+                   + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+            float n_ = 0.142857142857;
+            vec3 ns = n_ * D.wyz - D.xzx;
+            vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+            vec4 x_ = floor(j * ns.z);
+            vec4 y_ = floor(j - 7.0 * x_);
+            vec4 x = x_ *ns.x + ns.yyyy;
+            vec4 y = y_ *ns.x + ns.yyyy;
+            vec4 h = 1.0 - abs(x) - abs(y);
+            vec4 b0 = vec4(x.xy, y.xy);
+            vec4 b1 = vec4(x.zw, y.zw);
+            vec4 s0 = floor(b0)*2.0 + 1.0;
+            vec4 s1 = floor(b1)*2.0 + 1.0;
+            vec4 sh = -step(h, vec4(0.0));
+            vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+            vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+            vec3 p0 = vec3(a0.xy, h.x);
+            vec3 p1 = vec3(a0.zw, h.y);
+            vec3 p2 = vec3(a1.xy, h.z);
+            vec3 p3 = vec3(a1.zw, h.w);
+            vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+            p0 *= norm.x;
+            p1 *= norm.y;
+            p2 *= norm.z;
+            p3 *= norm.w;
+            vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+            m = m * m;
+            return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+          }
+          
+          void main() {
+            vUv = uv;
+            
+            float t = uv.x;
+            float ribbonPhase = uIndex * 0.7;
+            float slowTime = uTime * 0.15;
+            
+            // Base wave position
+            float x = (t - 0.5) * 60.0;
+            float z = sin(t * 3.14159 * 2.0 + ribbonPhase) * 8.0 + (uIndex - 4.0) * 3.0;
+            
+            // Multi-layered noise for organic movement
+            float noise1 = snoise(vec3(t * 2.0 + slowTime, ribbonPhase, slowTime * 0.5)) * 4.0;
+            float noise2 = snoise(vec3(t * 4.0 - slowTime * 0.7, ribbonPhase + 10.0, slowTime * 0.3)) * 2.0;
+            float noise3 = snoise(vec3(t * 8.0 + slowTime * 0.3, ribbonPhase + 20.0, slowTime * 0.2)) * 1.0;
+            
+            // Vertical position with waves
+            float baseY = 15.0 + sin(t * 3.14159 * 3.0 + slowTime + ribbonPhase) * 3.0;
+            baseY += noise1 + noise2 * 0.5;
+            
+            // Height variation
+            float heightNoise = snoise(vec3(t * 3.0 + slowTime * 0.5, ribbonPhase + 5.0, 0.0));
+            float ribbonHeight = 4.0 + heightNoise * 3.0 + sin(t * 6.28 + uTime * 0.3) * 1.5;
+            
+            // Top or bottom vertex
+            float yOffset = uv.y == 0.0 ? 0.0 : ribbonHeight;
+            
+            vec3 pos = vec3(
+              x + noise3 * 0.5,
+              baseY + yOffset,
+              z + noise2 * 0.3
+            );
+            
+            vHeight = (baseY - 12.0) / 10.0;
+            
+            // Brightness based on height and noise
+            vBrightness = 0.5 + heightNoise * 0.3 + sin(t * 20.0 + uTime) * 0.2;
+            vBrightness *= smoothstep(0.0, 0.1, t) * smoothstep(1.0, 0.9, t);
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform float uHueOffset;
+          uniform float uNoiseScale;
+          varying vec2 vUv;
+          varying float vHeight;
+          varying float vBrightness;
+          
+          vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+          }
+          
+          void main() {
+            // Vertical gradient within ribbon
+            float vertGrad = 1.0 - abs(vUv.y - 0.5) * 2.0;
+            vertGrad = pow(vertGrad, 0.5);
+            
+            // Aurora colors - greens, teals, purples, pinks
+            float hue = uHueOffset + vHeight * 0.15 + sin(vUv.x * 10.0 + uTime * 0.5) * 0.05;
+            hue = mod(hue * 0.3 + 0.35, 1.0); // Map to green-cyan-purple range
+            
+            float sat = 0.7 + sin(vUv.x * 15.0 + uTime) * 0.15;
+            float val = 0.9 + sin(vUv.x * 8.0 - uTime * 0.3) * 0.1;
+            
+            vec3 color = hsv2rgb(vec3(hue, sat, val));
+            
+            // Add shimmer
+            float shimmer = sin(vUv.x * 50.0 + uTime * 2.0) * 0.5 + 0.5;
+            shimmer = pow(shimmer, 4.0) * 0.3;
+            color += shimmer;
+            
+            // Edge glow
+            float edgeGlow = exp(-abs(vUv.y - 0.5) * 3.0) * 0.5;
+            color += vec3(0.3, 0.5, 0.4) * edgeGlow;
+            
+            float alpha = vertGrad * vBrightness * 0.6;
+            alpha *= smoothstep(0.0, 0.05, vUv.x) * smoothstep(1.0, 0.95, vUv.x);
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.frustumCulled = false;
+      return { mesh, material, geometry };
+    }
+
+    for (let i = 0; i < NUM_RIBBONS; i++) {
+      const ribbon = createAuroraRibbon(i);
+      ribbons.push(ribbon);
+      scene.add(ribbon.mesh);
+    }
+
+    // Ground reflection plane
+    function createGroundReflection() {
+      const geo = new THREE.PlaneGeometry(200, 200, 1, 1);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec2 vUv;
+          varying vec3 vWorldPos;
+          void main() {
+            vUv = uv;
+            vec4 worldPos = modelMatrix * vec4(position, 1.0);
+            vWorldPos = worldPos.xyz;
+            gl_Position = projectionMatrix * viewMatrix * worldPos;
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec2 vUv;
+          varying vec3 vWorldPos;
+          
+          void main() {
+            float dist = length(vWorldPos.xz);
+            float fade = 1.0 - smoothstep(0.0, 80.0, dist);
+            
+            // Aurora reflection colors
+            float hue = sin(vWorldPos.x * 0.02 + uTime * 0.1) * 0.1 + 0.4;
+            vec3 color = vec3(0.1, 0.3, 0.2) + vec3(0.1, 0.1, 0.2) * sin(vWorldPos.z * 0.03 + uTime * 0.2);
+            
+            // Water ripple effect
+            float ripple = sin(dist * 0.3 - uTime * 0.5) * 0.5 + 0.5;
+            ripple *= sin(vWorldPos.x * 0.1 + vWorldPos.z * 0.1 + uTime * 0.3) * 0.5 + 0.5;
+            
+            color *= 0.3 + ripple * 0.2;
+            
+            float alpha = fade * 0.15;
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.rotation.x = -Math.PI / 2;
+      mesh.position.y = -2;
+      return mesh;
+    }
+    const groundReflection = createGroundReflection();
+    scene.add(groundReflection);
+
+    // Floating particles
+    function createFloatingParticles() {
+      const count = 2000;
+      const positions = new Float32Array(count * 3);
+      const speeds = new Float32Array(count);
+      const phases = new Float32Array(count);
+
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 100;
+        positions[i * 3 + 1] = Math.random() * 30;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 60;
+        speeds[i] = 0.5 + Math.random() * 1.5;
+        phases[i] = Math.random() * Math.PI * 2;
+      }
+
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+      geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          attribute float speed;
+          attribute float phase;
+          varying float vAlpha;
+          uniform float uTime;
+          void main() {
+            vec3 pos = position;
+            float t = mod(uTime * speed * 0.05 + phase, 1.0);
+            pos.y = mod(pos.y + uTime * speed * 0.3, 30.0);
+            pos.x += sin(uTime * 0.3 + phase * 5.0) * 0.5;
+            
+            vAlpha = sin(t * 3.14159) * 0.8;
+            vAlpha *= smoothstep(0.0, 5.0, pos.y) * smoothstep(30.0, 20.0, pos.y);
+            
+            vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = (1.0 + sin(phase * 10.0 + uTime) * 0.5) * (80.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vAlpha;
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            vec3 color = vec3(0.4, 0.9, 0.6);
+            gl_FragColor = vec4(color, a * vAlpha * 0.5);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+
+      return new THREE.Points(geo, mat);
+    }
+    const floatingParticles = createFloatingParticles();
+    scene.add(floatingParticles);
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+
+      stars.material.uniforms.uTime.value = t;
+      floatingParticles.material.uniforms.uTime.value = t;
+      groundReflection.material.uniforms.uTime.value = t;
+
+      ribbons.forEach((ribbon, i) => {
+        ribbon.material.uniforms.uTime.value = t;
+        
+        // Update ribbon geometry
+        const positions = ribbon.geometry.getAttribute('position');
+        const posArray = positions.array;
+        
+        for (let j = 0; j < RIBBON_SEGMENTS; j++) {
+          const s = j / (RIBBON_SEGMENTS - 1);
+          const slowTime = t * 0.15;
+          const ribbonPhase = i * 0.7;
+          
+          const x = (s - 0.5) * 60.0;
+          const z = Math.sin(s * Math.PI * 2 + ribbonPhase) * 8.0 + (i - 4) * 3.0;
+          
+          // Simple approximation of noise for CPU-side position updates
+          const noise1 = Math.sin(s * 2.0 + slowTime + ribbonPhase * 3.0) * 4.0;
+          const noise2 = Math.sin(s * 4.0 - slowTime * 0.7 + ribbonPhase * 2.0) * 2.0;
+          
+          const baseY = 15.0 + Math.sin(s * Math.PI * 3 + slowTime + ribbonPhase) * 3.0 + noise1;
+          const ribbonHeight = 4.0 + Math.sin(s * 3.0 + slowTime * 0.5 + i) * 2.0;
+          
+          // Bottom vertex
+          posArray[j * 6 + 0] = x + Math.sin(s * 8.0 + slowTime * 0.3) * 0.5;
+          posArray[j * 6 + 1] = baseY;
+          posArray[j * 6 + 2] = z + noise2 * 0.3;
+          
+          // Top vertex
+          posArray[j * 6 + 3] = x + Math.sin(s * 8.0 + slowTime * 0.3) * 0.5;
+          posArray[j * 6 + 4] = baseY + ribbonHeight;
+          posArray[j * 6 + 5] = z + noise2 * 0.3;
+        }
+        
+        positions.needsUpdate = true;
+        ribbon.geometry.computeVertexNormals();
+      });
+
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,634 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cosmic Jellyfish</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #020108; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Setup
+    const scene = new THREE.Scene();
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 5, 25);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x020108);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.5;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.5, 0.5, 0.1
+    );
+    composer.addPass(bloomPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+
+    // Deep space nebula background
+    function createNebula() {
+      const geo = new THREE.SphereGeometry(150, 32, 32);
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          varying vec3 vPosition;
+          varying vec2 vUv;
+          void main() {
+            vPosition = position;
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec3 vPosition;
+          varying vec2 vUv;
+          
+          float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+          
+          float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
+                       mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+          }
+          
+          float fbm(vec2 p) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            for (int i = 0; i < 6; i++) {
+              value += amplitude * noise(p);
+              p *= 2.0;
+              amplitude *= 0.5;
+            }
+            return value;
+          }
+          
+          void main() {
+            vec2 uv = vUv;
+            float t = uTime * 0.02;
+            
+            // Multiple nebula layers
+            float n1 = fbm(uv * 3.0 + t * 0.5);
+            float n2 = fbm(uv * 5.0 - t * 0.3 + 100.0);
+            float n3 = fbm(uv * 8.0 + t * 0.2 + 200.0);
+            
+            // Deep space colors
+            vec3 color1 = vec3(0.1, 0.0, 0.2); // Deep purple
+            vec3 color2 = vec3(0.0, 0.1, 0.15); // Deep blue
+            vec3 color3 = vec3(0.15, 0.0, 0.1); // Deep magenta
+            
+            vec3 color = mix(color1, color2, n1);
+            color = mix(color, color3, n2 * 0.5);
+            color += vec3(0.05, 0.02, 0.08) * n3;
+            
+            // Stars
+            float stars = pow(hash(uv * 500.0), 20.0) * 0.5;
+            stars += pow(hash(uv * 800.0 + 100.0), 25.0) * 0.3;
+            color += vec3(stars);
+            
+            gl_FragColor = vec4(color, 1.0);
+          }
+        `,
+        side: THREE.BackSide
+      });
+      return new THREE.Mesh(geo, mat);
+    }
+    scene.add(createNebula());
+
+    // Jellyfish class
+    class Jellyfish {
+      constructor(position, scale, hue) {
+        this.group = new THREE.Group();
+        this.group.position.copy(position);
+        this.baseY = position.y;
+        this.scale = scale;
+        this.hue = hue;
+        this.phase = Math.random() * Math.PI * 2;
+        this.pulseSpeed = 0.8 + Math.random() * 0.4;
+        
+        this.createBell();
+        this.createTentacles();
+        this.createInnerGlow();
+        this.createParticles();
+      }
+      
+      createBell() {
+        // Bell dome using custom geometry
+        const bellSegments = 32;
+        const bellRings = 16;
+        const positions = [];
+        const uvs = [];
+        const indices = [];
+        
+        for (let ring = 0; ring <= bellRings; ring++) {
+          const v = ring / bellRings;
+          const ringRadius = Math.sin(v * Math.PI) * 0.8;
+          const y = Math.cos(v * Math.PI * 0.5) * 1.2;
+          
+          for (let seg = 0; seg <= bellSegments; seg++) {
+            const u = seg / bellSegments;
+            const theta = u * Math.PI * 2;
+            
+            positions.push(
+              Math.cos(theta) * ringRadius,
+              y,
+              Math.sin(theta) * ringRadius
+            );
+            uvs.push(u, v);
+          }
+        }
+        
+        for (let ring = 0; ring < bellRings; ring++) {
+          for (let seg = 0; seg < bellSegments; seg++) {
+            const curr = ring * (bellSegments + 1) + seg;
+            const next = curr + bellSegments + 1;
+            
+            indices.push(curr, next, curr + 1);
+            indices.push(curr + 1, next, next + 1);
+          }
+        }
+        
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+        
+        const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uTime: { value: 0 },
+            uHue: { value: this.hue },
+            uPulse: { value: 0 }
+          },
+          vertexShader: `
+            uniform float uTime;
+            uniform float uPulse;
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            
+            void main() {
+              vUv = uv;
+              vNormal = normalMatrix * normal;
+              
+              vec3 pos = position;
+              
+              // Pulsing deformation
+              float pulse = sin(uPulse) * 0.5 + 0.5;
+              float bellPulse = 1.0 + pulse * 0.15;
+              
+              // Squeeze top, expand bottom during pulse
+              float heightFactor = (pos.y + 1.2) / 2.4;
+              pos.x *= bellPulse * (1.0 - heightFactor * 0.2);
+              pos.z *= bellPulse * (1.0 - heightFactor * 0.2);
+              pos.y *= 1.0 - pulse * 0.1;
+              
+              // Ripples along the bell
+              float ripple = sin(uv.y * 20.0 - uTime * 3.0) * 0.02 * (1.0 - heightFactor);
+              pos.x += pos.x * ripple;
+              pos.z += pos.z * ripple;
+              
+              vPosition = pos;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform float uTime;
+            uniform float uHue;
+            uniform float uPulse;
+            varying vec2 vUv;
+            varying vec3 vNormal;
+            varying vec3 vPosition;
+            
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+            
+            void main() {
+              // Fresnel effect for bioluminescence
+              vec3 viewDir = normalize(cameraPosition - vPosition);
+              float fresnel = pow(1.0 - max(dot(vNormal, viewDir), 0.0), 2.0);
+              
+              float pulse = sin(uPulse) * 0.5 + 0.5;
+              
+              // Base color with hue variation
+              float hue = uHue + vUv.y * 0.1 + sin(uTime * 0.5) * 0.05;
+              float sat = 0.7 + fresnel * 0.2;
+              float val = 0.6 + pulse * 0.3 + fresnel * 0.4;
+              
+              vec3 color = hsv2rgb(vec3(hue, sat, val));
+              
+              // Inner glow patterns
+              float pattern = sin(vUv.y * 30.0 + uTime * 2.0) * 0.5 + 0.5;
+              pattern *= sin(vUv.x * 40.0) * 0.5 + 0.5;
+              color += hsv2rgb(vec3(hue + 0.1, 0.9, 1.0)) * pattern * 0.3 * pulse;
+              
+              // Edge glow
+              color += hsv2rgb(vec3(hue + 0.05, 0.8, 1.0)) * fresnel * 0.5;
+              
+              // Veins/nervous system
+              float veins = sin(vUv.x * 16.0 * 3.14159) * sin(vUv.y * 8.0 * 3.14159);
+              veins = smoothstep(0.8, 1.0, abs(veins));
+              color += vec3(1.0, 0.9, 0.95) * veins * 0.2 * pulse;
+              
+              float alpha = 0.6 + fresnel * 0.3;
+              
+              gl_FragColor = vec4(color, alpha);
+            }
+          `,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          side: THREE.DoubleSide,
+          depthWrite: false
+        });
+        
+        this.bell = new THREE.Mesh(geo, mat);
+        this.bell.scale.setScalar(this.scale);
+        this.group.add(this.bell);
+      }
+      
+      createTentacles() {
+        const NUM_TENTACLES = 24;
+        const TENTACLE_SEGMENTS = 30;
+        this.tentacles = [];
+        
+        for (let t = 0; t < NUM_TENTACLES; t++) {
+          const angle = (t / NUM_TENTACLES) * Math.PI * 2;
+          const radius = 0.5 + Math.random() * 0.3;
+          const length = 3 + Math.random() * 4;
+          
+          const positions = new Float32Array(TENTACLE_SEGMENTS * 3);
+          const geo = new THREE.BufferGeometry();
+          geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+          
+          const mat = new THREE.ShaderMaterial({
+            uniforms: {
+              uTime: { value: 0 },
+              uHue: { value: this.hue },
+              uTentacleIndex: { value: t },
+              uTentacleAngle: { value: angle },
+              uTentacleRadius: { value: radius },
+              uTentacleLength: { value: length }
+            },
+            vertexShader: `
+              uniform float uTime;
+              uniform float uTentacleIndex;
+              varying float vProgress;
+              
+              void main() {
+                vProgress = position.y;
+                gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+              }
+            `,
+            fragmentShader: `
+              uniform float uHue;
+              uniform float uTime;
+              varying float vProgress;
+              
+              vec3 hsv2rgb(vec3 c) {
+                vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+                vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+                return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+              }
+              
+              void main() {
+                float hue = uHue + vProgress * 0.1 + sin(uTime + vProgress * 5.0) * 0.05;
+                float brightness = 0.8 - vProgress * 0.5;
+                brightness += sin(vProgress * 20.0 - uTime * 3.0) * 0.2;
+                
+                vec3 color = hsv2rgb(vec3(hue, 0.7, brightness));
+                float alpha = (1.0 - vProgress) * 0.8;
+                
+                gl_FragColor = vec4(color, alpha);
+              }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false
+          });
+          
+          const line = new THREE.Line(geo, mat);
+          line.scale.setScalar(this.scale);
+          
+          this.tentacles.push({
+            mesh: line,
+            angle,
+            radius,
+            length,
+            phase: Math.random() * Math.PI * 2
+          });
+          
+          this.group.add(line);
+        }
+      }
+      
+      createInnerGlow() {
+        const geo = new THREE.SphereGeometry(0.5, 16, 16);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uTime: { value: 0 },
+            uHue: { value: this.hue }
+          },
+          vertexShader: `
+            varying vec3 vNormal;
+            void main() {
+              vNormal = normalMatrix * normal;
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+            }
+          `,
+          fragmentShader: `
+            uniform float uTime;
+            uniform float uHue;
+            varying vec3 vNormal;
+            
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+            
+            void main() {
+              float pulse = sin(uTime * 2.0) * 0.5 + 0.5;
+              vec3 color = hsv2rgb(vec3(uHue, 0.5, 0.9 + pulse * 0.1));
+              float alpha = 0.3 + pulse * 0.2;
+              gl_FragColor = vec4(color, alpha);
+            }
+          `,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        
+        this.innerGlow = new THREE.Mesh(geo, mat);
+        this.innerGlow.position.y = 0.3;
+        this.innerGlow.scale.setScalar(this.scale);
+        this.group.add(this.innerGlow);
+      }
+      
+      createParticles() {
+        const count = 100;
+        const positions = new Float32Array(count * 3);
+        const phases = new Float32Array(count);
+        
+        for (let i = 0; i < count; i++) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = Math.random() * 2;
+          positions[i * 3] = Math.cos(angle) * r;
+          positions[i * 3 + 1] = -Math.random() * 5;
+          positions[i * 3 + 2] = Math.sin(angle) * r;
+          phases[i] = Math.random() * Math.PI * 2;
+        }
+        
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+        geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+        
+        const mat = new THREE.ShaderMaterial({
+          uniforms: {
+            uTime: { value: 0 },
+            uHue: { value: this.hue }
+          },
+          vertexShader: `
+            attribute float phase;
+            uniform float uTime;
+            varying float vAlpha;
+            
+            void main() {
+              vec3 pos = position;
+              float t = mod(uTime * 0.3 + phase, 1.0);
+              pos.y = -t * 6.0;
+              pos.x += sin(uTime + phase * 5.0) * 0.3;
+              pos.z += cos(uTime * 0.7 + phase * 3.0) * 0.3;
+              
+              vAlpha = sin(t * 3.14159) * 0.8;
+              
+              vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+              gl_PointSize = 3.0 * (20.0 / -mv.z);
+              gl_Position = projectionMatrix * mv;
+            }
+          `,
+          fragmentShader: `
+            uniform float uHue;
+            varying float vAlpha;
+            
+            vec3 hsv2rgb(vec3 c) {
+              vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+              vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+              return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+            }
+            
+            void main() {
+              float d = length(gl_PointCoord - 0.5);
+              if (d > 0.5) discard;
+              float a = 1.0 - smoothstep(0.0, 0.5, d);
+              vec3 color = hsv2rgb(vec3(uHue, 0.6, 1.0));
+              gl_FragColor = vec4(color, a * vAlpha);
+            }
+          `,
+          transparent: true,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false
+        });
+        
+        this.particles = new THREE.Points(geo, mat);
+        this.particles.scale.setScalar(this.scale);
+        this.group.add(this.particles);
+      }
+      
+      update(time) {
+        const t = time + this.phase;
+        const pulsePhase = t * this.pulseSpeed * 2;
+        
+        // Update bell
+        this.bell.material.uniforms.uTime.value = time;
+        this.bell.material.uniforms.uPulse.value = pulsePhase;
+        
+        // Bobbing motion
+        this.group.position.y = this.baseY + Math.sin(t * 0.5) * 0.5;
+        this.group.rotation.y = Math.sin(t * 0.2) * 0.1;
+        this.group.rotation.x = Math.sin(t * 0.3) * 0.05;
+        
+        // Update tentacles
+        const pulse = Math.sin(pulsePhase) * 0.5 + 0.5;
+        
+        this.tentacles.forEach((tentacle, i) => {
+          const positions = tentacle.mesh.geometry.getAttribute('position');
+          const posArray = positions.array;
+          const segments = posArray.length / 3;
+          
+          for (let s = 0; s < segments; s++) {
+            const progress = s / (segments - 1);
+            const waveOffset = time * 2 + tentacle.phase + progress * 3;
+            
+            // Base position from bell edge
+            const baseRadius = tentacle.radius * (1 + pulse * 0.15);
+            const x = Math.cos(tentacle.angle) * baseRadius;
+            const z = Math.sin(tentacle.angle) * baseRadius;
+            const y = -0.8 - progress * tentacle.length;
+            
+            // Wave motion increases along tentacle
+            const waveAmp = 0.3 + progress * 0.5;
+            const waveX = Math.sin(waveOffset) * waveAmp;
+            const waveZ = Math.cos(waveOffset * 0.7) * waveAmp;
+            
+            // Tentacles flow outward and down during pulse
+            const flowOut = pulse * progress * 0.5;
+            
+            posArray[s * 3] = x + waveX + Math.cos(tentacle.angle) * flowOut;
+            posArray[s * 3 + 1] = y;
+            posArray[s * 3 + 2] = z + waveZ + Math.sin(tentacle.angle) * flowOut;
+          }
+          
+          positions.needsUpdate = true;
+          tentacle.mesh.material.uniforms.uTime.value = time;
+        });
+        
+        // Update glow and particles
+        this.innerGlow.material.uniforms.uTime.value = time;
+        this.particles.material.uniforms.uTime.value = time;
+      }
+    }
+
+    // Create jellyfish
+    const jellyfish = [];
+    const NUM_JELLYFISH = 7;
+    
+    for (let i = 0; i < NUM_JELLYFISH; i++) {
+      const pos = new THREE.Vector3(
+        (Math.random() - 0.5) * 30,
+        (Math.random() - 0.5) * 15,
+        (Math.random() - 0.5) * 20
+      );
+      const scale = 0.8 + Math.random() * 1.5;
+      const hue = 0.5 + Math.random() * 0.35; // Cyan to magenta range
+      
+      const jelly = new Jellyfish(pos, scale, hue);
+      jellyfish.push(jelly);
+      scene.add(jelly.group);
+    }
+
+    // Floating particles in space
+    function createSpaceParticles() {
+      const count = 3000;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      const sizes = new Float32Array(count);
+      
+      for (let i = 0; i < count; i++) {
+        positions[i * 3] = (Math.random() - 0.5) * 100;
+        positions[i * 3 + 1] = (Math.random() - 0.5) * 60;
+        positions[i * 3 + 2] = (Math.random() - 0.5) * 100;
+        
+        const hue = 0.5 + Math.random() * 0.4;
+        const color = new THREE.Color().setHSL(hue, 0.7, 0.6);
+        colors[i * 3] = color.r;
+        colors[i * 3 + 1] = color.g;
+        colors[i * 3 + 2] = color.b;
+        
+        sizes[i] = 0.5 + Math.random() * 1.5;
+      }
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      geo.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uTime: { value: 0 } },
+        vertexShader: `
+          attribute float size;
+          attribute vec3 color;
+          varying vec3 vColor;
+          varying float vAlpha;
+          uniform float uTime;
+          
+          void main() {
+            vColor = color;
+            float pulse = sin(uTime + position.x * 0.1 + position.y * 0.1) * 0.5 + 0.5;
+            vAlpha = 0.3 + pulse * 0.4;
+            
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = size * (100.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying vec3 vColor;
+          varying float vAlpha;
+          
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 4.0) * 0.3;
+            gl_FragColor = vec4(vColor, a * vAlpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        vertexColors: true
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+    const spaceParticles = createSpaceParticles();
+    scene.add(spaceParticles);
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+      
+      jellyfish.forEach(jelly => jelly.update(t));
+      spaceParticles.material.uniforms.uTime.value = t;
+      
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
