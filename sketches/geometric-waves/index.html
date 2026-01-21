@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geometric Waves</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #050510; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(100, 255, 200, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 220px;
+      display: none;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel h3 {
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: rgba(100, 255, 200, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(100, 255, 200, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(100, 255, 200, 0.2);
+    }
+    #debugPanel .section { margin-bottom: 16px; }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span {
+      display: flex;
+      justify-content: space-between;
+    }
+    #debugPanel .slider-label input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+      accent-color: #64ffda;
+    }
+    #debugPanel button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: rgba(100, 255, 200, 0.15);
+      border: 1px solid rgba(100, 255, 200, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #debugPanel button:hover {
+      background: rgba(100, 255, 200, 0.3);
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="debugPanel">
+    <h3>Wave Controls</h3>
+    <div class="section">
+      <div class="section-title">Wave Physics</div>
+      <label class="slider-label">
+        <span>Speed <span id="valSpeed">1.0</span></span>
+        <input type="range" id="slSpeed" min="0" max="500" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Frequency <span id="valFreq">1.0</span></span>
+        <input type="range" id="slFreq" min="10" max="500" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Amplitude <span id="valAmp">1.0</span></span>
+        <input type="range" id="slAmp" min="0" max="300" value="100">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Visuals</div>
+      <label class="slider-label">
+        <span>Bloom Strength <span id="valBloom">1.5</span></span>
+        <input type="range" id="slBloom" min="0" max="300" value="150">
+      </label>
+      <label class="slider-label">
+        <span>Grid Size <span id="valGrid">50</span></span>
+        <input type="range" id="slGrid" min="10" max="100" value="50">
+      </label>
+      <label class="slider-label">
+        <span>Gap <span id="valGap">0.2</span></span>
+        <input type="range" id="slGap" min="0" max="100" value="20">
+      </label>
+    </div>
+    <div class="section">
+        <button id="btnReset">Reset Camera</button>
+    </div>
+  </div>
+  <div class="hint">Press D for controls</div>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Config
+    const config = {
+      speed: 1.0,
+      frequency: 1.0,
+      amplitude: 5.0,
+      bloom: 1.5,
+      gridSize: 50,
+      gap: 0.2
+    };
+
+    // Scene Setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x050510);
+    scene.fog = new THREE.FogExp2(0x050510, 0.015);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(40, 40, 40);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    document.body.appendChild(renderer.domElement);
+
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.5;
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      config.bloom, 0.4, 0.85
+    );
+    composer.addPass(bloomPass);
+
+    // Geometry & Material
+    let instancedMesh;
+    const dummy = new THREE.Object3D();
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    
+    // Custom Shader Material for Instance Coloring & Displacement
+    // We'll use onBeforeCompile to inject logic into standard material if we want lighting, 
+    // but for this glowing look, a custom ShaderMaterial is easier to control fully.
+    
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uColor1: { value: new THREE.Color(0x00ffff) }, // Cyan
+        uColor2: { value: new THREE.Color(0xff00ff) }, // Magenta
+        uFreq: { value: config.frequency },
+        uAmp: { value: config.amplitude },
+        uSpeed: { value: config.speed }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        varying float vHeight;
+        varying vec3 vPos;
+        
+        uniform float uTime;
+        uniform float uFreq;
+        uniform float uAmp;
+        uniform float uSpeed;
+
+        // Instance attributes usually handled by Three.js when using InstancedMesh
+        // But we need to manually handle the instance matrix transformation if we use raw ShaderMaterial
+        // However, Three.js injects instanceMatrix attribute when instancing is enabled.
+        // Let's rely on standard ShaderMaterial behavior for instancing if we can, or just do manual math.
+        
+        // Actually, easiest way with InstancedMesh + Custom Shader is to hijack the position calculation.
+        
+        void main() {
+          vUv = uv;
+          
+          // Get instance position from instanceMatrix
+          // instanceMatrix is a mat4 attribute automatically provided by InstancedMesh
+          vec4 worldPosition = instanceMatrix * vec4(position, 1.0);
+          
+          // Calculate wave based on x/z position of the instance (not the vertex)
+          // To get instance center, we can transform (0,0,0)
+          vec4 instanceCenter = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);
+          
+          float dist = length(instanceCenter.xz);
+          float angle = atan(instanceCenter.z, instanceCenter.x);
+          
+          // Wave function: y = sin(distance - time)
+          float wave = sin(dist * 0.1 * uFreq - uTime * uSpeed);
+          
+          // Also maybe some angular wave
+          float spiral = sin(angle * 3.0 + dist * 0.1 - uTime * 0.5);
+          
+          // Combine
+          float h = wave * uAmp + spiral * (uAmp * 0.5);
+          
+          // Apply height offset to the world position
+          worldPosition.y += h;
+          
+          vHeight = h;
+          vPos = worldPosition.xyz;
+          
+          gl_Position = projectionMatrix * viewMatrix * worldPosition;
+        }
+      `,
+      fragmentShader: `
+        varying float vHeight;
+        varying vec3 vPos;
+        
+        uniform vec3 uColor1;
+        uniform vec3 uColor2;
+        uniform float uAmp;
+        
+        void main() {
+          // Color based on height
+          float t = (vHeight / (uAmp * 1.5)) * 0.5 + 0.5;
+          t = clamp(t, 0.0, 1.0);
+          
+          vec3 color = mix(uColor1, uColor2, t);
+          
+          // Add some grid lines or edge glow
+          // Simple rim lighting approximation
+          // (Not doing normals properly in vertex shader for simplicity, assume flat shading or emissive)
+          
+          // Distance fade
+          float dist = length(vPos) * 0.02;
+          float fog = 1.0 - exp(-dist * dist);
+          color = mix(color, vec3(0.02, 0.02, 0.06), fog);
+          
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    });
+
+    function createGrid() {
+      if (instancedMesh) {
+        scene.remove(instancedMesh);
+        instancedMesh.dispose();
+      }
+
+      const size = config.gridSize;
+      const count = size * size;
+      
+      instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+      
+      let i = 0;
+      const offset = (size - 1) * 0.5;
+      const spacing = 1.0 + config.gap;
+      
+      for (let x = 0; x < size; x++) {
+        for (let z = 0; z < size; z++) {
+          dummy.position.set(
+            (x - offset) * spacing,
+            0,
+            (z - offset) * spacing
+          );
+          dummy.updateMatrix();
+          instancedMesh.setMatrixAt(i++, dummy.matrix);
+        }
+      }
+      
+      scene.add(instancedMesh);
+    }
+
+    createGrid();
+
+    // Animation Loop
+    function animate(time) {
+      requestAnimationFrame(animate);
+      
+      const t = time * 0.001;
+      
+      material.uniforms.uTime.value = t;
+      
+      controls.update();
+      composer.render();
+    }
+    
+    animate(0);
+
+    // UI Handling
+    const debugPanel = document.getElementById('debugPanel');
+    
+    // Sliders
+    document.getElementById('slSpeed').addEventListener('input', (e) => {
+      config.speed = e.target.value / 100;
+      document.getElementById('valSpeed').innerText = config.speed.toFixed(1);
+      material.uniforms.uSpeed.value = config.speed;
+    });
+
+    document.getElementById('slFreq').addEventListener('input', (e) => {
+      config.frequency = e.target.value / 100;
+      document.getElementById('valFreq').innerText = config.frequency.toFixed(1);
+      material.uniforms.uFreq.value = config.frequency;
+    });
+
+    document.getElementById('slAmp').addEventListener('input', (e) => {
+      config.amplitude = e.target.value / 20; // Scale down a bit
+      document.getElementById('valAmp').innerText = config.amplitude.toFixed(1);
+      material.uniforms.uAmp.value = config.amplitude;
+    });
+
+    document.getElementById('slBloom').addEventListener('input', (e) => {
+      config.bloom = e.target.value / 100;
+      document.getElementById('valBloom').innerText = config.bloom.toFixed(2);
+      bloomPass.strength = config.bloom;
+    });
+
+    document.getElementById('slGrid').addEventListener('change', (e) => { // Change on release
+      config.gridSize = parseInt(e.target.value);
+      document.getElementById('valGrid').innerText = config.gridSize;
+      createGrid();
+    });
+
+    document.getElementById('slGap').addEventListener('input', (e) => { // Rebuild grid on change might be heavy?
+      // Maybe throttle or only on change. Let's do change for now.
+    });
+    document.getElementById('slGap').addEventListener('change', (e) => {
+      config.gap = e.target.value / 100;
+      document.getElementById('valGap').innerText = config.gap.toFixed(2);
+      createGrid();
+    });
+
+    document.getElementById('btnReset').addEventListener('click', () => {
+      camera.position.set(40, 40, 40);
+      camera.lookAt(0, 0, 0);
+      controls.reset();
+    });
+
+    // Toggle Debug
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') {
+        debugPanel.classList.toggle('visible');
+      }
+    });
+    
+    // Resize
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+  </script>
+</body>
+</html>
