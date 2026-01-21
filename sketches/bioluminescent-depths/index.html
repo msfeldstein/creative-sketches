@@ -1,0 +1,1167 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Bioluminescent Depths</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000408; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(80, 200, 255, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 200px;
+      display: none;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel.dragging { user-select: none; }
+    #debugPanel h3 {
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: rgba(80, 200, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: grab;
+      background: rgba(80, 200, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(80, 200, 255, 0.2);
+    }
+    #debugPanel h3:active { cursor: grabbing; }
+    #debugPanel .section {
+      margin-bottom: 16px;
+    }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: rgba(80, 200, 255, 0.15);
+      border: 1px solid rgba(80, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #debugPanel button:hover {
+      background: rgba(80, 200, 255, 0.3);
+      border-color: rgba(80, 200, 255, 0.5);
+    }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span {
+      display: flex;
+      justify-content: space-between;
+    }
+    #debugPanel .slider-label input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+    #debugPanel .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #debugPanel .checkbox-label input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="debugPanel">
+    <h3>Debug Panel</h3>
+    <div class="section">
+      <div class="section-title">Jellyfish</div>
+      <label class="slider-label">
+        <span>Pulse Speed <span id="pulseSpeedValue">100%</span></span>
+        <input type="range" id="sliderPulseSpeed" min="20" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Tentacle Flow <span id="tentacleFlowValue">100%</span></span>
+        <input type="range" id="sliderTentacleFlow" min="20" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Bell Size <span id="bellSizeValue">100%</span></span>
+        <input type="range" id="sliderBellSize" min="50" max="150" value="100">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Environment</div>
+      <label class="checkbox-label"><input type="checkbox" id="chkPlankton" checked> Plankton Particles</label>
+      <label class="slider-label">
+        <span>Plankton Density <span id="planktonDensityValue">100%</span></span>
+        <input type="range" id="sliderPlanktonDensity" min="10" max="200" value="100">
+      </label>
+      <label class="checkbox-label"><input type="checkbox" id="chkCaustics" checked> Light Caustics</label>
+    </div>
+    <div class="section">
+      <div class="section-title">Visual Effects</div>
+      <label class="slider-label">
+        <span>Bloom Intensity <span id="bloomValue">45%</span></span>
+        <input type="range" id="sliderBloom" min="0" max="150" value="45">
+      </label>
+      <label class="slider-label">
+        <span>Glow Brightness <span id="glowValue">100%</span></span>
+        <input type="range" id="sliderGlow" min="20" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Color Shift <span id="colorShiftValue">0°</span></span>
+        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Dev Tools</div>
+      <button id="btnReload">Reload Page</button>
+    </div>
+  </div>
+  <div class="hint">Press D for debug panel</div>
+  
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // Configuration
+    const CONFIG = {
+      pulseSpeed: 1.0,
+      tentacleFlow: 1.0,
+      bellSize: 1.0,
+      planktonDensity: 1.0,
+      bloom: 0.45,
+      glow: 1.0,
+      colorShift: 0,
+      showPlankton: true,
+      showCaustics: true
+    };
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000510, 0.015);
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 25);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000408);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      CONFIG.bloom, 0.4, 0.2
+    );
+    composer.addPass(bloomPass);
+
+    // Underwater post-processing
+    const underwaterShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 },
+        uColorShift: { value: 0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        uniform float uColorShift;
+        varying vec2 vUv;
+        
+        vec3 hueShift(vec3 color, float shift) {
+          float angle = shift * 6.28318;
+          float s = sin(angle);
+          float c = cos(angle);
+          vec3 weights = vec3(0.299, 0.587, 0.114);
+          float wSum = dot(color, weights);
+          vec3 c1 = vec3(wSum);
+          vec3 c2 = color - c1;
+          return c1 + vec3(
+            c2.r * c - (c2.g * 0.328 - c2.b * 0.883) * s,
+            c2.g * c + (c2.r * 0.328 + c2.b * 0.557) * s,
+            c2.b * c - (c2.r * 0.883 + c2.g * 0.557) * s
+          );
+        }
+        
+        void main() {
+          vec2 center = vUv - 0.5;
+          float dist = length(center);
+          
+          // Subtle water distortion
+          float wave1 = sin(uTime * 0.3 + vUv.y * 8.0 + vUv.x * 4.0) * 0.002;
+          float wave2 = sin(uTime * 0.5 + vUv.x * 10.0) * 0.001;
+          vec2 uv = vUv + vec2(wave1, wave2);
+          
+          // Chromatic aberration
+          float aberr = dist * dist * 0.008;
+          vec4 texR = texture2D(tDiffuse, uv + vec2(aberr, 0.0));
+          vec4 texG = texture2D(tDiffuse, uv);
+          vec4 texB = texture2D(tDiffuse, uv - vec2(aberr, 0.0));
+          vec3 color = vec3(texR.r, texG.g, texB.b);
+          
+          // Apply hue shift
+          color = hueShift(color, uColorShift);
+          
+          // Deep water color grade
+          color *= vec3(0.85, 0.95, 1.15);
+          
+          // Vignette
+          float vignette = 1.0 - dot(center * 1.2, center * 1.2);
+          vignette = pow(max(vignette, 0.0), 1.2);
+          color *= vignette;
+          
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+    const underwaterPass = new ShaderPass(underwaterShader);
+    composer.addPass(underwaterPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.03;
+    controls.target.set(0, 0, 0);
+    controls.minDistance = 10;
+    controls.maxDistance = 50;
+    controls.autoRotate = true;
+    controls.autoRotateSpeed = 0.3;
+
+    // Jellyfish bell geometry using custom shader
+    function createJellyfishBell() {
+      const geometry = new THREE.SphereGeometry(4, 64, 32, 0, Math.PI * 2, 0, Math.PI * 0.6);
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uPulseSpeed: { value: CONFIG.pulseSpeed },
+          uBellSize: { value: CONFIG.bellSize },
+          uGlow: { value: CONFIG.glow }
+        },
+        vertexShader: `
+          uniform float uTime;
+          uniform float uPulseSpeed;
+          uniform float uBellSize;
+          
+          varying vec3 vNormal;
+          varying vec3 vPosition;
+          varying float vPulse;
+          
+          void main() {
+            vNormal = normalize(normalMatrix * normal);
+            
+            // Pulsing animation
+            float pulse = sin(uTime * uPulseSpeed * 1.5) * 0.5 + 0.5;
+            vPulse = pulse;
+            
+            vec3 pos = position * uBellSize;
+            
+            // Bell contracts and expands
+            float bellFactor = 1.0 + pulse * 0.15;
+            pos.x *= bellFactor;
+            pos.z *= bellFactor;
+            
+            // Rim wobble
+            float rimWobble = sin(uTime * 2.0 + atan(position.x, position.z) * 8.0) * 0.1;
+            float rimFactor = smoothstep(0.0, -2.0, position.y);
+            pos.x += pos.x * rimWobble * rimFactor;
+            pos.z += pos.z * rimWobble * rimFactor;
+            
+            vPosition = pos;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform float uGlow;
+          
+          varying vec3 vNormal;
+          varying vec3 vPosition;
+          varying float vPulse;
+          
+          void main() {
+            // Fresnel effect for rim glow
+            vec3 viewDir = normalize(cameraPosition - vPosition);
+            float fresnel = pow(1.0 - abs(dot(viewDir, vNormal)), 3.0);
+            
+            // Base colors - bioluminescent cyan/purple
+            vec3 innerColor = vec3(0.1, 0.4, 0.6);
+            vec3 glowColor = vec3(0.3, 0.8, 1.0);
+            vec3 pulseColor = vec3(0.6, 0.2, 0.8);
+            
+            // Mix based on position and pulse
+            vec3 color = mix(innerColor, glowColor, fresnel);
+            color = mix(color, pulseColor, vPulse * 0.3);
+            
+            // Vein-like patterns
+            float veins = sin(atan(vPosition.x, vPosition.z) * 12.0 + uTime * 0.5);
+            veins = smoothstep(0.7, 1.0, veins) * 0.3;
+            color += glowColor * veins;
+            
+            // Edge glow
+            color += glowColor * fresnel * 0.8 * uGlow;
+            
+            // Alpha based on fresnel for ethereal look
+            float alpha = 0.3 + fresnel * 0.5 + veins * 0.2;
+            alpha *= uGlow;
+            
+            gl_FragColor = vec4(color * uGlow, alpha);
+          }
+        `,
+        transparent: true,
+        side: THREE.DoubleSide,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Mesh(geometry, material);
+    }
+    
+    const jellyfishBell = createJellyfishBell();
+    scene.add(jellyfishBell);
+
+    // Inner bell glow
+    function createInnerGlow() {
+      const geometry = new THREE.SphereGeometry(3, 32, 16, 0, Math.PI * 2, 0, Math.PI * 0.5);
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uGlow: { value: CONFIG.glow }
+        },
+        vertexShader: `
+          uniform float uTime;
+          varying vec3 vPosition;
+          
+          void main() {
+            vec3 pos = position;
+            float pulse = sin(uTime * 1.5) * 0.5 + 0.5;
+            pos *= 1.0 + pulse * 0.1;
+            vPosition = pos;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform float uGlow;
+          varying vec3 vPosition;
+          
+          void main() {
+            float dist = length(vPosition.xz) / 3.0;
+            float alpha = (1.0 - dist) * 0.4;
+            
+            // Pulsing core
+            float pulse = sin(uTime * 1.5) * 0.5 + 0.5;
+            vec3 color = mix(
+              vec3(0.2, 0.5, 0.8),
+              vec3(0.5, 0.2, 0.9),
+              pulse
+            );
+            
+            gl_FragColor = vec4(color * uGlow, alpha * uGlow);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.y = -0.5;
+      return mesh;
+    }
+    
+    const innerGlow = createInnerGlow();
+    scene.add(innerGlow);
+
+    // Tentacles using line segments
+    function createTentacles() {
+      const NUM_TENTACLES = 24;
+      const SEGMENTS_PER_TENTACLE = 40;
+      const TRAIL_LENGTH = 8;
+      const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+      
+      // Each tentacle is multiple line segments for flowing effect
+      const PARTICLES_PER_TENTACLE = 200;
+      const TOTAL_PARTICLES = NUM_TENTACLES * PARTICLES_PER_TENTACLE;
+      const TOTAL_VERTICES = TOTAL_PARTICLES * TRAIL_SEGMENTS * 2;
+      
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(TOTAL_VERTICES * 3);
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      // Attributes
+      const tentacleIndices = new Float32Array(TOTAL_VERTICES);
+      const particleIndices = new Float32Array(TOTAL_VERTICES);
+      const trailIndices = new Float32Array(TOTAL_VERTICES);
+      const phases = new Float32Array(TOTAL_VERTICES);
+      const speeds = new Float32Array(TOTAL_VERTICES);
+      
+      let vertIdx = 0;
+      for (let t = 0; t < NUM_TENTACLES; t++) {
+        for (let p = 0; p < PARTICLES_PER_TENTACLE; p++) {
+          const phase = Math.random() * Math.PI * 2;
+          const speed = 0.3 + Math.random() * 0.4;
+          
+          for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+            // Start vertex
+            tentacleIndices[vertIdx] = t;
+            particleIndices[vertIdx] = p;
+            trailIndices[vertIdx] = seg;
+            phases[vertIdx] = phase;
+            speeds[vertIdx] = speed;
+            vertIdx++;
+            
+            // End vertex
+            tentacleIndices[vertIdx] = t;
+            particleIndices[vertIdx] = p;
+            trailIndices[vertIdx] = seg + 1;
+            phases[vertIdx] = phase;
+            speeds[vertIdx] = speed;
+            vertIdx++;
+          }
+        }
+      }
+      
+      geometry.setAttribute('tentacleIndex', new THREE.BufferAttribute(tentacleIndices, 1));
+      geometry.setAttribute('particleIndex', new THREE.BufferAttribute(particleIndices, 1));
+      geometry.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
+      geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uNumTentacles: { value: NUM_TENTACLES },
+          uParticlesPerTentacle: { value: PARTICLES_PER_TENTACLE },
+          uTrailSegments: { value: TRAIL_SEGMENTS },
+          uTentacleFlow: { value: CONFIG.tentacleFlow },
+          uBellSize: { value: CONFIG.bellSize },
+          uGlow: { value: CONFIG.glow },
+          uPulseSpeed: { value: CONFIG.pulseSpeed }
+        },
+        vertexShader: `
+          attribute float tentacleIndex;
+          attribute float particleIndex;
+          attribute float trailIndex;
+          attribute float phase;
+          attribute float speed;
+          
+          uniform float uTime;
+          uniform float uNumTentacles;
+          uniform float uParticlesPerTentacle;
+          uniform float uTrailSegments;
+          uniform float uTentacleFlow;
+          uniform float uBellSize;
+          uniform float uPulseSpeed;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          varying float vDepth;
+          
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          
+          void main() {
+            // Tentacle base angle around the bell
+            float baseAngle = (tentacleIndex / uNumTentacles) * 6.28318;
+            float bellRadius = 3.5 * uBellSize;
+            
+            // Particle progress along tentacle (0 = attached to bell, 1 = end)
+            float rawTime = uTime * speed * uTentacleFlow + phase;
+            float t = mod(rawTime, 1.0);
+            
+            // Trail offset
+            float trailOffset = trailIndex * 0.04;
+            float particleT = mod(t - trailOffset, 1.0);
+            
+            // Detect wrap for hiding
+            float cycleCurrent = floor(rawTime - trailIndex * 0.04);
+            float cycleNext = floor(rawTime - (trailIndex + 1.0) * 0.04);
+            float wrap = abs(cycleCurrent - cycleNext) > 0.5 ? 1.0 : 0.0;
+            
+            // Starting position on bell rim
+            float rimOffset = (particleIndex / uParticlesPerTentacle - 0.5) * 0.8;
+            float attachAngle = baseAngle + rimOffset;
+            
+            vec3 attachPoint = vec3(
+              cos(attachAngle) * bellRadius,
+              -2.0 * uBellSize,
+              sin(attachAngle) * bellRadius
+            );
+            
+            // Bell pulse affects attachment
+            float pulse = sin(uTime * uPulseSpeed * 1.5) * 0.5 + 0.5;
+            attachPoint.xz *= 1.0 + pulse * 0.15;
+            
+            // Tentacle length varies
+            float tentacleLength = 8.0 + hash(tentacleIndex * 7.0) * 6.0;
+            tentacleLength *= uBellSize;
+            
+            // Flow downward with undulation
+            vec3 pos = attachPoint;
+            
+            float flowProgress = particleT;
+            float depth = flowProgress * tentacleLength;
+            
+            pos.y -= depth;
+            
+            // Multi-frequency undulation
+            float wave1 = sin(uTime * 1.2 * uTentacleFlow + flowProgress * 4.0 + phase) * 2.0;
+            float wave2 = sin(uTime * 0.8 * uTentacleFlow + flowProgress * 6.0 + phase * 1.3) * 1.0;
+            float wave3 = cos(uTime * 1.5 * uTentacleFlow + flowProgress * 3.0 + tentacleIndex) * 1.5;
+            
+            // Undulation increases with depth
+            float undulationStrength = flowProgress * flowProgress * 2.0;
+            
+            pos.x += (wave1 + wave2) * undulationStrength * cos(attachAngle);
+            pos.z += (wave1 + wave3) * undulationStrength * sin(attachAngle);
+            
+            // Spiral twist
+            float twist = flowProgress * 1.5 + uTime * 0.3 * uTentacleFlow;
+            float spiralRadius = flowProgress * 1.5;
+            pos.x += cos(twist + attachAngle) * spiralRadius;
+            pos.z += sin(twist + attachAngle) * spiralRadius;
+            
+            // Trail fade
+            vTrailFade = 1.0 - (trailIndex / uTrailSegments);
+            vTrailFade = pow(max(vTrailFade, 0.0), 0.6);
+            
+            // Alpha fades at ends and with depth
+            float fadeIn = smoothstep(0.0, 0.1, flowProgress);
+            float fadeOut = smoothstep(1.0, 0.7, flowProgress);
+            vAlpha = fadeIn * fadeOut * vTrailFade;
+            
+            // Hide wrapped segments
+            if (wrap > 0.5) vAlpha = 0.0;
+            
+            vDepth = flowProgress;
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uGlow;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          varying float vDepth;
+          
+          void main() {
+            if (vAlpha < 0.01) discard;
+            
+            // Bioluminescent colors
+            vec3 brightCyan = vec3(0.3, 0.9, 1.0);
+            vec3 deepPurple = vec3(0.5, 0.2, 0.9);
+            vec3 softPink = vec3(0.9, 0.4, 0.7);
+            
+            // Color shifts with depth
+            vec3 color = mix(brightCyan, deepPurple, vDepth);
+            color = mix(color, softPink, vDepth * vDepth * 0.5);
+            
+            // Brighter at trail head
+            color = mix(color, vec3(1.0), vTrailFade * 0.3);
+            
+            gl_FragColor = vec4(color * uGlow, vAlpha * 0.25);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.LineSegments(geometry, material);
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+    
+    const tentacles = createTentacles();
+    scene.add(tentacles);
+
+    // Oral arms (shorter, thicker inner tentacles)
+    function createOralArms() {
+      const NUM_ARMS = 8;
+      const PARTICLES_PER_ARM = 100;
+      const TRAIL_LENGTH = 6;
+      const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+      
+      const TOTAL_PARTICLES = NUM_ARMS * PARTICLES_PER_ARM;
+      const TOTAL_VERTICES = TOTAL_PARTICLES * TRAIL_SEGMENTS * 2;
+      
+      const geometry = new THREE.BufferGeometry();
+      const positions = new Float32Array(TOTAL_VERTICES * 3);
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      
+      const armIndices = new Float32Array(TOTAL_VERTICES);
+      const particleIndices = new Float32Array(TOTAL_VERTICES);
+      const trailIndices = new Float32Array(TOTAL_VERTICES);
+      const phases = new Float32Array(TOTAL_VERTICES);
+      const speeds = new Float32Array(TOTAL_VERTICES);
+      
+      let vertIdx = 0;
+      for (let a = 0; a < NUM_ARMS; a++) {
+        for (let p = 0; p < PARTICLES_PER_ARM; p++) {
+          const phase = Math.random() * Math.PI * 2;
+          const speed = 0.2 + Math.random() * 0.2;
+          
+          for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+            armIndices[vertIdx] = a;
+            particleIndices[vertIdx] = p;
+            trailIndices[vertIdx] = seg;
+            phases[vertIdx] = phase;
+            speeds[vertIdx] = speed;
+            vertIdx++;
+            
+            armIndices[vertIdx] = a;
+            particleIndices[vertIdx] = p;
+            trailIndices[vertIdx] = seg + 1;
+            phases[vertIdx] = phase;
+            speeds[vertIdx] = speed;
+            vertIdx++;
+          }
+        }
+      }
+      
+      geometry.setAttribute('armIndex', new THREE.BufferAttribute(armIndices, 1));
+      geometry.setAttribute('particleIndex', new THREE.BufferAttribute(particleIndices, 1));
+      geometry.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
+      geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uNumArms: { value: NUM_ARMS },
+          uParticlesPerArm: { value: PARTICLES_PER_ARM },
+          uTrailSegments: { value: TRAIL_SEGMENTS },
+          uTentacleFlow: { value: CONFIG.tentacleFlow },
+          uBellSize: { value: CONFIG.bellSize },
+          uGlow: { value: CONFIG.glow },
+          uPulseSpeed: { value: CONFIG.pulseSpeed }
+        },
+        vertexShader: `
+          attribute float armIndex;
+          attribute float particleIndex;
+          attribute float trailIndex;
+          attribute float phase;
+          attribute float speed;
+          
+          uniform float uTime;
+          uniform float uNumArms;
+          uniform float uParticlesPerArm;
+          uniform float uTrailSegments;
+          uniform float uTentacleFlow;
+          uniform float uBellSize;
+          uniform float uPulseSpeed;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          
+          void main() {
+            float baseAngle = (armIndex / uNumArms) * 6.28318;
+            
+            float rawTime = uTime * speed * uTentacleFlow + phase;
+            float t = mod(rawTime, 1.0);
+            float trailOffset = trailIndex * 0.05;
+            float particleT = mod(t - trailOffset, 1.0);
+            
+            float cycleCurrent = floor(rawTime - trailIndex * 0.05);
+            float cycleNext = floor(rawTime - (trailIndex + 1.0) * 0.05);
+            float wrap = abs(cycleCurrent - cycleNext) > 0.5 ? 1.0 : 0.0;
+            
+            float spreadOffset = (particleIndex / uParticlesPerArm - 0.5) * 1.2;
+            float attachAngle = baseAngle + spreadOffset;
+            float attachRadius = 1.5 * uBellSize;
+            
+            vec3 pos = vec3(
+              cos(attachAngle) * attachRadius,
+              -1.0 * uBellSize,
+              sin(attachAngle) * attachRadius
+            );
+            
+            // Pulse
+            float pulse = sin(uTime * uPulseSpeed * 1.5) * 0.5 + 0.5;
+            pos.xz *= 1.0 + pulse * 0.1;
+            
+            // Shorter, frilly motion
+            float armLength = 4.0 * uBellSize;
+            pos.y -= particleT * armLength;
+            
+            // Frilly undulation
+            float frill = sin(uTime * 2.0 * uTentacleFlow + particleT * 8.0 + phase) * 1.5;
+            frill *= particleT;
+            
+            pos.x += frill * cos(attachAngle + uTime * 0.5);
+            pos.z += frill * sin(attachAngle + uTime * 0.5);
+            
+            vTrailFade = 1.0 - (trailIndex / uTrailSegments);
+            vTrailFade = pow(max(vTrailFade, 0.0), 0.5);
+            
+            float fadeIn = smoothstep(0.0, 0.15, particleT);
+            float fadeOut = smoothstep(1.0, 0.6, particleT);
+            vAlpha = fadeIn * fadeOut * vTrailFade;
+            
+            if (wrap > 0.5) vAlpha = 0.0;
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uGlow;
+          
+          varying float vAlpha;
+          varying float vTrailFade;
+          
+          void main() {
+            if (vAlpha < 0.01) discard;
+            
+            vec3 color = mix(
+              vec3(0.9, 0.5, 0.8),
+              vec3(1.0, 0.8, 0.9),
+              vTrailFade
+            );
+            
+            gl_FragColor = vec4(color * uGlow, vAlpha * 0.35);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.LineSegments(geometry, material);
+      mesh.frustumCulled = false;
+      return mesh;
+    }
+    
+    const oralArms = createOralArms();
+    scene.add(oralArms);
+
+    // Floating plankton particles
+    function createPlankton() {
+      const COUNT = 3000;
+      const positions = new Float32Array(COUNT * 3);
+      const sizes = new Float32Array(COUNT);
+      const phases = new Float32Array(COUNT);
+      const speeds = new Float32Array(COUNT);
+      
+      for (let i = 0; i < COUNT; i++) {
+        // Spread in a large sphere around the jellyfish
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        const r = 5 + Math.random() * 35;
+        
+        positions[i * 3] = r * Math.sin(phi) * Math.cos(theta);
+        positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.8 - 5;
+        positions[i * 3 + 2] = r * Math.cos(phi);
+        
+        sizes[i] = 0.05 + Math.pow(Math.random(), 3) * 0.2;
+        phases[i] = Math.random() * Math.PI * 2;
+        speeds[i] = 0.5 + Math.random() * 1.0;
+      }
+      
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geometry.setAttribute('size', new THREE.BufferAttribute(sizes, 1));
+      geometry.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      geometry.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uDensity: { value: CONFIG.planktonDensity },
+          uGlow: { value: CONFIG.glow }
+        },
+        vertexShader: `
+          attribute float size;
+          attribute float phase;
+          attribute float speed;
+          
+          uniform float uTime;
+          uniform float uDensity;
+          
+          varying float vAlpha;
+          varying vec3 vColor;
+          
+          float hash(float n) { return fract(sin(n) * 43758.5453); }
+          
+          void main() {
+            // Filter based on density
+            float threshold = phase / 6.28318;
+            if (threshold > uDensity) {
+              gl_PointSize = 0.0;
+              vAlpha = 0.0;
+              gl_Position = vec4(0.0);
+              return;
+            }
+            
+            vec3 pos = position;
+            
+            // Gentle drifting motion
+            float drift = uTime * 0.1 * speed;
+            pos.x += sin(drift + phase) * 2.0;
+            pos.y += cos(drift * 0.7 + phase * 1.3) * 1.5;
+            pos.z += sin(drift * 0.5 + phase * 0.8) * 2.0;
+            
+            // Subtle upward drift
+            pos.y += mod(uTime * 0.2 * speed + phase, 40.0) - 20.0;
+            
+            // Bioluminescent pulsing
+            float pulse = sin(uTime * speed * 2.0 + phase * 5.0) * 0.5 + 0.5;
+            vAlpha = 0.2 + pulse * 0.8;
+            
+            // Random colors - cyan, green, purple
+            float colorSeed = hash(phase * 10.0);
+            if (colorSeed < 0.33) {
+              vColor = vec3(0.2, 0.8, 1.0); // Cyan
+            } else if (colorSeed < 0.66) {
+              vColor = vec3(0.2, 1.0, 0.6); // Green
+            } else {
+              vColor = vec3(0.6, 0.3, 1.0); // Purple
+            }
+            
+            vec4 mv = modelViewMatrix * vec4(pos, 1.0);
+            gl_PointSize = size * (1.0 + pulse * 0.5) * (150.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          uniform float uGlow;
+          
+          varying float vAlpha;
+          varying vec3 vColor;
+          
+          void main() {
+            if (vAlpha < 0.01) discard;
+            
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 4.0) * 0.5;
+            
+            gl_FragColor = vec4(vColor * uGlow, a * vAlpha * 0.4);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geometry, material);
+    }
+    
+    const plankton = createPlankton();
+    scene.add(plankton);
+
+    // Light caustics on a plane above
+    function createCaustics() {
+      const geometry = new THREE.PlaneGeometry(100, 100);
+      
+      const material = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 }
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          varying vec2 vUv;
+          
+          // Voronoi-like caustics
+          vec2 hash2(vec2 p) {
+            return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453);
+          }
+          
+          float voronoi(vec2 x) {
+            vec2 p = floor(x);
+            vec2 f = fract(x);
+            float res = 8.0;
+            for (int j = -1; j <= 1; j++) {
+              for (int i = -1; i <= 1; i++) {
+                vec2 b = vec2(float(i), float(j));
+                vec2 r = b - f + hash2(p + b);
+                float d = dot(r, r);
+                res = min(res, d);
+              }
+            }
+            return sqrt(res);
+          }
+          
+          void main() {
+            vec2 uv = vUv * 8.0;
+            
+            // Animated caustics
+            float time = uTime * 0.15;
+            float c1 = voronoi(uv + vec2(time, time * 0.5));
+            float c2 = voronoi(uv * 1.5 + vec2(-time * 0.5, time * 0.3));
+            
+            float caustic = c1 * c2;
+            caustic = pow(caustic, 0.5) * 2.0;
+            caustic = smoothstep(0.3, 1.0, caustic);
+            
+            // Fade at edges
+            vec2 center = vUv - 0.5;
+            float edgeFade = 1.0 - dot(center, center) * 2.0;
+            edgeFade = max(0.0, edgeFade);
+            
+            vec3 color = vec3(0.3, 0.6, 0.8) * caustic;
+            float alpha = caustic * edgeFade * 0.15;
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      
+      const mesh = new THREE.Mesh(geometry, material);
+      mesh.position.y = 25;
+      mesh.rotation.x = Math.PI / 2;
+      return mesh;
+    }
+    
+    const caustics = createCaustics();
+    scene.add(caustics);
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+      
+      // Update all uniforms
+      jellyfishBell.material.uniforms.uTime.value = t;
+      jellyfishBell.material.uniforms.uPulseSpeed.value = CONFIG.pulseSpeed;
+      jellyfishBell.material.uniforms.uBellSize.value = CONFIG.bellSize;
+      jellyfishBell.material.uniforms.uGlow.value = CONFIG.glow;
+      
+      innerGlow.material.uniforms.uTime.value = t;
+      innerGlow.material.uniforms.uGlow.value = CONFIG.glow;
+      
+      tentacles.material.uniforms.uTime.value = t;
+      tentacles.material.uniforms.uTentacleFlow.value = CONFIG.tentacleFlow;
+      tentacles.material.uniforms.uBellSize.value = CONFIG.bellSize;
+      tentacles.material.uniforms.uGlow.value = CONFIG.glow;
+      tentacles.material.uniforms.uPulseSpeed.value = CONFIG.pulseSpeed;
+      
+      oralArms.material.uniforms.uTime.value = t;
+      oralArms.material.uniforms.uTentacleFlow.value = CONFIG.tentacleFlow;
+      oralArms.material.uniforms.uBellSize.value = CONFIG.bellSize;
+      oralArms.material.uniforms.uGlow.value = CONFIG.glow;
+      oralArms.material.uniforms.uPulseSpeed.value = CONFIG.pulseSpeed;
+      
+      plankton.material.uniforms.uTime.value = t;
+      plankton.material.uniforms.uDensity.value = CONFIG.planktonDensity;
+      plankton.material.uniforms.uGlow.value = CONFIG.glow;
+      plankton.visible = CONFIG.showPlankton;
+      
+      caustics.material.uniforms.uTime.value = t;
+      caustics.visible = CONFIG.showCaustics;
+      
+      underwaterPass.uniforms.uTime.value = t;
+      underwaterPass.uniforms.uColorShift.value = CONFIG.colorShift / 360;
+      
+      bloomPass.strength = CONFIG.bloom;
+      
+      // Gentle bobbing motion for the whole jellyfish
+      const bob = Math.sin(t * 0.5) * 0.5;
+      jellyfishBell.position.y = bob;
+      innerGlow.position.y = bob - 0.5;
+      tentacles.position.y = bob;
+      oralArms.position.y = bob;
+      
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Debug Panel
+    const debugPanel = document.getElementById('debugPanel');
+    
+    // Slider references
+    const sliderPulseSpeed = document.getElementById('sliderPulseSpeed');
+    const pulseSpeedValue = document.getElementById('pulseSpeedValue');
+    const sliderTentacleFlow = document.getElementById('sliderTentacleFlow');
+    const tentacleFlowValue = document.getElementById('tentacleFlowValue');
+    const sliderBellSize = document.getElementById('sliderBellSize');
+    const bellSizeValue = document.getElementById('bellSizeValue');
+    const sliderPlanktonDensity = document.getElementById('sliderPlanktonDensity');
+    const planktonDensityValue = document.getElementById('planktonDensityValue');
+    const sliderBloom = document.getElementById('sliderBloom');
+    const bloomValue = document.getElementById('bloomValue');
+    const sliderGlow = document.getElementById('sliderGlow');
+    const glowValue = document.getElementById('glowValue');
+    const sliderColorShift = document.getElementById('sliderColorShift');
+    const colorShiftValue = document.getElementById('colorShiftValue');
+    
+    const chkPlankton = document.getElementById('chkPlankton');
+    const chkCaustics = document.getElementById('chkCaustics');
+    const btnReload = document.getElementById('btnReload');
+    
+    // Event listeners
+    sliderPulseSpeed.addEventListener('input', () => {
+      CONFIG.pulseSpeed = sliderPulseSpeed.value / 100;
+      pulseSpeedValue.textContent = sliderPulseSpeed.value + '%';
+    });
+    
+    sliderTentacleFlow.addEventListener('input', () => {
+      CONFIG.tentacleFlow = sliderTentacleFlow.value / 100;
+      tentacleFlowValue.textContent = sliderTentacleFlow.value + '%';
+    });
+    
+    sliderBellSize.addEventListener('input', () => {
+      CONFIG.bellSize = sliderBellSize.value / 100;
+      bellSizeValue.textContent = sliderBellSize.value + '%';
+    });
+    
+    sliderPlanktonDensity.addEventListener('input', () => {
+      CONFIG.planktonDensity = sliderPlanktonDensity.value / 100;
+      planktonDensityValue.textContent = sliderPlanktonDensity.value + '%';
+    });
+    
+    sliderBloom.addEventListener('input', () => {
+      CONFIG.bloom = sliderBloom.value / 100;
+      bloomValue.textContent = sliderBloom.value + '%';
+    });
+    
+    sliderGlow.addEventListener('input', () => {
+      CONFIG.glow = sliderGlow.value / 100;
+      glowValue.textContent = sliderGlow.value + '%';
+    });
+    
+    sliderColorShift.addEventListener('input', () => {
+      CONFIG.colorShift = parseInt(sliderColorShift.value);
+      colorShiftValue.textContent = sliderColorShift.value + '°';
+    });
+    
+    chkPlankton.addEventListener('change', () => {
+      CONFIG.showPlankton = chkPlankton.checked;
+    });
+    
+    chkCaustics.addEventListener('change', () => {
+      CONFIG.showCaustics = chkCaustics.checked;
+    });
+    
+    btnReload.addEventListener('click', () => {
+      location.reload();
+    });
+    
+    // Toggle debug panel with 'D' key
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') {
+        debugPanel.classList.toggle('visible');
+      }
+    });
+    
+    // Make debug panel draggable
+    const panelHeader = debugPanel.querySelector('h3');
+    let isDragging = false;
+    let dragStartX, dragStartY, panelStartX, panelStartY;
+    
+    panelHeader.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      debugPanel.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = debugPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      e.preventDefault();
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const dx = e.clientX - dragStartX;
+      const dy = e.clientY - dragStartY;
+      let newX = panelStartX + dx;
+      let newY = panelStartY + dy;
+      
+      const rect = debugPanel.getBoundingClientRect();
+      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
+      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
+      
+      debugPanel.style.left = newX + 'px';
+      debugPanel.style.top = newY + 'px';
+      debugPanel.style.right = 'auto';
+    });
+    
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        debugPanel.classList.remove('dragging');
+      }
+    });
+  </script>
+</body>
+</html>
