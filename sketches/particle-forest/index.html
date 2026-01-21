@@ -158,6 +158,13 @@
       </label>
     </div>
     <div class="section">
+      <div class="section-title">Glitch Lab</div>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchJitter"> Camera Jitter</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchBloom"> Bloom Spikes</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchWrap"> Ignore Trail Wrap</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchPath"> Path Jitter</label>
+    </div>
+    <div class="section">
       <div class="section-title">Moon</div>
       <label class="slider-label">
         <span>Phase <span id="moonPhaseValue">New</span></span>
@@ -213,7 +220,11 @@
       moonOcclusion: 44,
       showStars: true,
       showRisingSparks: true,
-      showShootingStars: true
+      showShootingStars: true,
+      glitchJitter: false,
+      glitchBloom: false,
+      glitchWrap: false,
+      glitchPath: false
     };
     // ===========================================
 
@@ -242,6 +253,7 @@
       DEFAULT_CONFIG.bloom / 100, 0.4, 0.3
     );
     composer.addPass(bloomPass);
+    let baseBloomStrength = bloomPass.strength;
 
     // Ethereal post-processing shader
     const etherealShader = {
@@ -726,7 +738,9 @@
         uSpeedMult: { value: DEFAULT_CONFIG.particleSpeed / 100 },
         uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
         uBrightness: { value: DEFAULT_CONFIG.trailBrightness / 100 },
-        uUndulation: { value: DEFAULT_CONFIG.undulation / 100 }
+        uUndulation: { value: DEFAULT_CONFIG.undulation / 100 },
+        uDebugIgnoreWrap: { value: 0 },
+        uDebugPathJitter: { value: 0 }
       },
       vertexShader: `
         attribute float pathIndex;
@@ -744,6 +758,7 @@
         uniform float uTrailSegments;
         uniform float uSpeedMult;
         uniform float uUndulation;
+        uniform float uDebugPathJitter;
         
         varying float vAlpha;
         varying float vHeight;
@@ -761,7 +776,9 @@
         }
         
         vec4 getPathPt(float pi, float idx) {
-          return texture2D(uPathTex, vec2((idx + 0.5) / uPathSize.x, (pi + 0.5) / uPathSize.y));
+          float jitter = (noise(pi * 2.3 + idx * 3.1 + uTime * 0.7) - 0.5) * 2.0;
+          float jIdx = clamp(idx + jitter * uDebugPathJitter, 0.0, uPathSize.x - 1.0);
+          return texture2D(uPathTex, vec2((jIdx + 0.5) / uPathSize.x, (pi + 0.5) / uPathSize.y));
         }
         
         void main() {
@@ -870,6 +887,7 @@
         uniform float uTime;
         uniform float uColorShift;
         uniform float uBrightness;
+        uniform float uDebugIgnoreWrap;
         
         varying float vAlpha;
         varying float vHeight;
@@ -896,8 +914,8 @@
         }
         
         void main() {
-          // Hide segments that wrap around
-          if (vWrap > 0.5) discard;
+          // Hide segments that wrap around (unless debugging)
+          if (uDebugIgnoreWrap < 0.5 && vWrap > 0.5) discard;
           float h = clamp(vHeight / 22.0, 0.0, 1.0);
           
           // Rich color palette
@@ -1437,6 +1455,12 @@
     
     // Rotation speed (controlled by slider)
     let rotationSpeed = (DEFAULT_CONFIG.treeRotation / 100) * 0.05;
+    let bloomSpikeFrames = 0;
+    let bloomSpikeStrength = baseBloomStrength;
+    let glitchJitter = DEFAULT_CONFIG.glitchJitter;
+    let glitchBloom = DEFAULT_CONFIG.glitchBloom;
+    let glitchWrap = DEFAULT_CONFIG.glitchWrap;
+    let glitchPath = DEFAULT_CONFIG.glitchPath;
     
     // Animation
     function animate(time) {
@@ -1467,7 +1491,37 @@
       }
       
       controls.update();
+      
+      if (glitchBloom) {
+        if (bloomSpikeFrames <= 0 && Math.random() < 0.02) {
+          bloomSpikeFrames = 4 + Math.floor(Math.random() * 10);
+          bloomSpikeStrength = baseBloomStrength * (2.0 + Math.random() * 3.5);
+        }
+        if (bloomSpikeFrames > 0) {
+          bloomPass.strength = bloomSpikeStrength;
+          bloomSpikeFrames -= 1;
+        } else {
+          bloomPass.strength = baseBloomStrength;
+        }
+      } else if (bloomPass.strength !== baseBloomStrength) {
+        bloomPass.strength = baseBloomStrength;
+      }
+      
+      const originalCameraPosition = camera.position.clone();
+      if (glitchJitter) {
+        const jitter = 0.12;
+        camera.position.x += (Math.random() - 0.5) * jitter;
+        camera.position.y += (Math.random() - 0.5) * jitter;
+        camera.position.z += (Math.random() - 0.5) * jitter;
+        camera.updateMatrixWorld();
+      }
+      
       composer.render();
+      
+      if (glitchJitter) {
+        camera.position.copy(originalCameraPosition);
+        camera.updateMatrixWorld();
+      }
       requestAnimationFrame(animate);
     }
     
@@ -1510,6 +1564,10 @@
     const moonOcclusionValue = document.getElementById('moonOcclusionValue');
     const sliderUndulation = document.getElementById('sliderUndulation');
     const undulationValue = document.getElementById('undulationValue');
+    const chkGlitchJitter = document.getElementById('chkGlitchJitter');
+    const chkGlitchBloom = document.getElementById('chkGlitchBloom');
+    const chkGlitchWrap = document.getElementById('chkGlitchWrap');
+    const chkGlitchPath = document.getElementById('chkGlitchPath');
     
     // LocalStorage persistence
     const STORAGE_KEY = 'particleForestSettings';
@@ -1529,7 +1587,11 @@
         moonOcclusion: parseInt(sliderMoonOcclusion.value),
         showStars: chkStars.checked,
         showRisingSparks: chkRisingParticles.checked,
-        showShootingStars: chkShootingStars.checked
+        showShootingStars: chkShootingStars.checked,
+        glitchJitter: chkGlitchJitter.checked,
+        glitchBloom: chkGlitchBloom.checked,
+        glitchWrap: chkGlitchWrap.checked,
+        glitchPath: chkGlitchPath.checked
       };
     }
     
@@ -1551,7 +1613,11 @@
         undulation: sliderUndulation.value,
         moonPhase: sliderMoonPhase.value,
         moonRotation: sliderMoonRotation.value,
-        moonOcclusion: sliderMoonOcclusion.value
+        moonOcclusion: sliderMoonOcclusion.value,
+        glitchJitter: chkGlitchJitter.checked,
+        glitchBloom: chkGlitchBloom.checked,
+        glitchWrap: chkGlitchWrap.checked,
+        glitchPath: chkGlitchPath.checked
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     }
@@ -1602,6 +1668,20 @@
         
         chkShootingStars.checked = config.showShootingStars;
         shootingStars.mesh.visible = config.showShootingStars;
+        
+        chkGlitchJitter.checked = config.glitchJitter;
+        glitchJitter = config.glitchJitter;
+        
+        chkGlitchBloom.checked = config.glitchBloom;
+        glitchBloom = config.glitchBloom;
+        
+        chkGlitchWrap.checked = config.glitchWrap;
+        glitchWrap = config.glitchWrap;
+        treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+        
+        chkGlitchPath.checked = config.glitchPath;
+        glitchPath = config.glitchPath;
+        treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
       }
       
       // Start with DEFAULT_CONFIG
@@ -1635,7 +1715,8 @@
         }
         if (settings.bloom !== undefined) {
           sliderBloom.value = settings.bloom;
-          bloomPass.strength = settings.bloom / 100;
+          baseBloomStrength = settings.bloom / 100;
+          bloomPass.strength = baseBloomStrength;
           bloomValue.textContent = settings.bloom + '%';
         }
         if (settings.speed !== undefined) {
@@ -1686,6 +1767,24 @@
           chkShootingStars.checked = settings.chkShootingStars;
           shootingStars.mesh.visible = settings.chkShootingStars;
         }
+        if (settings.glitchJitter !== undefined) {
+          chkGlitchJitter.checked = settings.glitchJitter;
+          glitchJitter = settings.glitchJitter;
+        }
+        if (settings.glitchBloom !== undefined) {
+          chkGlitchBloom.checked = settings.glitchBloom;
+          glitchBloom = settings.glitchBloom;
+        }
+        if (settings.glitchWrap !== undefined) {
+          chkGlitchWrap.checked = settings.glitchWrap;
+          glitchWrap = settings.glitchWrap;
+          treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+        }
+        if (settings.glitchPath !== undefined) {
+          chkGlitchPath.checked = settings.glitchPath;
+          glitchPath = settings.glitchPath;
+          treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+        }
       } catch (e) {
         console.error('Failed to load settings:', e);
       }
@@ -1716,6 +1815,31 @@
       saveSettings();
     });
     
+    chkGlitchJitter.addEventListener('change', () => {
+      glitchJitter = chkGlitchJitter.checked;
+      saveSettings();
+    });
+    
+    chkGlitchBloom.addEventListener('change', () => {
+      glitchBloom = chkGlitchBloom.checked;
+      if (!glitchBloom) {
+        bloomPass.strength = baseBloomStrength;
+      }
+      saveSettings();
+    });
+    
+    chkGlitchWrap.addEventListener('change', () => {
+      glitchWrap = chkGlitchWrap.checked;
+      treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+      saveSettings();
+    });
+    
+    chkGlitchPath.addEventListener('change', () => {
+      glitchPath = chkGlitchPath.checked;
+      treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+      saveSettings();
+    });
+    
     // Tree rotation speed
     sliderRotation.addEventListener('input', () => {
       rotationSpeed = (sliderRotation.value / 100) * 0.05;
@@ -1725,7 +1849,8 @@
     
     // Bloom intensity
     sliderBloom.addEventListener('input', () => {
-      bloomPass.strength = sliderBloom.value / 100;
+      baseBloomStrength = sliderBloom.value / 100;
+      bloomPass.strength = baseBloomStrength;
       bloomValue.textContent = sliderBloom.value + '%';
       saveSettings();
     });

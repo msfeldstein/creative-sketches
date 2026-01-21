@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Grid Circles</title>
+  <title>Grid Circles - Test Version</title>
   <style>
     * { margin: 0; padding: 0; }
     body { 
@@ -80,7 +80,7 @@
   <canvas id="canvas"></canvas>
   
   <div id="debugPanel">
-    <h3>Grid Controls</h3>
+    <h3>Circle Grid Settings</h3>
     <div class="section">
       <div class="section-title">Grid</div>
       <label class="slider-label">
@@ -104,7 +104,7 @@
       </label>
     </div>
   </div>
-  <div class="hint">Press D for controls</div>
+  <div class="hint">Press D to toggle controls panel</div>
   
   <script>
     const canvas = document.getElementById('canvas');
@@ -114,10 +114,10 @@
     // CONFIG
     // ===========================================
     const CONFIG = {
-      cellSize: 60,
-      speed: 1.0,
-      waveDelay: 0.15,        // delay factor per unit distance from center
-      cycleDuration: 2.0      // seconds for one full grow/shrink cycle
+      cellSize: 50,
+      speed: 1.2,
+      waveDelay: 0.18,        // delay factor per unit distance from center
+      cycleDuration: 2.5      // seconds for one full grow/shrink cycle
     };
     
     let width, height, cols, rows, centerCol, centerRow, maxDist;

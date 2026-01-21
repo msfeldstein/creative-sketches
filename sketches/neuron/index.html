@@ -1,0 +1,1444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Neural Network</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 200px;
+      display: none;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel.dragging { user-select: none; }
+    #debugPanel h3 {
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: rgba(100, 200, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: grab;
+      background: rgba(100, 200, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+    }
+    #debugPanel h3:active { cursor: grabbing; }
+    #debugPanel .section {
+      margin-bottom: 16px;
+    }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: rgba(100, 200, 255, 0.15);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #debugPanel button:hover {
+      background: rgba(100, 200, 255, 0.3);
+      border-color: rgba(100, 200, 255, 0.5);
+    }
+    #debugPanel button:active {
+      background: rgba(100, 200, 255, 0.4);
+    }
+    #debugPanel .checkbox-label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    #debugPanel .checkbox-label input {
+      width: 16px;
+      height: 16px;
+      cursor: pointer;
+    }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span {
+      display: flex;
+      justify-content: space-between;
+    }
+    #debugPanel .slider-label input[type="range"] {
+      width: 100%;
+      cursor: pointer;
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="debugPanel">
+    <h3>Neural Controls</h3>
+    <div class="section">
+      <button id="btnRegenerate">Regenerate Network</button>
+    </div>
+    <div class="section">
+      <div class="section-title">Camera</div>
+      <button id="btnTopDown">Top Down View</button>
+      <button id="btnSideView">Side View</button>
+      <button id="btnResetCamera">Reset Camera</button>
+    </div>
+    <div class="section">
+      <div class="section-title">Visual Controls</div>
+      <label class="slider-label">
+        <span>Rotation <span id="rotationValue">100%</span></span>
+        <input type="range" id="sliderRotation" min="0" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Bloom Intensity <span id="bloomValue">18%</span></span>
+        <input type="range" id="sliderBloom" min="0" max="150" value="18">
+      </label>
+      <label class="slider-label">
+        <span>Signal Speed <span id="speedValue">186%</span></span>
+        <input type="range" id="sliderSpeed" min="10" max="300" value="186">
+      </label>
+      <label class="slider-label">
+        <span>Color Shift <span id="colorShiftValue">360°</span></span>
+        <input type="range" id="sliderColorShift" min="0" max="360" value="360">
+      </label>
+      <label class="slider-label">
+        <span>Trail Brightness <span id="trailBrightnessValue">141%</span></span>
+        <input type="range" id="sliderTrailBrightness" min="10" max="200" value="141">
+      </label>
+      <label class="slider-label">
+        <span>Dendrite Sway <span id="undulationValue">200%</span></span>
+        <input type="range" id="sliderUndulation" min="0" max="200" value="200">
+      </label>
+      <label class="slider-label">
+        <span>Soma Pulse <span id="somaPulseValue">100%</span></span>
+        <input type="range" id="sliderSomaPulse" min="0" max="200" value="100">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Glitch Lab</div>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchBloom" checked> Bloom Spikes</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchWrap" checked> Ignore Trail Wrap</label>
+      <label class="checkbox-label"><input type="checkbox" id="chkGlitchPath" checked> Path Jitter</label>
+    </div>
+    <div class="section">
+      <div class="section-title">Dev Tools</div>
+      <button id="btnCopyConfig">Copy Config to Clipboard</button>
+      <button id="btnReload">Reload Page</button>
+    </div>
+  </div>
+  <div class="hint">Press D for debug panel</div>
+  
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    // ===========================================
+    // DEFAULT CONFIG
+    // ===========================================
+    const DEFAULT_CONFIG = {
+      rotation: 100,
+      bloom: 18,
+      particleSpeed: 186,
+      colorShift: 360,
+      trailBrightness: 141,
+      undulation: 200,
+      somaPulse: 100,
+      glitchBloom: true,
+      glitchWrap: true,
+      glitchPath: true
+    };
+    // ===========================================
+
+    const NUM_NEURONS = 5;
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x000008, 0.006);
+    
+    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 60, 1);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000003);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 0.85;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      DEFAULT_CONFIG.bloom / 100, 0.4, 0.3
+    );
+    composer.addPass(bloomPass);
+    let baseBloomStrength = bloomPass.strength;
+
+    // Ethereal post-processing shader
+    const etherealShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        varying vec2 vUv;
+        
+        void main() {
+          vec2 center = vUv - 0.5;
+          float dist = length(center);
+          
+          float wave = sin(uTime * 0.4 + dist * 6.0) * 0.003 * dist;
+          vec2 uv = vUv + center * wave;
+          
+          float aberr = dist * dist * 0.012;
+          vec4 texR = texture2D(tDiffuse, uv + vec2(aberr, 0.0));
+          vec4 texG = texture2D(tDiffuse, uv);
+          vec4 texB = texture2D(tDiffuse, uv - vec2(aberr, 0.0));
+          vec3 color = vec3(texR.r, texG.g, texB.b);
+          
+          float vignette = 1.0 - dot(center * 1.3, center * 1.3);
+          vignette = pow(max(vignette, 0.0), 1.5);
+          
+          color *= vec3(0.90, 0.95, 1.15);
+          color *= vignette;
+          
+          float grain = fract(sin(dot(vUv + uTime * 0.1, vec2(12.9898, 78.233))) * 43758.5453) * 0.025;
+          color += grain - 0.0125;
+          
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+    const etherealPass = new ShaderPass(etherealShader);
+    composer.addPass(etherealPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.03;
+    controls.target.set(0, 0, 0);
+    controls.minDistance = 20;
+    controls.maxDistance = 120;
+
+    // Branch class
+    class Branch {
+      constructor(start, end, thickness, depth, parent = null, isAxon = false, neuronId = 0) {
+        this.start = start.clone();
+        this.end = end.clone();
+        this.thickness = thickness;
+        this.depth = depth;
+        this.parent = parent;
+        this.children = [];
+        this.isAxon = isAxon;
+        this.neuronId = neuronId;
+      }
+    }
+
+    // Generate a network of interconnected neurons
+    function generateNeuralNetwork() {
+      const allBranches = [];
+      const allPaths = [];
+      const neurons = [];
+      
+      // Position neurons in a spread pattern
+      const neuronPositions = [];
+      for (let i = 0; i < NUM_NEURONS; i++) {
+        const angle = (i / NUM_NEURONS) * Math.PI * 2 + Math.random() * 0.3;
+        const radius = 15 + Math.random() * 10;
+        const pos = new THREE.Vector3(
+          Math.cos(angle) * radius,
+          (Math.random() - 0.5) * 4,
+          Math.sin(angle) * radius
+        );
+        neuronPositions.push(pos);
+      }
+      
+      // Add a central neuron
+      neuronPositions.push(new THREE.Vector3(
+        (Math.random() - 0.5) * 6,
+        (Math.random() - 0.5) * 2,
+        (Math.random() - 0.5) * 6
+      ));
+
+      // Generate each neuron
+      neuronPositions.forEach((somaCenter, neuronIdx) => {
+        const branches = [];
+        const somaRadius = 1.5 + Math.random() * 0.5;
+        
+        // Find nearby neurons to connect to
+        const nearbyNeurons = [];
+        neuronPositions.forEach((otherPos, otherIdx) => {
+          if (otherIdx !== neuronIdx) {
+            const dist = somaCenter.distanceTo(otherPos);
+            if (dist < 45) {
+              nearbyNeurons.push({ pos: otherPos, idx: otherIdx, dist });
+            }
+          }
+        });
+        nearbyNeurons.sort((a, b) => a.dist - b.dist);
+        
+        function growDendrite(start, dir, length, thickness, depth, parent, isAxon = false, targetPos = null) {
+          if (depth > 6 || thickness < 0.02) return null;
+          
+          let end;
+          if (targetPos && depth < 3) {
+            // Curve toward target neuron
+            const toTarget = targetPos.clone().sub(start).normalize();
+            const blendedDir = dir.clone().lerp(toTarget, 0.3 + depth * 0.1).normalize();
+            end = start.clone().add(blendedDir.multiplyScalar(length));
+          } else {
+            end = start.clone().add(dir.clone().multiplyScalar(length));
+          }
+          
+          const branch = new Branch(start, end, thickness, depth, parent, isAxon, neuronIdx);
+          branches.push(branch);
+          if (parent) parent.children.push(branch);
+          
+          // Branching logic
+          let branchCount;
+          if (isAxon) {
+            if (depth < 2) branchCount = 1;
+            else if (depth < 4) branchCount = 2 + Math.floor(Math.random() * 2);
+            else branchCount = 2 + Math.floor(Math.random() * 3);
+          } else {
+            if (depth === 0) branchCount = 2;
+            else if (depth < 2) branchCount = 2 + Math.floor(Math.random() * 2);
+            else if (depth < 4) branchCount = 2 + Math.floor(Math.random() * 2);
+            else branchCount = 1 + Math.floor(Math.random() * 2);
+          }
+          
+          for (let i = 0; i < branchCount; i++) {
+            const newDir = dir.clone();
+            const spreadAngle = isAxon ? 0.3 + depth * 0.05 : 0.5 + depth * 0.1;
+            const azimuth = (i / branchCount) * Math.PI * 2 + Math.random() * 0.8;
+            
+            const perpX = Math.cos(azimuth);
+            const perpZ = Math.sin(azimuth);
+            
+            newDir.x += perpX * spreadAngle * (0.5 + Math.random() * 0.5);
+            newDir.z += perpZ * spreadAngle * (0.5 + Math.random() * 0.5);
+            newDir.y = (Math.random() - 0.5) * 0.3;
+            if (isAxon && depth < 2) newDir.y = 0.1 * (Math.random() - 0.5);
+            newDir.normalize();
+            
+            const lengthMult = isAxon ? 0.7 + Math.random() * 0.2 : 0.6 + Math.random() * 0.2;
+            const newLength = length * lengthMult;
+            const newThickness = thickness * (isAxon ? 0.7 : 0.55 + Math.random() * 0.15);
+            const startT = 0.7 + Math.random() * 0.25;
+            const newStart = branch.start.clone().lerp(branch.end, startT);
+            
+            growDendrite(newStart, newDir, newLength, newThickness, depth + 1, branch, isAxon, targetPos);
+          }
+          
+          return branch;
+        }
+        
+        // Create dendrites
+        const numDendrites = 4 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < numDendrites; i++) {
+          const angle = (i / numDendrites) * Math.PI * 2 + Math.random() * 0.3;
+          const dir = new THREE.Vector3(
+            Math.cos(angle),
+            (Math.random() - 0.5) * 0.3,
+            Math.sin(angle)
+          ).normalize();
+          
+          const start = somaCenter.clone().add(dir.clone().multiplyScalar(somaRadius));
+          const length = 5 + Math.random() * 3;
+          const thickness = 0.35 + Math.random() * 0.15;
+          
+          growDendrite(start, dir, length, thickness, 0, null, false, null);
+        }
+        
+        // Create axons reaching toward nearby neurons
+        const numAxons = Math.min(nearbyNeurons.length, 2);
+        for (let i = 0; i < numAxons; i++) {
+          const target = nearbyNeurons[i];
+          const dirToTarget = target.pos.clone().sub(somaCenter).normalize();
+          
+          // Add some variation
+          dirToTarget.x += (Math.random() - 0.5) * 0.3;
+          dirToTarget.z += (Math.random() - 0.5) * 0.3;
+          dirToTarget.y += (Math.random() - 0.5) * 0.2;
+          dirToTarget.normalize();
+          
+          const start = somaCenter.clone().add(dirToTarget.clone().multiplyScalar(somaRadius));
+          const distToTarget = target.dist;
+          const length = distToTarget * 0.4 + Math.random() * 3;
+          
+          growDendrite(start, dirToTarget, length, 0.5, 0, null, true, target.pos);
+        }
+        
+        // Find paths
+        const paths = [];
+        function findPaths(branch, path) {
+          const newPath = [...path, branch];
+          if (branch.children.length === 0) {
+            paths.push(newPath);
+          } else {
+            branch.children.forEach(c => findPaths(c, newPath));
+          }
+        }
+        
+        const rootBranches = branches.filter(b => !b.parent);
+        rootBranches.forEach(root => findPaths(root, []));
+        
+        neurons.push({
+          somaCenter,
+          somaRadius,
+          branches,
+          paths
+        });
+        
+        allBranches.push(...branches);
+        allPaths.push(...paths);
+      });
+      
+      return { neurons, allBranches, allPaths };
+    }
+
+    let network = generateNeuralNetwork();
+    let paths = network.allPaths;
+
+    // Create soma as interconnected glowing lines
+    function createSoma(center, radius, neuronIdx) {
+      // Generate points on an organic sphere shape
+      const numPoints = 20 + Math.floor(Math.random() * 10);
+      const points = [];
+      
+      // Create points with organic displacement
+      for (let i = 0; i < numPoints; i++) {
+        const theta = Math.random() * Math.PI * 2;
+        const phi = Math.acos(2 * Math.random() - 1);
+        
+        // Base spherical position
+        let x = Math.sin(phi) * Math.cos(theta);
+        let y = Math.sin(phi) * Math.sin(theta);
+        let z = Math.cos(phi);
+        
+        // Add organic noise displacement
+        const noise = Math.sin(x * 3 + neuronIdx) * 0.2 +
+                     Math.sin(y * 4 + neuronIdx * 2) * 0.15 +
+                     Math.sin(z * 3.5 + neuronIdx * 3) * 0.18;
+        const r = radius * (1 + noise);
+        
+        points.push(new THREE.Vector3(x * r, y * r, z * r));
+      }
+      
+      // Create line connections between nearby points
+      const linePositions = [];
+      const linePhases = [];
+      
+      for (let i = 0; i < points.length; i++) {
+        // Connect to 3-5 nearest neighbors
+        const distances = [];
+        for (let j = 0; j < points.length; j++) {
+          if (i !== j) {
+            distances.push({ idx: j, dist: points[i].distanceTo(points[j]) });
+          }
+        }
+        distances.sort((a, b) => a.dist - b.dist);
+        
+        const numConnections = 3 + Math.floor(Math.random() * 3);
+        for (let k = 0; k < Math.min(numConnections, distances.length); k++) {
+          const j = distances[k].idx;
+          // Only add each connection once
+          if (i < j) {
+            linePositions.push(points[i].x, points[i].y, points[i].z);
+            linePositions.push(points[j].x, points[j].y, points[j].z);
+            linePhases.push(Math.random() * Math.PI * 2);
+            linePhases.push(Math.random() * Math.PI * 2);
+          }
+        }
+      }
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(linePositions, 3));
+      geo.setAttribute('phase', new THREE.Float32BufferAttribute(linePhases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uPulse: { value: DEFAULT_CONFIG.somaPulse / 100 },
+          uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+          uNeuronId: { value: neuronIdx },
+          uFireTime: { value: -10 }
+        },
+        vertexShader: `
+          attribute float phase;
+          varying float vPhase;
+          varying vec3 vPosition;
+          varying float vFireIntensity;
+          uniform float uTime;
+          uniform float uPulse;
+          uniform float uNeuronId;
+          uniform float uFireTime;
+          
+          void main() {
+            vPhase = phase;
+            vPosition = position;
+            
+            // Fire intensity
+            float timeSinceFire = uTime - uFireTime;
+            vFireIntensity = exp(-timeSinceFire * 3.0);
+            if (timeSinceFire < 0.0 || timeSinceFire > 1.5) vFireIntensity = 0.0;
+            
+            // Organic pulsing with phase offset per neuron
+            float neuronPhase = uNeuronId * 1.5;
+            float pulse = 1.0 + sin(uTime * 2.0 + neuronPhase) * 0.06 * uPulse;
+            pulse += sin(uTime * 3.5 + neuronPhase * 0.7) * 0.03 * uPulse;
+            
+            // Individual line breathing
+            pulse += sin(uTime * 4.0 + phase * 3.0) * 0.02;
+            
+            // Expand on fire
+            pulse += vFireIntensity * 0.2;
+            
+            vec3 pos = position * pulse;
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying float vPhase;
+          varying vec3 vPosition;
+          varying float vFireIntensity;
+          uniform float uTime;
+          uniform float uPulse;
+          uniform float uColorShift;
+          uniform float uNeuronId;
+          
+          vec3 hueShift(vec3 color, float shift) {
+            float angle = shift * 6.28318;
+            float s = sin(angle);
+            float c = cos(angle);
+            vec3 weights = vec3(0.299, 0.587, 0.114);
+            float wSum = dot(color, weights);
+            vec3 c1 = vec3(wSum);
+            vec3 c2 = color - c1;
+            return c1 + vec3(
+              c2.r * c - (c2.g * 0.328 - c2.b * 0.883) * s,
+              c2.g * c + (c2.r * 0.328 + c2.b * 0.557) * s,
+              c2.b * c - (c2.r * 0.883 + c2.g * 0.557) * s
+            );
+          }
+          
+          void main() {
+            float neuronPhase = uNeuronId * 1.5;
+            
+            // Base colors
+            vec3 cyanLine = vec3(0.2, 0.7, 1.0);
+            vec3 violetLine = vec3(0.6, 0.4, 1.0);
+            vec3 fireColor = vec3(1.0, 0.9, 0.6);
+            vec3 white = vec3(1.0);
+            
+            // Mix colors based on phase
+            float colorMix = sin(vPhase + uTime * 0.5) * 0.5 + 0.5;
+            vec3 color = mix(cyanLine, violetLine, colorMix);
+            
+            // Pulsing brightness
+            float pulse = sin(uTime * 2.0 + neuronPhase) * 0.5 + 0.5;
+            pulse = pulse * uPulse;
+            color *= 0.7 + pulse * 0.5;
+            
+            // Shimmer along lines
+            float shimmer = sin(uTime * 5.0 + vPhase * 8.0 + length(vPosition) * 3.0) * 0.5 + 0.5;
+            color += white * pow(shimmer, 3.0) * 0.3;
+            
+            // FIRE EFFECT
+            color = mix(color, fireColor, vFireIntensity * 0.8);
+            color += white * vFireIntensity * 2.0;
+            
+            color = hueShift(color, uColorShift);
+            
+            // Alpha based on brightness and fire
+            float alpha = 0.6 + pulse * 0.2 + vFireIntensity * 0.4;
+            
+            gl_FragColor = vec4(color, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      const mesh = new THREE.LineSegments(geo, mat);
+      mesh.position.copy(center);
+      return mesh;
+    }
+
+    // Create synaptic terminals
+    function createSynapticTerminals(allPaths) {
+      const positions = [];
+      const phases = [];
+      
+      allPaths.forEach((path, i) => {
+        const lastBranch = path[path.length - 1];
+        positions.push(lastBranch.end.x, lastBranch.end.y, lastBranch.end.z);
+        phases.push(Math.random() * Math.PI * 2);
+      });
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('phase', new THREE.Float32BufferAttribute(phases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 }
+        },
+        vertexShader: `
+          attribute float phase;
+          varying float vPhase;
+          varying float vAlpha;
+          uniform float uTime;
+          
+          void main() {
+            vPhase = phase;
+            
+            float pulse = sin(uTime * 3.0 + phase * 5.0) * 0.3 + 1.0;
+            vAlpha = 0.5 + sin(uTime * 2.0 + phase * 3.0) * 0.3;
+            
+            vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = 6.0 * pulse * (50.0 / -mv.z);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vPhase;
+          varying float vAlpha;
+          uniform float uTime;
+          uniform float uColorShift;
+          
+          vec3 hueShift(vec3 color, float shift) {
+            float angle = shift * 6.28318;
+            float s = sin(angle);
+            float c = cos(angle);
+            vec3 weights = vec3(0.299, 0.587, 0.114);
+            float wSum = dot(color, weights);
+            vec3 c1 = vec3(wSum);
+            vec3 c2 = color - c1;
+            return c1 + vec3(
+              c2.r * c - (c2.g * 0.328 - c2.b * 0.883) * s,
+              c2.g * c + (c2.r * 0.328 + c2.b * 0.557) * s,
+              c2.b * c - (c2.r * 0.883 + c2.g * 0.557) * s
+            );
+          }
+          
+          void main() {
+            float d = length(gl_PointCoord - 0.5);
+            float a = 1.0 - smoothstep(0.0, 0.5, d);
+            a += exp(-d * 3.0) * 0.5;
+            
+            vec3 color = mix(vec3(0.3, 0.8, 1.0), vec3(0.8, 0.4, 1.0), sin(vPhase + uTime) * 0.5 + 0.5);
+            color = hueShift(color, uColorShift);
+            
+            gl_FragColor = vec4(color, a * vAlpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+
+    // Particle system
+    const PARTICLES = 25000;
+    const MAX_PATH = 10;
+    const TRAIL_LENGTH = 6;
+
+    const pathTexW = MAX_PATH;
+    let pathTexH = paths.length;
+
+    function buildPathTexture(pathsList) {
+      const data = new Float32Array(pathTexW * pathsList.length * 4);
+      
+      pathsList.forEach((path, pi) => {
+        let idx = 0;
+        data[(pi * pathTexW + idx) * 4 + 0] = path[0].start.x;
+        data[(pi * pathTexW + idx) * 4 + 1] = path[0].start.y;
+        data[(pi * pathTexW + idx) * 4 + 2] = path[0].start.z;
+        data[(pi * pathTexW + idx) * 4 + 3] = path[0].thickness;
+        idx++;
+        
+        for (let b = 0; b < path.length && idx < MAX_PATH; b++) {
+          data[(pi * pathTexW + idx) * 4 + 0] = path[b].end.x;
+          data[(pi * pathTexW + idx) * 4 + 1] = path[b].end.y;
+          data[(pi * pathTexW + idx) * 4 + 2] = path[b].end.z;
+          data[(pi * pathTexW + idx) * 4 + 3] = path[b].thickness;
+          idx++;
+        }
+        
+        const last = path[path.length - 1];
+        while (idx < MAX_PATH) {
+          data[(pi * pathTexW + idx) * 4 + 0] = last.end.x;
+          data[(pi * pathTexW + idx) * 4 + 1] = last.end.y;
+          data[(pi * pathTexW + idx) * 4 + 2] = last.end.z;
+          data[(pi * pathTexW + idx) * 4 + 3] = last.thickness;
+          idx++;
+        }
+      });
+      
+      return data;
+    }
+
+    let pathData = buildPathTexture(paths);
+    let pathTex = new THREE.DataTexture(pathData, pathTexW, pathTexH, THREE.RGBAFormat, THREE.FloatType);
+    pathTex.needsUpdate = true;
+
+    // Build neuron ID lookup for each path
+    function buildPathNeuronIds(networkData) {
+      const ids = [];
+      networkData.neurons.forEach((neuron, neuronIdx) => {
+        neuron.paths.forEach(() => {
+          ids.push(neuronIdx);
+        });
+      });
+      return ids;
+    }
+    let pathNeuronIds = buildPathNeuronIds(network);
+
+    // Neuron firing state - each neuron fires independently
+    const neuronFireTimes = new Float32Array(NUM_NEURONS + 1); // +1 for central neuron
+    const neuronFireIntervals = [];
+    for (let i = 0; i <= NUM_NEURONS; i++) {
+      neuronFireTimes[i] = -10; // Start unfired
+      neuronFireIntervals.push(3 + Math.random() * 4); // Random interval 3-7 seconds
+    }
+
+    const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
+    const TOTAL_VERTICES = PARTICLES * TRAIL_SEGMENTS * 2;
+    
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array(TOTAL_VERTICES * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    
+    const pathIndices = new Float32Array(TOTAL_VERTICES);
+    const pathLengths = new Float32Array(TOTAL_VERTICES);
+    const scales = new Float32Array(TOTAL_VERTICES);
+    const speeds = new Float32Array(TOTAL_VERTICES);
+    const phases = new Float32Array(TOTAL_VERTICES);
+    const timeOffsets = new Float32Array(TOTAL_VERTICES);
+    const colorSeeds = new Float32Array(TOTAL_VERTICES);
+    const trailIndices = new Float32Array(TOTAL_VERTICES);
+    const neuronIds = new Float32Array(TOTAL_VERTICES);
+
+    function setSegmentVertex(vertexIdx, pi, pathLen, scale, speed, phase, timeOffset, colorSeed, trailIdx, neuronId) {
+      pathIndices[vertexIdx] = pi;
+      pathLengths[vertexIdx] = pathLen;
+      scales[vertexIdx] = scale;
+      speeds[vertexIdx] = speed;
+      phases[vertexIdx] = phase;
+      timeOffsets[vertexIdx] = timeOffset;
+      colorSeeds[vertexIdx] = colorSeed;
+      trailIndices[vertexIdx] = trailIdx;
+      neuronIds[vertexIdx] = neuronId;
+    }
+    
+    const NUM_BURSTS = 200;
+    const burstTimeOffsets = [];
+    const burstPaths = [];
+    const burstSpeeds = [];
+    const burstColorSeeds = [];
+    
+    for (let b = 0; b < NUM_BURSTS; b++) {
+      burstTimeOffsets.push(Math.random() * 30);
+      burstPaths.push(Math.floor(Math.random() * paths.length));
+      burstSpeeds.push(0.025 + Math.random() * 0.03);
+      burstColorSeeds.push(Math.random());
+    }
+    
+    const BURST_PARTICLES = Math.floor(PARTICLES * 0.7);
+    let particleIdx = 0;
+    let vertexIdx = 0;
+    
+    for (let b = 0; b < NUM_BURSTS; b++) {
+      const burstSize = 150 + Math.floor(Math.pow(Math.random(), 2) * 500);
+      const burstTime = burstTimeOffsets[b];
+      const burstPath = burstPaths[b];
+      const burstSpeed = burstSpeeds[b];
+      const burstColor = burstColorSeeds[b];
+      
+      for (let p = 0; p < burstSize && particleIdx < BURST_PARTICLES; p++) {
+        let pi = burstPath;
+        if (Math.random() > 0.3) {
+          pi = Math.floor(Math.random() * paths.length);
+        }
+        
+        const baseScale = 0.016 + Math.pow(Math.random(), 2) * 0.028;
+        const timeVariation = (Math.random() - 0.5) * 0.8;
+        const baseTimeOffset = burstTime + timeVariation;
+        const baseSpeed = burstSpeed + (Math.random() - 0.5) * 0.015;
+        const basePhase = Math.random() * Math.PI * 2;
+        const baseColorSeed = burstColor + (Math.random() - 0.5) * 0.15;
+        const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
+        const neuronId = pathNeuronIds[pi] || 0;
+        
+        for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+          setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg, neuronId);
+          setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg + 1, neuronId);
+        }
+        particleIdx++;
+      }
+    }
+    
+    for (let i = particleIdx; i < PARTICLES; i++) {
+      const pi = Math.floor(Math.random() * paths.length);
+      const baseScale = 0.012 + Math.pow(Math.random(), 2) * 0.02;
+      const baseSpeed = 0.03 + Math.random() * 0.04;
+      const basePhase = Math.random() * Math.PI * 2;
+      const baseTimeOffset = Math.random() * 30;
+      const baseColorSeed = Math.random();
+      const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
+      const neuronId = pathNeuronIds[pi] || 0;
+      
+      for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
+        setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg, neuronId);
+        setSegmentVertex(vertexIdx++, pi, pathLen, baseScale, baseSpeed, basePhase, baseTimeOffset, baseColorSeed, seg + 1, neuronId);
+      }
+    }
+
+    geo.setAttribute('pathIndex', new THREE.BufferAttribute(pathIndices, 1));
+    geo.setAttribute('pathLength', new THREE.BufferAttribute(pathLengths, 1));
+    geo.setAttribute('aScale', new THREE.BufferAttribute(scales, 1));
+    geo.setAttribute('speed', new THREE.BufferAttribute(speeds, 1));
+    geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+    geo.setAttribute('timeOffset', new THREE.BufferAttribute(timeOffsets, 1));
+    geo.setAttribute('colorSeed', new THREE.BufferAttribute(colorSeeds, 1));
+    geo.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
+    geo.setAttribute('neuronId', new THREE.BufferAttribute(neuronIds, 1));
+
+    const neuronMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uPathTex: { value: pathTex },
+        uPathSize: { value: new THREE.Vector2(pathTexW, pathTexH) },
+        uTrailSegments: { value: TRAIL_SEGMENTS },
+        uSpeedMult: { value: DEFAULT_CONFIG.particleSpeed / 100 },
+        uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+        uBrightness: { value: DEFAULT_CONFIG.trailBrightness / 100 },
+        uUndulation: { value: DEFAULT_CONFIG.undulation / 100 },
+        uDebugIgnoreWrap: { value: DEFAULT_CONFIG.glitchWrap ? 1 : 0 },
+        uDebugPathJitter: { value: DEFAULT_CONFIG.glitchPath ? 1 : 0 },
+        uFireTimes: { value: neuronFireTimes }
+      },
+      vertexShader: `
+        attribute float pathIndex;
+        attribute float pathLength;
+        attribute float aScale;
+        attribute float speed;
+        attribute float phase;
+        attribute float timeOffset;
+        attribute float colorSeed;
+        attribute float trailIndex;
+        attribute float neuronId;
+        
+        uniform float uTime;
+        uniform sampler2D uPathTex;
+        uniform vec2 uPathSize;
+        uniform float uTrailSegments;
+        uniform float uSpeedMult;
+        uniform float uUndulation;
+        uniform float uDebugPathJitter;
+        uniform float uFireTimes[7];
+        
+        varying float vAlpha;
+        varying float vProgress;
+        varying float vColorSeed;
+        varying float vPhase;
+        varying float vTrailFade;
+        varying float vWrap;
+        varying float vFireIntensity;
+        
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+        float noise(float x) {
+          float i = floor(x), f = fract(x);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(hash(i), hash(i + 1.0), f);
+        }
+        
+        vec4 getPathPt(float pi, float idx) {
+          float jitter = (noise(pi * 2.3 + idx * 3.1 + uTime * 0.7) - 0.5) * 2.0;
+          float jIdx = clamp(idx + jitter * uDebugPathJitter, 0.0, uPathSize.x - 1.0);
+          return texture2D(uPathTex, vec2((jIdx + 0.5) / uPathSize.x, (pi + 0.5) / uPathSize.y));
+        }
+        
+        void main() {
+          vColorSeed = colorSeed;
+          vPhase = phase;
+          
+          float baseTime = uTime * uSpeedMult + timeOffset;
+          float noiseOffset = (noise(phase * 10.0) - 0.5) * 0.08;
+          
+          float trailOffset = trailIndex * 0.5;
+          float time = baseTime - trailOffset;
+          
+          float rawT = time * speed + noiseOffset;
+          float t = mod(rawT, 1.0);
+          
+          float rawTPrev = (baseTime - (trailIndex - 1.0) * 0.5) * speed + noiseOffset;
+          float rawTNext = (baseTime - (trailIndex + 1.0) * 0.5) * speed + noiseOffset;
+          
+          float cycleCurrent = floor(rawT);
+          float cyclePrev = floor(rawTPrev);
+          float cycleNext = floor(rawTNext);
+          
+          float wrapPrev = abs(cycleCurrent - cyclePrev) > 0.5 ? 1.0 : 0.0;
+          float wrapNext = abs(cycleCurrent - cycleNext) > 0.5 ? 1.0 : 0.0;
+          vWrap = max(wrapPrev, wrapNext);
+          
+          float segCount = pathLength - 1.0;
+          float segProg = t * segCount;
+          float segIdx = floor(segProg);
+          float segT = fract(segProg);
+          
+          vec4 p0 = getPathPt(pathIndex, max(0.0, segIdx - 1.0));
+          vec4 p1 = getPathPt(pathIndex, segIdx);
+          vec4 p2 = getPathPt(pathIndex, min(segIdx + 1.0, pathLength - 1.0));
+          vec4 p3 = getPathPt(pathIndex, min(segIdx + 2.0, pathLength - 1.0));
+          
+          float t2 = segT * segT, t3 = t2 * segT;
+          vec3 pos = 0.5 * (
+            2.0 * p1.xyz +
+            (-p0.xyz + p2.xyz) * segT +
+            (2.0 * p0.xyz - 5.0 * p1.xyz + 4.0 * p2.xyz - p3.xyz) * t2 +
+            (-p0.xyz + 3.0 * p1.xyz - 3.0 * p2.xyz + p3.xyz) * t3
+          );
+          
+          float distFromCenter = length(pos.xz);
+          float branchPhase = pathIndex * 0.73 + segIdx * 0.31;
+          float swayTime = uTime * 0.15;
+          
+          float swayX = sin(swayTime + branchPhase) * 0.7 
+                      + sin(swayTime * 1.7 + branchPhase * 2.3) * 0.3;
+          float swayZ = sin(swayTime * 0.8 + branchPhase * 1.5 + 1.57) * 0.7 
+                      + sin(swayTime * 1.3 + branchPhase * 1.8) * 0.3;
+          
+          float swayAmount = uUndulation * (distFromCenter / 30.0) * (0.5 + t * 0.5);
+          pos.x += swayX * swayAmount;
+          pos.z += swayZ * swayAmount;
+          
+          float thick = mix(p1.w, p2.w, segT);
+          
+          vec3 tangent = normalize(p2.xyz - p1.xyz + 0.001);
+          vec3 perp1 = normalize(cross(tangent, vec3(0.0, 1.0, 0.1)));
+          vec3 perp2 = normalize(cross(tangent, perp1));
+          
+          float ns1 = phase * 10.0 + time * 0.2;
+          float ns2 = phase * 7.0 + time * 0.25;
+          
+          float d1 = (noise(ns1 + t * 2.0) - 0.5) * 0.8;
+          d1 += sin(phase * 3.0 + time * 0.2 + t * 1.5) * 0.3;
+          float d2 = (noise(ns2 + t * 1.8) - 0.5) * 0.8;
+          d2 += cos(phase * 2.0 + time * 0.15 + t * 1.2) * 0.3;
+          
+          float driftMult = thick * 0.5 + 0.05;
+          driftMult *= 1.0 + t * 0.5;
+          
+          d1 *= driftMult;
+          d2 *= driftMult;
+          
+          float vDrift = (noise(phase * 13.0 + t * 1.5) - 0.5) * thick * 0.2;
+          pos += perp1 * d1 + perp2 * d2 + vec3(0.0, vDrift, 0.0);
+          
+          vTrailFade = 1.0 - (trailIndex / (uTrailSegments + 1.0));
+          vTrailFade = pow(max(vTrailFade, 0.0), 0.8);
+          
+          vProgress = t;
+          
+          // Calculate fire intensity - wave traveling from soma (t=0) to tips (t=1)
+          int nId = int(neuronId);
+          float fireTime = uFireTimes[nId];
+          float timeSinceFire = uTime - fireTime;
+          
+          // Wave travels from 0 to 1 over ~1.5 seconds
+          float wavePosition = timeSinceFire * 0.7;
+          float distFromWave = abs(t - wavePosition);
+          float waveWidth = 0.15;
+          vFireIntensity = exp(-distFromWave * distFromWave / (waveWidth * waveWidth));
+          
+          // Fade out wave over time
+          float waveFade = 1.0 - smoothstep(0.0, 2.0, timeSinceFire);
+          vFireIntensity *= waveFade;
+          
+          // Only show wave if it's within valid range
+          if (timeSinceFire < 0.0 || timeSinceFire > 2.5) vFireIntensity = 0.0;
+          
+          float alphaBase = smoothstep(0.0, 0.05, t) * smoothstep(1.0, 0.8, t);
+          vAlpha = alphaBase * (0.3 + 0.7 * vTrailFade);
+          
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        uniform float uColorShift;
+        uniform float uBrightness;
+        uniform float uDebugIgnoreWrap;
+        
+        varying float vAlpha;
+        varying float vProgress;
+        varying float vColorSeed;
+        varying float vPhase;
+        varying float vTrailFade;
+        varying float vWrap;
+        varying float vFireIntensity;
+        
+        vec3 hueShift(vec3 color, float shift) {
+          float angle = shift * 6.28318;
+          float s = sin(angle);
+          float c = cos(angle);
+          vec3 weights = vec3(0.299, 0.587, 0.114);
+          float wSum = dot(color, weights);
+          vec3 c1 = vec3(wSum);
+          vec3 c2 = color - c1;
+          return c1 + vec3(
+            c2.r * c - (c2.g * 0.328 - c2.b * 0.883) * s,
+            c2.g * c + (c2.r * 0.328 + c2.b * 0.557) * s,
+            c2.b * c - (c2.r * 0.883 + c2.g * 0.557) * s
+          );
+        }
+        
+        void main() {
+          if (uDebugIgnoreWrap < 0.5 && vWrap > 0.5) discard;
+          
+          vec3 cyan = vec3(0.0, 0.92, 1.0);
+          vec3 blue = vec3(0.2, 0.5, 1.0);
+          vec3 violet = vec3(0.6, 0.3, 1.0);
+          vec3 magenta = vec3(1.0, 0.2, 0.7);
+          vec3 white = vec3(1.0, 0.98, 0.95);
+          
+          float colorMix = vColorSeed + sin(uTime * 0.15 + vPhase) * 0.15;
+          vec3 baseColor;
+          if (colorMix < 0.25) {
+            baseColor = mix(cyan, blue, colorMix * 4.0);
+          } else if (colorMix < 0.5) {
+            baseColor = mix(blue, violet, (colorMix - 0.25) * 4.0);
+          } else if (colorMix < 0.75) {
+            baseColor = mix(violet, magenta, (colorMix - 0.5) * 4.0);
+          } else {
+            baseColor = mix(magenta, cyan, (colorMix - 0.75) * 4.0);
+          }
+          
+          vec3 color = baseColor;
+          
+          // Fire wave - bright white/yellow pulse
+          vec3 fireColor = vec3(1.0, 0.9, 0.6);
+          color = mix(color, fireColor, vFireIntensity * 0.9);
+          color += white * vFireIntensity * 1.5;
+          
+          float shimmer = sin(uTime * 4.0 + vPhase * 12.0 + vProgress * 30.0) * 0.5 + 0.5;
+          shimmer *= sin(uTime * 2.5 + vPhase * 8.0) * 0.5 + 0.5;
+          color += white * pow(shimmer, 3.0) * vProgress * 0.3;
+          
+          float sparkle = pow(max(0.0, sin(uTime * 1.2 + vPhase * 25.0 + vProgress * 15.0)), 20.0);
+          color += white * sparkle * 0.7;
+          
+          color *= 0.95 + (1.0 - vProgress) * 0.1;
+          
+          color = hueShift(color, uColorShift);
+          color *= uBrightness;
+          
+          // Boost alpha during fire
+          float fireAlpha = vAlpha * (1.0 + vFireIntensity * 3.0);
+          
+          gl_FragColor = vec4(color, fireAlpha * 0.15);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+
+    const neuronMesh = new THREE.LineSegments(geo, neuronMat);
+    neuronMesh.frustumCulled = false;
+    
+    // Create group
+    const neuronGroup = new THREE.Group();
+    neuronGroup.add(neuronMesh);
+    
+    // Add somas
+    let somas = [];
+    network.neurons.forEach((n, idx) => {
+      const somaMesh = createSoma(n.somaCenter, n.somaRadius, idx);
+      somas.push(somaMesh);
+      neuronGroup.add(somaMesh);
+    });
+    
+    // Add terminals
+    let terminals = createSynapticTerminals(paths);
+    neuronGroup.add(terminals);
+    
+    scene.add(neuronGroup);
+
+    // Animation state
+    let rotationSpeed = (DEFAULT_CONFIG.rotation / 100) * 0.05;
+    let bloomSpikeFrames = 0;
+    let bloomSpikeStrength = baseBloomStrength;
+    let glitchBloom = DEFAULT_CONFIG.glitchBloom;
+    let glitchWrap = DEFAULT_CONFIG.glitchWrap;
+    let glitchPath = DEFAULT_CONFIG.glitchPath;
+    
+    // Track next fire time for each neuron
+    const nextFireTimes = [];
+    for (let i = 0; i <= NUM_NEURONS; i++) {
+      nextFireTimes.push(1 + Math.random() * 3); // Stagger initial fires
+    }
+    
+    function animate(time) {
+      const t = time * 0.001;
+      
+      // Check for neuron firings
+      for (let i = 0; i <= NUM_NEURONS; i++) {
+        if (t >= nextFireTimes[i]) {
+          // Fire this neuron!
+          neuronFireTimes[i] = t;
+          
+          // Schedule next fire with random interval
+          nextFireTimes[i] = t + 2.5 + Math.random() * 4;
+          
+          // Update soma uniform
+          if (somas[i]) {
+            somas[i].material.uniforms.uFireTime.value = t;
+          }
+        }
+      }
+      
+      // Update particle shader fire times
+      neuronMat.uniforms.uFireTimes.value = neuronFireTimes;
+      
+      neuronMat.uniforms.uTime.value = t;
+      somas.forEach(s => s.material.uniforms.uTime.value = t);
+      terminals.material.uniforms.uTime.value = t;
+      
+      etherealPass.uniforms.uTime.value = t;
+      
+      neuronGroup.rotation.y = t * rotationSpeed;
+      
+      controls.update();
+      
+      if (glitchBloom) {
+        if (bloomSpikeFrames <= 0 && Math.random() < 0.02) {
+          bloomSpikeFrames = 4 + Math.floor(Math.random() * 10);
+          bloomSpikeStrength = baseBloomStrength * (2.0 + Math.random() * 3.5);
+        }
+        if (bloomSpikeFrames > 0) {
+          bloomPass.strength = bloomSpikeStrength;
+          bloomSpikeFrames -= 1;
+        } else {
+          bloomPass.strength = baseBloomStrength;
+        }
+      } else if (bloomPass.strength !== baseBloomStrength) {
+        bloomPass.strength = baseBloomStrength;
+      }
+      
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Debug Panel
+    const debugPanel = document.getElementById('debugPanel');
+    const btnRegenerate = document.getElementById('btnRegenerate');
+    const btnTopDown = document.getElementById('btnTopDown');
+    const btnSideView = document.getElementById('btnSideView');
+    const btnResetCamera = document.getElementById('btnResetCamera');
+    
+    const sliderRotation = document.getElementById('sliderRotation');
+    const rotationValue = document.getElementById('rotationValue');
+    const sliderBloom = document.getElementById('sliderBloom');
+    const bloomValue = document.getElementById('bloomValue');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const speedValue = document.getElementById('speedValue');
+    const sliderColorShift = document.getElementById('sliderColorShift');
+    const colorShiftValue = document.getElementById('colorShiftValue');
+    const sliderTrailBrightness = document.getElementById('sliderTrailBrightness');
+    const trailBrightnessValue = document.getElementById('trailBrightnessValue');
+    const sliderUndulation = document.getElementById('sliderUndulation');
+    const undulationValue = document.getElementById('undulationValue');
+    const sliderSomaPulse = document.getElementById('sliderSomaPulse');
+    const somaPulseValue = document.getElementById('somaPulseValue');
+    const chkGlitchBloom = document.getElementById('chkGlitchBloom');
+    const chkGlitchWrap = document.getElementById('chkGlitchWrap');
+    const chkGlitchPath = document.getElementById('chkGlitchPath');
+    
+    const STORAGE_KEY = 'neuronNetworkSettings';
+    
+    function getCurrentConfig() {
+      return {
+        rotation: parseInt(sliderRotation.value),
+        bloom: parseInt(sliderBloom.value),
+        particleSpeed: parseInt(sliderSpeed.value),
+        colorShift: parseInt(sliderColorShift.value),
+        trailBrightness: parseInt(sliderTrailBrightness.value),
+        undulation: parseInt(sliderUndulation.value),
+        somaPulse: parseInt(sliderSomaPulse.value),
+        glitchBloom: chkGlitchBloom.checked,
+        glitchWrap: chkGlitchWrap.checked,
+        glitchPath: chkGlitchPath.checked
+      };
+    }
+    
+    function saveSettings() {
+      const rect = debugPanel.getBoundingClientRect();
+      const settings = {
+        debugOpen: debugPanel.classList.contains('visible'),
+        panelX: debugPanel.style.left ? rect.left : null,
+        panelY: debugPanel.style.top ? rect.top : null,
+        ...getCurrentConfig()
+      };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    }
+    
+    function loadSettings() {
+      sliderRotation.value = DEFAULT_CONFIG.rotation;
+      rotationValue.textContent = DEFAULT_CONFIG.rotation + '%';
+      sliderBloom.value = DEFAULT_CONFIG.bloom;
+      bloomValue.textContent = DEFAULT_CONFIG.bloom + '%';
+      sliderSpeed.value = DEFAULT_CONFIG.particleSpeed;
+      speedValue.textContent = DEFAULT_CONFIG.particleSpeed + '%';
+      sliderColorShift.value = DEFAULT_CONFIG.colorShift;
+      colorShiftValue.textContent = DEFAULT_CONFIG.colorShift + '°';
+      sliderTrailBrightness.value = DEFAULT_CONFIG.trailBrightness;
+      trailBrightnessValue.textContent = DEFAULT_CONFIG.trailBrightness + '%';
+      sliderUndulation.value = DEFAULT_CONFIG.undulation;
+      undulationValue.textContent = DEFAULT_CONFIG.undulation + '%';
+      sliderSomaPulse.value = DEFAULT_CONFIG.somaPulse;
+      somaPulseValue.textContent = DEFAULT_CONFIG.somaPulse + '%';
+      chkGlitchBloom.checked = DEFAULT_CONFIG.glitchBloom;
+      glitchBloom = DEFAULT_CONFIG.glitchBloom;
+      chkGlitchWrap.checked = DEFAULT_CONFIG.glitchWrap;
+      glitchWrap = DEFAULT_CONFIG.glitchWrap;
+      neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+      chkGlitchPath.checked = DEFAULT_CONFIG.glitchPath;
+      glitchPath = DEFAULT_CONFIG.glitchPath;
+      neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+      
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (!saved) return;
+      
+      try {
+        const s = JSON.parse(saved);
+        if (s.debugOpen) debugPanel.classList.add('visible');
+        if (s.panelX !== null && s.panelY !== null) {
+          debugPanel.style.left = s.panelX + 'px';
+          debugPanel.style.top = s.panelY + 'px';
+          debugPanel.style.right = 'auto';
+        }
+        if (s.rotation !== undefined) { sliderRotation.value = s.rotation; rotationSpeed = (s.rotation / 100) * 0.05; rotationValue.textContent = s.rotation + '%'; }
+        if (s.bloom !== undefined) { sliderBloom.value = s.bloom; baseBloomStrength = s.bloom / 100; bloomPass.strength = baseBloomStrength; bloomValue.textContent = s.bloom + '%'; }
+        if (s.particleSpeed !== undefined) { sliderSpeed.value = s.particleSpeed; neuronMat.uniforms.uSpeedMult.value = s.particleSpeed / 100; speedValue.textContent = s.particleSpeed + '%'; }
+        if (s.colorShift !== undefined) {
+          sliderColorShift.value = s.colorShift;
+          neuronMat.uniforms.uColorShift.value = s.colorShift / 360;
+          somas.forEach(soma => soma.material.uniforms.uColorShift.value = s.colorShift / 360);
+          terminals.material.uniforms.uColorShift.value = s.colorShift / 360;
+          colorShiftValue.textContent = s.colorShift + '°';
+        }
+        if (s.trailBrightness !== undefined) { sliderTrailBrightness.value = s.trailBrightness; neuronMat.uniforms.uBrightness.value = s.trailBrightness / 100; trailBrightnessValue.textContent = s.trailBrightness + '%'; }
+        if (s.undulation !== undefined) { sliderUndulation.value = s.undulation; neuronMat.uniforms.uUndulation.value = s.undulation / 100; undulationValue.textContent = s.undulation + '%'; }
+        if (s.somaPulse !== undefined) { sliderSomaPulse.value = s.somaPulse; somas.forEach(soma => soma.material.uniforms.uPulse.value = s.somaPulse / 100); somaPulseValue.textContent = s.somaPulse + '%'; }
+        if (s.glitchBloom !== undefined) { chkGlitchBloom.checked = s.glitchBloom; glitchBloom = s.glitchBloom; }
+        if (s.glitchWrap !== undefined) { chkGlitchWrap.checked = s.glitchWrap; glitchWrap = s.glitchWrap; neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0; }
+        if (s.glitchPath !== undefined) { chkGlitchPath.checked = s.glitchPath; glitchPath = s.glitchPath; neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0; }
+      } catch (e) {
+        console.error('Failed to load settings:', e);
+      }
+    }
+    
+    loadSettings();
+    
+    // Event listeners
+    chkGlitchBloom.addEventListener('change', () => { glitchBloom = chkGlitchBloom.checked; if (!glitchBloom) bloomPass.strength = baseBloomStrength; saveSettings(); });
+    chkGlitchWrap.addEventListener('change', () => { glitchWrap = chkGlitchWrap.checked; neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0; saveSettings(); });
+    chkGlitchPath.addEventListener('change', () => { glitchPath = chkGlitchPath.checked; neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0; saveSettings(); });
+    sliderRotation.addEventListener('input', () => { rotationSpeed = (sliderRotation.value / 100) * 0.05; rotationValue.textContent = sliderRotation.value + '%'; saveSettings(); });
+    sliderBloom.addEventListener('input', () => { baseBloomStrength = sliderBloom.value / 100; bloomPass.strength = baseBloomStrength; bloomValue.textContent = sliderBloom.value + '%'; saveSettings(); });
+    sliderSpeed.addEventListener('input', () => { neuronMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100; speedValue.textContent = sliderSpeed.value + '%'; saveSettings(); });
+    sliderColorShift.addEventListener('input', () => {
+      const deg = parseInt(sliderColorShift.value);
+      neuronMat.uniforms.uColorShift.value = deg / 360;
+      somas.forEach(s => s.material.uniforms.uColorShift.value = deg / 360);
+      terminals.material.uniforms.uColorShift.value = deg / 360;
+      colorShiftValue.textContent = deg + '°';
+      saveSettings();
+    });
+    sliderTrailBrightness.addEventListener('input', () => { neuronMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100; trailBrightnessValue.textContent = sliderTrailBrightness.value + '%'; saveSettings(); });
+    sliderUndulation.addEventListener('input', () => { neuronMat.uniforms.uUndulation.value = sliderUndulation.value / 100; undulationValue.textContent = sliderUndulation.value + '%'; saveSettings(); });
+    sliderSomaPulse.addEventListener('input', () => { somas.forEach(s => s.material.uniforms.uPulse.value = sliderSomaPulse.value / 100); somaPulseValue.textContent = sliderSomaPulse.value + '%'; saveSettings(); });
+    
+    window.addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') { debugPanel.classList.toggle('visible'); saveSettings(); } });
+    
+    const panelHeader = debugPanel.querySelector('h3');
+    let isDragging = false;
+    let dragStartX, dragStartY, panelStartX, panelStartY;
+    
+    panelHeader.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      debugPanel.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = debugPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      e.preventDefault();
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      let newX = Math.max(0, Math.min(window.innerWidth - debugPanel.offsetWidth, panelStartX + e.clientX - dragStartX));
+      let newY = Math.max(0, Math.min(window.innerHeight - debugPanel.offsetHeight, panelStartY + e.clientY - dragStartY));
+      debugPanel.style.left = newX + 'px';
+      debugPanel.style.top = newY + 'px';
+      debugPanel.style.right = 'auto';
+    });
+    
+    window.addEventListener('mouseup', () => { if (isDragging) { isDragging = false; debugPanel.classList.remove('dragging'); saveSettings(); } });
+    
+    const btnCopyConfig = document.getElementById('btnCopyConfig');
+    const btnReload = document.getElementById('btnReload');
+    
+    btnCopyConfig.addEventListener('click', async () => {
+      const configStr = `const DEFAULT_CONFIG = ${JSON.stringify(getCurrentConfig(), null, 2)};`;
+      try { await navigator.clipboard.writeText(configStr); btnCopyConfig.textContent = 'Copied!'; }
+      catch (e) { console.log(configStr); btnCopyConfig.textContent = 'Check Console'; }
+      setTimeout(() => btnCopyConfig.textContent = 'Copy Config to Clipboard', 1500);
+    });
+    
+    btnReload.addEventListener('click', () => location.reload());
+    
+    btnTopDown.addEventListener('click', () => { camera.position.set(0, 60, 1); camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0); });
+    btnSideView.addEventListener('click', () => { camera.position.set(50, 8, 0); camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0); });
+    btnResetCamera.addEventListener('click', () => { camera.position.set(0, 60, 1); camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0); });
+    
+    btnRegenerate.addEventListener('click', () => {
+      network = generateNeuralNetwork();
+      paths = network.allPaths;
+      pathNeuronIds = buildPathNeuronIds(network);
+      
+      pathTexH = paths.length;
+      pathData = buildPathTexture(paths);
+      
+      const newPathTex = new THREE.DataTexture(pathData, pathTexW, pathTexH, THREE.RGBAFormat, THREE.FloatType);
+      newPathTex.needsUpdate = true;
+      neuronMat.uniforms.uPathTex.value = newPathTex;
+      neuronMat.uniforms.uPathSize.value.y = pathTexH;
+      
+      const verticesPerParticle = TRAIL_SEGMENTS * 2;
+      const pathIndicesAttr = geo.getAttribute('pathIndex');
+      const pathLengthsAttr = geo.getAttribute('pathLength');
+      const neuronIdsAttr = geo.getAttribute('neuronId');
+      
+      for (let p = 0; p < PARTICLES; p++) {
+        const pi = Math.floor(Math.random() * paths.length);
+        const pathLen = Math.min(paths[pi].length + 1, MAX_PATH);
+        const neuronId = pathNeuronIds[pi] || 0;
+        for (let v = 0; v < verticesPerParticle; v++) {
+          const idx = p * verticesPerParticle + v;
+          if (idx < pathIndicesAttr.count) {
+            pathIndicesAttr.array[idx] = pi;
+            pathLengthsAttr.array[idx] = pathLen;
+            neuronIdsAttr.array[idx] = neuronId;
+          }
+        }
+      }
+      pathIndicesAttr.needsUpdate = true;
+      pathLengthsAttr.needsUpdate = true;
+      neuronIdsAttr.needsUpdate = true;
+      
+      // Reset fire times
+      for (let i = 0; i <= NUM_NEURONS; i++) {
+        neuronFireTimes[i] = -10;
+        nextFireTimes[i] = 1 + Math.random() * 3;
+      }
+      
+      // Remove old somas
+      somas.forEach(s => neuronGroup.remove(s));
+      somas = [];
+      
+      // Add new somas
+      network.neurons.forEach((n, idx) => {
+        const somaMesh = createSoma(n.somaCenter, n.somaRadius, idx);
+        somaMesh.material.uniforms.uColorShift.value = parseInt(sliderColorShift.value) / 360;
+        somaMesh.material.uniforms.uPulse.value = parseInt(sliderSomaPulse.value) / 100;
+        somas.push(somaMesh);
+        neuronGroup.add(somaMesh);
+      });
+      
+      // Update terminals
+      neuronGroup.remove(terminals);
+      terminals = createSynapticTerminals(paths);
+      terminals.material.uniforms.uColorShift.value = parseInt(sliderColorShift.value) / 360;
+      neuronGroup.add(terminals);
+    });
+  </script>
+</body>
+</html>
