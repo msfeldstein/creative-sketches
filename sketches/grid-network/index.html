@@ -200,7 +200,15 @@
     </div>
     <details>
       <summary>Audio Reactivity</summary>
-      <div id="audioStatus" class="audio-status">Click anywhere to enable audio</div>
+      <div id="audioStatus" class="audio-status">Click for mic, or drop an MP3 file</div>
+      <div id="audioMeter" style="position:relative; height:30px; background:rgba(0,0,0,0.5); border-radius:4px; margin-bottom:8px; overflow:hidden;">
+        <div id="deltaBar" style="position:absolute; left:0; top:0; height:100%; background:linear-gradient(90deg, #4080ff, #60c0ff); transition:width 0.05s;"></div>
+        <div id="thresholdLine" style="position:absolute; top:0; height:100%; width:2px; background:#ff8040;"></div>
+        <div id="blobThresholdLine" style="position:absolute; top:0; height:100%; width:2px; background:#40ff80; opacity:0.7;"></div>
+        <div style="position:absolute; right:5px; top:50%; transform:translateY(-50%); font-size:11px; color:rgba(255,255,255,0.7);">
+          <span id="meterDeltaValue">0.000</span> / <span id="meterThresholdValue">0.080</span>
+        </div>
+      </div>
       <canvas id="fftCanvas"></canvas>
       <div class="audio-values">
         <div class="value-box">
@@ -219,14 +227,18 @@
           <div class="value-label">Blasts</div>
           <div class="value-num" id="blastCountDisplay">0</div>
         </div>
+        <div class="value-box">
+          <div class="value-label">Painters</div>
+          <div class="value-num" id="blobCountDisplay">0</div>
+        </div>
       </div>
       <label class="slider-label">
         <span>Sensitivity <span id="audioSensValue">100%</span></span>
         <input type="range" id="sliderAudioSens" min="20" max="500" value="100">
       </label>
       <label class="slider-label">
-        <span>Blast Threshold <span id="thresholdValue">15%</span></span>
-        <input type="range" id="sliderThreshold" min="2" max="50" value="15">
+        <span>Blast Threshold <span id="thresholdValue">8%</span></span>
+        <input type="range" id="sliderThreshold" min="2" max="50" value="8">
       </label>
       <label class="slider-label">
         <span>Bass Pulse <span id="bassPulseValue">100%</span></span>
@@ -325,12 +337,14 @@
     let paintFadeRate = 0.997; // How fast trails fade (closer to 1 = slower fade)
     let paintBrushSize = 15;
     
+    // Paint buffer extent - matches visible screen area
+    const paintExtent = frustumSize * aspect;
+    
     // Convert world position to paint buffer coordinates
     function worldToPaint(wx, wz) {
-      const gridExtent = frustumSize * aspect * 1.3;
-      const px = ((wx / gridExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
+      const px = ((wx / paintExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
       // No flip - shader handles the coordinate mapping
-      const pz = ((wz / gridExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
+      const pz = ((wz / paintExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
       return { x: px, y: pz };
     }
     
@@ -347,21 +361,25 @@
       paintCtx.fill();
     }
 
-    // Paint at a world position - mirrors across both axes
+    // Radial symmetry fold count
+    const RADIAL_SYMMETRY = 6;
+
+    // Paint at a world position - radial symmetry around center
     function paintAt(wx, wz, intensity = 1.0) {
       const alpha = intensity;
       const size = paintBrushSize * (0.8 + intensity * 0.4);
       
-      // Paint at all 4 mirrored positions
-      const positions = [
-        { x: wx, z: wz },      // Original
-        { x: -wx, z: wz },     // Mirror X
-        { x: wx, z: -wz },     // Mirror Z
-        { x: -wx, z: -wz }     // Mirror both
-      ];
+      // Convert to polar coordinates
+      const radius = Math.sqrt(wx * wx + wz * wz);
+      const angle = Math.atan2(wz, wx);
       
-      for (const pos of positions) {
-        const p = worldToPaint(pos.x, pos.z);
+      // Paint at all radially symmetric positions
+      const angleStep = (Math.PI * 2) / RADIAL_SYMMETRY;
+      for (let i = 0; i < RADIAL_SYMMETRY; i++) {
+        const rotatedAngle = angle + i * angleStep;
+        const rx = Math.cos(rotatedAngle) * radius;
+        const rz = Math.sin(rotatedAngle) * radius;
+        const p = worldToPaint(rx, rz);
         paintSinglePoint(p.x, p.y, size, alpha);
       }
     }
@@ -604,52 +622,151 @@
     let lastDrawTime = 0;
     const AUTO_PAINT_DELAY = 3.0; // seconds of idle before auto-paint starts
     
+    // =============================================
+    // PAINT BLOB SYSTEM - Audio-triggered painters
+    // =============================================
+    const paintBlobs = [];
+    const MAX_BLOBS = 12;
+    const BLOB_LIFETIME = 2.0; // seconds
+    
+    class PaintBlob {
+      constructor(x, z, energy) {
+        this.x = x;
+        this.z = z;
+        this.age = 0;
+        this.lifetime = BLOB_LIFETIME * (0.5 + Math.random() * 0.5);
+        this.energy = energy; // Initial energy affects size/intensity
+        
+        // Movement parameters - each blob has unique movement style
+        this.speedMult = 0.5 + Math.random() * 1.0;
+        this.wanderFreq = 0.3 + Math.random() * 0.7;
+        this.wanderAmp = paintExtent * (0.15 + Math.random() * 0.25);
+        this.spiralTight = 0.5 + Math.random() * 2.0;
+        
+        // Direction and velocity
+        this.angle = Math.random() * Math.PI * 2;
+        this.vx = Math.cos(this.angle) * paintExtent * 0.1;
+        this.vz = Math.sin(this.angle) * paintExtent * 0.1;
+        
+        // Unique phase offsets for organic movement
+        this.phaseX = Math.random() * Math.PI * 2;
+        this.phaseZ = Math.random() * Math.PI * 2;
+        
+        // Movement style (0: wanderer, 1: spiraler, 2: bouncer)
+        this.style = Math.floor(Math.random() * 3);
+      }
+      
+      update(dt) {
+        this.age += dt;
+        const t = this.age * this.speedMult;
+        const lifeRatio = this.age / this.lifetime;
+        
+        // Fade intensity over lifetime
+        const fadeIn = Math.min(1, this.age * 3); // Quick fade in
+        const fadeOut = 1 - Math.pow(lifeRatio, 2); // Gradual fade out
+        const intensity = this.energy * fadeIn * fadeOut;
+        
+        if (intensity < 0.05) return this.age >= this.lifetime;
+        
+        // Different movement styles
+        switch (this.style) {
+          case 0: // Wanderer - smooth flowing curves
+            this.x += Math.sin(t * this.wanderFreq + this.phaseX) * this.wanderAmp * dt;
+            this.z += Math.cos(t * this.wanderFreq * 0.7 + this.phaseZ) * this.wanderAmp * dt;
+            // Add gentle drift
+            this.x += Math.sin(t * 0.2) * paintExtent * 0.02 * dt;
+            this.z += Math.cos(t * 0.15) * paintExtent * 0.02 * dt;
+            break;
+            
+          case 1: // Spiraler - outward spiral
+            const spiralRadius = this.wanderAmp * (0.3 + t * 0.1);
+            const spiralAngle = t * this.spiralTight;
+            this.x = this.x * 0.99 + Math.cos(spiralAngle) * spiralRadius * 0.01;
+            this.z = this.z * 0.99 + Math.sin(spiralAngle) * spiralRadius * 0.01;
+            break;
+            
+          case 2: // Bouncer - moves in direction, bounces off edges
+            this.x += this.vx * dt;
+            this.z += this.vz * dt;
+            // Bounce off visible bounds
+            const bound = paintExtent * 0.85;
+            if (Math.abs(this.x) > bound) {
+              this.vx *= -0.8;
+              this.x = Math.sign(this.x) * bound;
+            }
+            if (Math.abs(this.z) > bound) {
+              this.vz *= -0.8;
+              this.z = Math.sign(this.z) * bound;
+            }
+            // Add slight curve to path
+            this.vx += Math.sin(t * 2) * paintExtent * 0.01 * dt;
+            this.vz += Math.cos(t * 2) * paintExtent * 0.01 * dt;
+            break;
+        }
+        
+        // Keep within bounds
+        const maxExtent = paintExtent * 0.9;
+        this.x = Math.max(-maxExtent, Math.min(maxExtent, this.x));
+        this.z = Math.max(-maxExtent, Math.min(maxExtent, this.z));
+        
+        // Paint main trail
+        paintAt(this.x, this.z, intensity);
+        
+        // Occasionally paint secondary dots around main position
+        if (Math.random() < 0.3 * intensity) {
+          const scatter = paintExtent * 0.03 * intensity;
+          const angle = Math.random() * Math.PI * 2;
+          paintAt(
+            this.x + Math.cos(angle) * scatter,
+            this.z + Math.sin(angle) * scatter,
+            intensity * 0.5
+          );
+        }
+        
+        return this.age >= this.lifetime;
+      }
+    }
+    
+    function spawnPaintBlob(energy = 1.0) {
+      // Spawn at random position within visible area, biased toward edges
+      const angle = Math.random() * Math.PI * 2;
+      const dist = paintExtent * (0.3 + Math.random() * 0.5);
+      const x = Math.cos(angle) * dist;
+      const z = Math.sin(angle) * dist;
+      
+      // Limit max blobs
+      if (paintBlobs.length >= MAX_BLOBS) {
+        // Remove oldest blob
+        paintBlobs.shift();
+      }
+      
+      paintBlobs.push(new PaintBlob(x, z, energy));
+    }
+    
+    function updatePaintBlobs(dt) {
+      // Update all blobs, remove dead ones
+      for (let i = paintBlobs.length - 1; i >= 0; i--) {
+        const isDead = paintBlobs[i].update(dt);
+        if (isDead) {
+          paintBlobs.splice(i, 1);
+        }
+      }
+      
+      if (paintBlobs.length > 0) {
+        paintTexture.needsUpdate = true;
+      }
+    }
+    
+    // Fallback auto-paint when idle and no blobs
     function autoPaint(dt, currentTime) {
-      // Check if we've been idle for 3 seconds
+      // Only auto-paint if idle for a while AND no active blobs
       if (currentTime - lastDrawTime < AUTO_PAINT_DELAY) return;
+      if (paintBlobs.length > 0) return;
       
-      autoPaintTime += dt;
-      const t = autoPaintTime;
-      
-      // Base extents
-      const hExt = gridExtent * 0.35;
-      const vExt = gridExtent * 0.75;
-      
-      // Primary flowing curve - figure-8 with drift
-      const drift = Math.sin(t * 0.13) * 0.3;
-      const x1 = Math.sin(t * 0.8 + drift) * hExt + Math.sin(t * 0.23) * hExt * 0.3;
-      const z1 = Math.sin(t * 0.4) * vExt + Math.cos(t * 0.17) * vExt * 0.15;
-      
-      // Secondary smaller orbit - creates detail
-      const x2 = x1 + Math.sin(t * 2.1) * gridExtent * 0.08;
-      const z2 = z1 + Math.cos(t * 1.7) * gridExtent * 0.08;
-      
-      // Third element - occasional sweeping arc
-      const sweepPhase = t * 0.3;
-      const sweepActive = Math.sin(sweepPhase) > 0.7;
-      const x3 = Math.cos(t * 0.5) * hExt * 0.8;
-      const z3 = Math.sin(t * 0.5) * vExt * 0.5 + Math.sin(t * 0.11) * vExt * 0.3;
-      
-      // Paint primary with varying intensity based on speed
-      const speed = Math.abs(Math.cos(t * 0.8)) * 0.5 + 0.5;
-      paintAt(x1, z1, 0.7 + speed * 0.3);
-      
-      // Paint secondary detail
-      paintAt(x2, z2, 0.5);
-      
-      // Paint sweep occasionally
-      if (sweepActive) {
-        paintAt(x3, z3, 0.4);
+      // Spawn a gentle wandering blob when completely idle
+      if (Math.random() < dt * 0.3) { // Occasional spawn
+        spawnPaintBlob(0.6);
       }
-      
-      // Occasional burst of particles around main point
-      if (Math.random() < 0.05) {
-        const burstAngle = Math.random() * Math.PI * 2;
-        const burstDist = gridExtent * 0.05 * Math.random();
-        paintAt(x1 + Math.cos(burstAngle) * burstDist, z1 + Math.sin(burstAngle) * burstDist, 0.6);
-      }
-      
-      paintTexture.needsUpdate = true;
     }
     
     // =============================================
@@ -665,7 +782,7 @@
     
     // Audio reactivity settings
     let audioSensitivity = 1.0;
-    let blastThreshold = 0.15;
+    let blastThreshold = 0.08; // Lowered for easier triggering
     let bassPulseStrength = 1.0;
     let highFreqStart = 0.6;  // Where high freq band starts (0-1)
     let lowFreqEnd = 0.3;     // Where low freq band ends (0-1)
@@ -673,6 +790,11 @@
     let lowDecay = 0.7;       // Smoothing for low freq
     let blastCount = 0;       // Track number of blasts
     let lastDelta = 0;        // For display
+    let lastBlobSpawnTime = 0; // Separate cooldown for blob spawning
+    const BLOB_SPAWN_COOLDOWN = 0.2; // Allow new blobs every 200ms
+    
+    let audioElement = null;
+    let audioSource = null;
     
     async function initAudio() {
       if (audioInitialized) return;
@@ -690,11 +812,89 @@
         source.connect(analyser);
         
         audioInitialized = true;
-        console.error('Audio initialized - listening for high frequencies');
+        console.error('Audio initialized - listening via microphone');
       } catch (err) {
         console.error('Audio init failed:', err);
       }
     }
+    
+    function initAudioFromFile(file) {
+      // Create audio context if needed
+      if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.4;
+        audioData = new Uint8Array(analyser.frequencyBinCount);
+      }
+      
+      // Disconnect previous source if any
+      if (audioSource) {
+        audioSource.disconnect();
+      }
+      
+      // Remove previous audio element
+      if (audioElement) {
+        audioElement.pause();
+        audioElement.remove();
+      }
+      
+      // Create new audio element
+      audioElement = document.createElement('audio');
+      audioElement.src = URL.createObjectURL(file);
+      audioElement.loop = true;
+      audioElement.volume = 1.0;
+      document.body.appendChild(audioElement);
+      
+      // Connect to analyser
+      audioSource = audioContext.createMediaElementSource(audioElement);
+      audioSource.connect(analyser);
+      audioSource.connect(audioContext.destination); // Also output to speakers
+      
+      // Resume context and play
+      audioContext.resume().then(() => {
+        audioElement.play();
+        audioInitialized = true;
+        console.error('Audio initialized from file:', file.name);
+        
+        // Update status
+        const audioStatus = document.getElementById('audioStatus');
+        if (audioStatus) {
+          audioStatus.textContent = 'Playing: ' + file.name;
+          audioStatus.classList.add('active');
+        }
+      });
+    }
+    
+    // File drop handling
+    document.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.body.style.outline = '3px dashed rgba(100, 200, 255, 0.8)';
+      document.body.style.outlineOffset = '-10px';
+    });
+    
+    document.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.body.style.outline = 'none';
+    });
+    
+    document.addEventListener('drop', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      document.body.style.outline = 'none';
+      
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        const file = files[0];
+        if (file.type.startsWith('audio/') || file.name.match(/\.(mp3|wav|ogg|m4a|aac|flac)$/i)) {
+          initAudioFromFile(file);
+        } else {
+          console.error('Please drop an audio file (mp3, wav, ogg, etc.)');
+        }
+      }
+    });
     
     function updateAudio() {
       if (!audioInitialized || !analyser) return;
@@ -724,9 +924,28 @@
       // Detect transient (sudden increase in highs)
       const delta = highFreqEnergy - lastHighFreqEnergy;
       lastDelta = delta;
+      
+      const currentTime = performance.now() * 0.001;
+      
+      // Trigger blast visual effect (has its own cooldown via blastActive)
       if (delta > blastThreshold && !blastActive) {
         triggerBlast();
         blastCount++;
+      }
+      
+      // Spawn paint blobs more frequently - separate cooldown
+      if (delta > blastThreshold * 0.7 && currentTime - lastBlobSpawnTime > BLOB_SPAWN_COOLDOWN) {
+        const energy = Math.min(1.0, 0.5 + delta * 3); // Energy based on delta strength
+        spawnPaintBlob(energy);
+        lastBlobSpawnTime = currentTime;
+      }
+      
+      // Also spawn on sustained high energy (not just transients)
+      if (highFreqEnergy > 0.3 && Math.random() < highFreqEnergy * 0.05) {
+        if (currentTime - lastBlobSpawnTime > BLOB_SPAWN_COOLDOWN * 2) {
+          spawnPaintBlob(0.5 + highFreqEnergy * 0.3);
+          lastBlobSpawnTime = currentTime;
+        }
       }
       
       lastHighFreqEnergy = highFreqEnergy;
@@ -965,7 +1184,7 @@
           uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
           uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
           uPaintTex: { value: paintTexture },
-          uGridExtent: { value: gridExtent }
+          uPaintExtent: { value: paintExtent }
         },
         vertexShader: `
           attribute float level;
@@ -977,7 +1196,7 @@
           varying float vPhase;
           varying vec2 vPaintUV;
           uniform vec2 uMouse;
-          uniform float uGridExtent;
+          uniform float uPaintExtent;
           
           void main() {
             vLevel = level;
@@ -985,7 +1204,7 @@
             vPhase = phase;
             vDistToMouse = length(midpoint - uMouse);
             // Calculate UV for paint texture sampling (flip Y to match canvas)
-            vPaintUV = vec2(midpoint.x / uGridExtent * 0.5 + 0.5, 1.0 - (midpoint.y / uGridExtent * 0.5 + 0.5));
+            vPaintUV = vec2(midpoint.x / uPaintExtent * 0.5 + 0.5, 1.0 - (midpoint.y / uPaintExtent * 0.5 + 0.5));
             gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
           }
         `,
@@ -1136,7 +1355,7 @@
           uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
           uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
           uPaintTex: { value: paintTexture },
-          uGridExtent: { value: gridExtent }
+          uPaintExtent: { value: paintExtent }
         },
         vertexShader: `
           attribute float level;
@@ -1149,7 +1368,7 @@
           uniform vec2 uMouse;
           uniform float uMouseRadius;
           uniform float uBaseAlpha;
-          uniform float uGridExtent;
+          uniform float uPaintExtent;
           
           // Spatial noise functions
           float hash(vec2 p) {
@@ -1179,7 +1398,7 @@
             vLevel = level;
             vPhase = phase;
             vDistToMouse = length(position.xz - uMouse);
-            vPaintUV = vec2(position.x / uGridExtent * 0.5 + 0.5, 1.0 - (position.z / uGridExtent * 0.5 + 0.5));
+            vPaintUV = vec2(position.x / uPaintExtent * 0.5 + 0.5, 1.0 - (position.z / uPaintExtent * 0.5 + 0.5));
             
             // Pass base alpha - paint will be sampled in fragment
             vAlpha = uBaseAlpha;
@@ -1451,7 +1670,7 @@
         uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
         uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
         uPaintTex: { value: paintTexture },
-        uGridExtent: { value: gridExtent }
+        uPaintExtent: { value: paintExtent }
       },
       vertexShader: `
         attribute float alpha;
@@ -1465,7 +1684,7 @@
         uniform vec2 uMouse;
         uniform float uMouseRadius;
         uniform float uBaseAlpha;
-        uniform float uGridExtent;
+        uniform float uPaintExtent;
         
         // Spatial noise functions
         float hash(vec2 p) {
@@ -1496,7 +1715,7 @@
           vColorSeed = colorSeed;
           vLevel = level;
           vDistToMouse = length(position.xz - uMouse);
-          vPaintUV = vec2(position.x / uGridExtent * 0.5 + 0.5, 1.0 - (position.z / uGridExtent * 0.5 + 0.5));
+          vPaintUV = vec2(position.x / uPaintExtent * 0.5 + 0.5, 1.0 - (position.z / uPaintExtent * 0.5 + 0.5));
           
           // Pass through - paint will control visibility in fragment
           // Just pass the trail alpha through
@@ -1642,6 +1861,7 @@
     function triggerBlast() {
       blastActive = true;
       blastStartTime = performance.now() * 0.001;
+      // Blob spawning is now handled directly in updateAudio for better control
     }
     
     function getBlastRadius(t) {
@@ -1685,7 +1905,10 @@
       fadePaintBuffer();
       drawPaintDebug();
       
-      // Auto-paint after 3 seconds idle
+      // Update paint blobs (audio-triggered painters)
+      updatePaintBlobs(dt);
+      
+      // Auto-paint after 3 seconds idle (spawns blobs when no activity)
       autoPaint(dt, t);
       
       // Update audio analysis
@@ -2012,8 +2235,44 @@
       lowFreqDisplay.textContent = lowFreqEnergy.toFixed(3);
       deltaDisplay.textContent = lastDelta.toFixed(3);
       deltaDisplay.style.color = lastDelta > blastThreshold ? '#ffa060' : 'rgba(100, 200, 255, 0.9)';
+      
+      // Update audio meter
+      const deltaBar = document.getElementById('deltaBar');
+      const thresholdLine = document.getElementById('thresholdLine');
+      const blobThresholdLine = document.getElementById('blobThresholdLine');
+      const meterDeltaValue = document.getElementById('meterDeltaValue');
+      const meterThresholdValue = document.getElementById('meterThresholdValue');
+      
+      if (deltaBar && thresholdLine) {
+        const maxDelta = 0.3; // Scale for display
+        const deltaPercent = Math.min(100, (lastDelta / maxDelta) * 100);
+        const thresholdPercent = (blastThreshold / maxDelta) * 100;
+        const blobThresholdPercent = (blastThreshold * 0.7 / maxDelta) * 100;
+        
+        deltaBar.style.width = deltaPercent + '%';
+        thresholdLine.style.left = thresholdPercent + '%';
+        blobThresholdLine.style.left = blobThresholdPercent + '%';
+        
+        // Flash color when triggering
+        if (lastDelta > blastThreshold) {
+          deltaBar.style.background = 'linear-gradient(90deg, #ff6040, #ffb060)';
+        } else if (lastDelta > blastThreshold * 0.7) {
+          deltaBar.style.background = 'linear-gradient(90deg, #40ff80, #80ffc0)';
+        } else {
+          deltaBar.style.background = 'linear-gradient(90deg, #4080ff, #60c0ff)';
+        }
+        
+        meterDeltaValue.textContent = lastDelta.toFixed(3);
+        meterThresholdValue.textContent = blastThreshold.toFixed(3);
+      }
       blastCountDisplay.textContent = blastCount;
       
+      const blobCountDisplay = document.getElementById('blobCountDisplay');
+      if (blobCountDisplay) {
+        blobCountDisplay.textContent = paintBlobs.length;
+        blobCountDisplay.style.color = paintBlobs.length > 0 ? '#60ffa0' : 'rgba(100, 200, 255, 0.9)';
+      }
+
       // Update audio status
       if (audioInitialized) {
         audioStatus.textContent = 'Audio active';
