@@ -1,6 +1,7 @@
 {
   "name": "sketches",
   "version": "1.0.0",
+  "type": "module",
   "description": "Creative coding sketches",
   "scripts": {
     "dev": "vite",
