@@ -1,0 +1,2058 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Grid Network</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    canvas { display: block; }
+    
+    #debugPanel {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 8px;
+      padding: 16px;
+      color: #fff;
+      min-width: 200px;
+      display: none;
+      z-index: 1000;
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+    }
+    #debugPanel.visible { display: block; }
+    #debugPanel.dragging { user-select: none; }
+    #debugPanel h3 {
+      margin: -16px -16px 12px -16px;
+      padding: 12px 16px;
+      font-size: 14px;
+      color: rgba(100, 200, 255, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      cursor: grab;
+      background: rgba(100, 200, 255, 0.1);
+      border-radius: 8px 8px 0 0;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
+    }
+    #debugPanel h3:active { cursor: grabbing; }
+    #debugPanel .section { margin-bottom: 16px; }
+    #debugPanel .section-title {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+    }
+    #debugPanel button {
+      display: block;
+      width: 100%;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: rgba(100, 200, 255, 0.15);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 13px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #debugPanel button:hover { background: rgba(100, 200, 255, 0.3); border-color: rgba(100, 200, 255, 0.5); }
+    #debugPanel .slider-label {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      padding: 6px 0;
+      font-size: 13px;
+    }
+    #debugPanel .slider-label span { display: flex; justify-content: space-between; }
+    #debugPanel .slider-label input[type="range"] { width: 100%; cursor: pointer; }
+    #debugPanel details {
+      margin-bottom: 16px;
+    }
+    #debugPanel details summary {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.5);
+      text-transform: uppercase;
+      cursor: pointer;
+      padding: 8px;
+      margin: -8px -8px 8px -8px;
+      background: rgba(100, 200, 255, 0.05);
+      border-radius: 4px;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #debugPanel details summary::-webkit-details-marker { display: none; }
+    #debugPanel details summary::before {
+      content: '▶';
+      font-size: 8px;
+      transition: transform 0.2s;
+    }
+    #debugPanel details[open] summary::before {
+      transform: rotate(90deg);
+    }
+    #debugPanel details[open] summary {
+      margin-bottom: 12px;
+    }
+    #debugPanel details summary:hover {
+      color: rgba(255, 255, 255, 0.8);
+      background: rgba(100, 200, 255, 0.1);
+    }
+    #fftCanvas {
+      width: 100%;
+      height: 80px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .audio-values {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      margin-bottom: 12px;
+      font-size: 11px;
+    }
+    .audio-values .value-box {
+      background: rgba(100, 200, 255, 0.1);
+      padding: 6px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(100, 200, 255, 0.2);
+    }
+    .audio-values .value-label {
+      color: rgba(255, 255, 255, 0.5);
+      font-size: 9px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+    .audio-values .value-num {
+      color: rgba(100, 200, 255, 0.9);
+      font-size: 14px;
+      font-weight: 600;
+      font-family: monospace;
+    }
+    .audio-status {
+      text-align: center;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 11px;
+      padding: 8px;
+      background: rgba(100, 200, 255, 0.05);
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    .audio-status.active {
+      color: rgba(100, 255, 150, 0.8);
+      background: rgba(100, 255, 150, 0.1);
+    }
+    .hint {
+      position: fixed;
+      bottom: 20px;
+      left: 20px;
+      color: rgba(255, 255, 255, 0.3);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="debugPanel">
+    <h3>Grid Controls</h3>
+    <div class="section">
+      <div class="section-title">Visual Controls</div>
+      <label class="slider-label">
+        <span>Bloom <span id="bloomValue">55%</span></span>
+        <input type="range" id="sliderBloom" min="0" max="150" value="55">
+      </label>
+      <label class="slider-label">
+        <span>Mouse Radius <span id="radiusValue">18</span></span>
+        <input type="range" id="sliderRadius" min="5" max="40" value="18">
+      </label>
+      <label class="slider-label">
+        <span>Particle Speed <span id="speedValue">100%</span></span>
+        <input type="range" id="sliderSpeed" min="20" max="300" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Color Shift <span id="colorShiftValue">0°</span></span>
+        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
+      </label>
+      <label class="slider-label">
+        <span>Base Brightness <span id="baseAlphaValue">25%</span></span>
+        <input type="range" id="sliderBaseAlpha" min="0" max="50" value="25">
+      </label>
+      <label class="slider-label">
+        <span>Chromatic Aberration <span id="aberrationValue">100%</span></span>
+        <input type="range" id="sliderAberration" min="0" max="300" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Fractal Detail <span id="subdivisionValue">100%</span></span>
+        <input type="range" id="sliderSubdivision" min="0" max="200" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Paint Brush Size <span id="brushSizeValue">15</span></span>
+        <input type="range" id="sliderBrushSize" min="5" max="40" value="15">
+      </label>
+      <label class="slider-label">
+        <span>Paint Fade Speed <span id="fadeSpeedValue">0.3%</span></span>
+        <input type="range" id="sliderFadeSpeed" min="1" max="50" value="3">
+      </label>
+    </div>
+    <details>
+      <summary>Audio Reactivity</summary>
+      <div id="audioStatus" class="audio-status">Click anywhere to enable audio</div>
+      <canvas id="fftCanvas"></canvas>
+      <div class="audio-values">
+        <div class="value-box">
+          <div class="value-label">High Freq</div>
+          <div class="value-num" id="highFreqDisplay">0.00</div>
+        </div>
+        <div class="value-box">
+          <div class="value-label">Low Freq</div>
+          <div class="value-num" id="lowFreqDisplay">0.00</div>
+        </div>
+        <div class="value-box">
+          <div class="value-label">Delta</div>
+          <div class="value-num" id="deltaDisplay">0.00</div>
+        </div>
+        <div class="value-box">
+          <div class="value-label">Blasts</div>
+          <div class="value-num" id="blastCountDisplay">0</div>
+        </div>
+      </div>
+      <label class="slider-label">
+        <span>Sensitivity <span id="audioSensValue">100%</span></span>
+        <input type="range" id="sliderAudioSens" min="20" max="500" value="100">
+      </label>
+      <label class="slider-label">
+        <span>Blast Threshold <span id="thresholdValue">15%</span></span>
+        <input type="range" id="sliderThreshold" min="2" max="50" value="15">
+      </label>
+      <label class="slider-label">
+        <span>Bass Pulse <span id="bassPulseValue">100%</span></span>
+        <input type="range" id="sliderBassPulse" min="0" max="300" value="100">
+      </label>
+      <label class="slider-label">
+        <span>High Freq Start <span id="highStartValue">60%</span></span>
+        <input type="range" id="sliderHighStart" min="30" max="90" value="60">
+      </label>
+      <label class="slider-label">
+        <span>Low Freq End <span id="lowEndValue">30%</span></span>
+        <input type="range" id="sliderLowEnd" min="10" max="50" value="30">
+      </label>
+      <label class="slider-label">
+        <span>High Decay <span id="highDecayValue">60%</span></span>
+        <input type="range" id="sliderHighDecay" min="20" max="95" value="60">
+      </label>
+      <label class="slider-label">
+        <span>Low Decay <span id="lowDecayValue">70%</span></span>
+        <input type="range" id="sliderLowDecay" min="20" max="95" value="70">
+      </label>
+    </details>
+    <div class="section">
+      <div class="section-title">Dev Tools</div>
+      <button id="btnReload">Reload Page</button>
+    </div>
+  </div>
+  <div class="hint">Click + drag to paint detail | Press D for debug panel</div>
+  <canvas id="paintDebug" style="position:fixed;bottom:20px;right:20px;width:128px;height:128px;border:1px solid rgba(100,200,255,0.3);border-radius:4px;background:#000;"></canvas>
+  
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+    const DEFAULT_CONFIG = {
+      bloom: 55,
+      mouseRadius: 18,
+      particleSpeed: 100,
+      colorShift: 0,
+      baseAlpha: 25
+    };
+
+    // Seeded random for consistent randomization
+    let seed = 12345;
+    function seededRandom() {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    }
+
+    // Setup
+    const scene = new THREE.Scene();
+    
+    const frustumSize = 50;
+    const aspect = window.innerWidth / window.innerHeight;
+    const camera = new THREE.OrthographicCamera(
+      -frustumSize * aspect, frustumSize * aspect,
+      frustumSize, -frustumSize,
+      0.1, 1000
+    );
+    camera.position.set(0, 100, 0);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000003);
+    document.body.appendChild(renderer.domElement);
+
+    // =============================================
+    // PAINT BUFFER - Draw trails that control subdivision
+    // =============================================
+    const PAINT_RESOLUTION = 256;
+    const paintCanvas = document.createElement('canvas');
+    paintCanvas.width = PAINT_RESOLUTION;
+    paintCanvas.height = PAINT_RESOLUTION;
+    const paintCtx = paintCanvas.getContext('2d');
+    paintCtx.fillStyle = '#000';
+    paintCtx.fillRect(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION);
+    
+    const paintTexture = new THREE.CanvasTexture(paintCanvas);
+    paintTexture.minFilter = THREE.LinearFilter;
+    paintTexture.magFilter = THREE.LinearFilter;
+    
+    let isPainting = false;
+    let paintFadeRate = 0.997; // How fast trails fade (closer to 1 = slower fade)
+    let paintBrushSize = 15;
+    
+    // Convert world position to paint buffer coordinates
+    function worldToPaint(wx, wz) {
+      const gridExtent = frustumSize * aspect * 1.3;
+      const px = ((wx / gridExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
+      // No flip - shader handles the coordinate mapping
+      const pz = ((wz / gridExtent) * 0.5 + 0.5) * PAINT_RESOLUTION;
+      return { x: px, y: pz };
+    }
+    
+    // Paint a single point (internal helper)
+    function paintSinglePoint(px, py, size, alpha) {
+      const gradient = paintCtx.createRadialGradient(px, py, 0, px, py, size);
+      gradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * alpha})`);
+      gradient.addColorStop(0.3, `rgba(255, 255, 255, ${0.4 * alpha})`);
+      gradient.addColorStop(0.6, `rgba(255, 255, 255, ${0.15 * alpha})`);
+      gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      paintCtx.fillStyle = gradient;
+      paintCtx.beginPath();
+      paintCtx.arc(px, py, size, 0, Math.PI * 2);
+      paintCtx.fill();
+    }
+
+    // Paint at a world position - mirrors across both axes
+    function paintAt(wx, wz, intensity = 1.0) {
+      const alpha = intensity;
+      const size = paintBrushSize * (0.8 + intensity * 0.4);
+      
+      // Paint at all 4 mirrored positions
+      const positions = [
+        { x: wx, z: wz },      // Original
+        { x: -wx, z: wz },     // Mirror X
+        { x: wx, z: -wz },     // Mirror Z
+        { x: -wx, z: -wz }     // Mirror both
+      ];
+      
+      for (const pos of positions) {
+        const p = worldToPaint(pos.x, pos.z);
+        paintSinglePoint(p.x, p.y, size, alpha);
+      }
+    }
+    
+    // Fade the paint buffer with blur
+    function fadePaintBuffer() {
+      // Apply blur by drawing scaled down and back up
+      paintCtx.globalAlpha = 0.95;
+      paintCtx.drawImage(paintCanvas, -1, -1, PAINT_RESOLUTION + 2, PAINT_RESOLUTION + 2);
+      paintCtx.globalAlpha = 1.0;
+      
+      // Get image data for fade with threshold
+      const imageData = paintCtx.getImageData(0, 0, PAINT_RESOLUTION, PAINT_RESOLUTION);
+      const data = imageData.data;
+      const fadeAmount = (1 - paintFadeRate) * 255;
+      
+      for (let i = 0; i < data.length; i += 4) {
+        // Fade RGB channels
+        data[i] = Math.max(0, data[i] - fadeAmount);     // R
+        data[i+1] = Math.max(0, data[i+1] - fadeAmount); // G
+        data[i+2] = Math.max(0, data[i+2] - fadeAmount); // B
+        // Force to zero if very dim (prevents lingering gray)
+        if (data[i] < 3) data[i] = 0;
+        if (data[i+1] < 3) data[i+1] = 0;
+        if (data[i+2] < 3) data[i+2] = 0;
+      }
+      
+      paintCtx.putImageData(imageData, 0, 0);
+      paintTexture.needsUpdate = true;
+    }
+    
+    // Debug: show paint buffer
+    const paintDebugCanvas = document.getElementById('paintDebug');
+    const paintDebugCtx = paintDebugCanvas.getContext('2d');
+    paintDebugCanvas.width = 128;
+    paintDebugCanvas.height = 128;
+    
+    function drawPaintDebug() {
+      paintDebugCtx.drawImage(paintCanvas, 0, 0, 128, 128);
+    }
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      DEFAULT_CONFIG.bloom / 100, 0.6, 0.15
+    );
+    composer.addPass(bloomPass);
+
+    const postShader = {
+      uniforms: { 
+        tDiffuse: { value: null }, 
+        uTime: { value: 0 },
+        uAberration: { value: 1.0 },
+        uBlastIntensity: { value: 0.0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        uniform float uAberration;
+        uniform float uBlastIntensity;
+        varying vec2 vUv;
+        
+        void main() {
+          vec2 center = vUv - 0.5;
+          float dist = length(center);
+          vec2 dir = normalize(center + 0.0001);
+          
+          // Base chromatic aberration - radial
+          float baseAberr = dist * dist * 0.015 * uAberration;
+          
+          // Extra aberration during blast
+          float blastAberr = uBlastIntensity * dist * 0.05;
+          float totalAberr = baseAberr + blastAberr;
+          
+          // Sample RGB at different offsets (radial direction)
+          vec2 redOffset = dir * totalAberr;
+          vec2 blueOffset = -dir * totalAberr;
+          
+          // Add slight angular twist for more interesting effect
+          float angle = uTime * 0.1 + dist * 2.0;
+          vec2 twist = vec2(cos(angle), sin(angle)) * totalAberr * 0.3;
+          
+          vec3 color;
+          color.r = texture2D(tDiffuse, vUv + redOffset + twist * 0.5).r;
+          color.g = texture2D(tDiffuse, vUv).g;
+          color.b = texture2D(tDiffuse, vUv + blueOffset - twist * 0.5).b;
+          
+          // Subtle RGB split on edges during blast
+          if (uBlastIntensity > 0.1) {
+            float edgeGlow = smoothstep(0.3, 0.5, dist) * uBlastIntensity;
+          // Glitchy edge clipping
+          float edgeMargin = 0.03;
+          float glitchTime = uTime * 3.0;
+          
+          // Random glitch offset based on time
+          float glitchNoise = fract(sin(floor(glitchTime * 2.0) * 43758.5453));
+          float glitchActive = step(0.85, glitchNoise); // 15% chance each frame
+          
+          // Horizontal scanline glitch
+          float scanline = fract(vUv.y * 100.0 + glitchTime * 10.0);
+          float scanGlitch = step(0.97, scanline) * glitchActive;
+          
+          // Edge detection for clipping effect
+          float edgeL = smoothstep(edgeMargin, edgeMargin * 2.0, vUv.x);
+          float edgeR = smoothstep(edgeMargin, edgeMargin * 2.0, 1.0 - vUv.x);
+          float edgeT = smoothstep(edgeMargin, edgeMargin * 2.0, vUv.y);
+          float edgeB = smoothstep(edgeMargin, edgeMargin * 2.0, 1.0 - vUv.y);
+          float edgeMask = edgeL * edgeR * edgeT * edgeB;
+          
+          // Glitchy edge displacement
+          float edgeGlitchX = sin(vUv.y * 50.0 + glitchTime * 5.0) * 0.01 * (1.0 - edgeL);
+          float edgeGlitchX2 = sin(vUv.y * 30.0 - glitchTime * 7.0) * 0.01 * (1.0 - edgeR);
+          
+          // Random horizontal displacement glitch
+          float hGlitch = (glitchNoise - 0.5) * 0.02 * glitchActive;
+          vec2 glitchUV = vUv + vec2(hGlitch + edgeGlitchX - edgeGlitchX2, 0.0);
+          
+          // Re-sample with glitch
+          if (glitchActive > 0.5 || edgeMask < 0.99) {
+            color.r = mix(color.r, texture2D(tDiffuse, glitchUV + vec2(0.005, 0.0)).r, 0.5);
+            color.b = mix(color.b, texture2D(tDiffuse, glitchUV - vec2(0.005, 0.0)).b, 0.5);
+          }
+          
+          // Edge glow/clip effect
+          float edgeGlow2 = (1.0 - edgeMask) * 0.5;
+          color += vec3(0.1, 0.3, 0.5) * edgeGlow2;
+          
+          // Occasional full-width glitch bar
+          float barGlitch = step(0.95, fract(sin(floor(glitchTime) * 12.9898) * 43758.5453));
+          float barY = fract(sin(floor(glitchTime) * 78.233) * 43758.5453);
+          float inBar = step(abs(vUv.y - barY), 0.01) * barGlitch;
+          color = mix(color, vec3(0.8, 0.9, 1.0), inBar * 0.7);
+          
+            color += vec3(0.1, 0.05, 0.15) * edgeGlow;
+          }
+          
+          // Vignette
+          float vignette = pow(max(1.0 - dot(center * 1.15, center * 1.15), 0.0), 1.1);
+          
+          gl_FragColor = vec4(color * vignette, 1.0);
+        }
+      `
+    };
+    const postPass = new ShaderPass(postShader);
+    composer.addPass(postPass);
+
+    // Mouse tracking
+    const mouseWorld = new THREE.Vector3(0, 0, 0);
+    const focusPoint = new THREE.Vector3(0, 0, 0); // Actual focus point (mouse or wandering)
+    const raycaster = new THREE.Raycaster();
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const mouse = new THREE.Vector2();
+    let mouseOnScreen = false;
+    
+    // Wandering focus state
+    const wanderTarget = new THREE.Vector3(0, 0, 0);
+    const wanderVelocity = new THREE.Vector3(0, 0, 0);
+    let wanderTimer = 0;
+    const WANDER_EXTENT = frustumSize * aspect * 0.7;
+    
+    function pickNewWanderTarget() {
+      wanderTarget.x = (Math.random() - 0.5) * WANDER_EXTENT * 2;
+      wanderTarget.z = (Math.random() - 0.5) * WANDER_EXTENT * 2;
+      wanderTimer = 2 + Math.random() * 4; // New target every 2-6 seconds
+    }
+    pickNewWanderTarget();
+    
+    function updateWander(dt) {
+      wanderTimer -= dt;
+      if (wanderTimer <= 0) {
+        pickNewWanderTarget();
+      }
+      
+      // Smooth movement toward target
+      const dx = wanderTarget.x - focusPoint.x;
+      const dz = wanderTarget.z - focusPoint.z;
+      
+      // Add some organic noise to velocity
+      const noiseX = Math.sin(performance.now() * 0.001 * 1.3) * 0.5;
+      const noiseZ = Math.cos(performance.now() * 0.001 * 1.7) * 0.5;
+      
+      wanderVelocity.x += (dx * 0.02 + noiseX) * dt * 2;
+      wanderVelocity.z += (dz * 0.02 + noiseZ) * dt * 2;
+      
+      // Damping
+      wanderVelocity.x *= 0.95;
+      wanderVelocity.z *= 0.95;
+      
+      // Apply velocity
+      focusPoint.x += wanderVelocity.x;
+      focusPoint.z += wanderVelocity.z;
+      
+      // Soft bounds
+      const bound = WANDER_EXTENT * 1.1;
+      if (Math.abs(focusPoint.x) > bound) wanderVelocity.x *= -0.5;
+      if (Math.abs(focusPoint.z) > bound) wanderVelocity.z *= -0.5;
+    }
+    
+    window.addEventListener('mousemove', (e) => {
+      mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+      mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      raycaster.ray.intersectPlane(groundPlane, mouseWorld);
+      mouseOnScreen = true;
+      
+      // Paint while dragging (left mouse button)
+      if (isPainting && !e.target.closest('#debugPanel')) {
+        paintAt(mouseWorld.x, mouseWorld.z);
+        paintTexture.needsUpdate = true;
+        lastDrawTime = performance.now() * 0.001;
+      }
+    });
+    
+    window.addEventListener('mousedown', (e) => {
+      console.error('mousedown', e.button, e.target.tagName);
+      if (e.button === 0 && !e.target.closest('#debugPanel') && e.target.id !== 'paintDebug') {
+        isPainting = true;
+        paintAt(mouseWorld.x, mouseWorld.z);
+        paintTexture.needsUpdate = true;
+        lastDrawTime = performance.now() * 0.001;
+      }
+    });
+    
+    window.addEventListener('mouseup', (e) => {
+      if (e.button === 0) isPainting = false;
+    });
+    
+    window.addEventListener('mouseenter', () => { mouseOnScreen = true; });
+    window.addEventListener('mouseleave', () => { mouseOnScreen = false; isPainting = false; });
+    
+    // Auto-paint organic pattern after idle
+    let autoPaintTime = 0;
+    let lastDrawTime = 0;
+    const AUTO_PAINT_DELAY = 3.0; // seconds of idle before auto-paint starts
+    
+    function autoPaint(dt, currentTime) {
+      // Check if we've been idle for 3 seconds
+      if (currentTime - lastDrawTime < AUTO_PAINT_DELAY) return;
+      
+      autoPaintTime += dt;
+      const t = autoPaintTime;
+      
+      // Base extents
+      const hExt = gridExtent * 0.35;
+      const vExt = gridExtent * 0.75;
+      
+      // Primary flowing curve - figure-8 with drift
+      const drift = Math.sin(t * 0.13) * 0.3;
+      const x1 = Math.sin(t * 0.8 + drift) * hExt + Math.sin(t * 0.23) * hExt * 0.3;
+      const z1 = Math.sin(t * 0.4) * vExt + Math.cos(t * 0.17) * vExt * 0.15;
+      
+      // Secondary smaller orbit - creates detail
+      const x2 = x1 + Math.sin(t * 2.1) * gridExtent * 0.08;
+      const z2 = z1 + Math.cos(t * 1.7) * gridExtent * 0.08;
+      
+      // Third element - occasional sweeping arc
+      const sweepPhase = t * 0.3;
+      const sweepActive = Math.sin(sweepPhase) > 0.7;
+      const x3 = Math.cos(t * 0.5) * hExt * 0.8;
+      const z3 = Math.sin(t * 0.5) * vExt * 0.5 + Math.sin(t * 0.11) * vExt * 0.3;
+      
+      // Paint primary with varying intensity based on speed
+      const speed = Math.abs(Math.cos(t * 0.8)) * 0.5 + 0.5;
+      paintAt(x1, z1, 0.7 + speed * 0.3);
+      
+      // Paint secondary detail
+      paintAt(x2, z2, 0.5);
+      
+      // Paint sweep occasionally
+      if (sweepActive) {
+        paintAt(x3, z3, 0.4);
+      }
+      
+      // Occasional burst of particles around main point
+      if (Math.random() < 0.05) {
+        const burstAngle = Math.random() * Math.PI * 2;
+        const burstDist = gridExtent * 0.05 * Math.random();
+        paintAt(x1 + Math.cos(burstAngle) * burstDist, z1 + Math.sin(burstAngle) * burstDist, 0.6);
+      }
+      
+      paintTexture.needsUpdate = true;
+    }
+    
+    // =============================================
+    // AUDIO REACTIVITY
+    // =============================================
+    let audioContext = null;
+    let analyser = null;
+    let audioData = null;
+    let audioInitialized = false;
+    let highFreqEnergy = 0;
+    let lastHighFreqEnergy = 0;
+    let lowFreqEnergy = 0;
+    
+    // Audio reactivity settings
+    let audioSensitivity = 1.0;
+    let blastThreshold = 0.15;
+    let bassPulseStrength = 1.0;
+    let highFreqStart = 0.6;  // Where high freq band starts (0-1)
+    let lowFreqEnd = 0.3;     // Where low freq band ends (0-1)
+    let highDecay = 0.6;      // Smoothing for high freq (higher = slower decay)
+    let lowDecay = 0.7;       // Smoothing for low freq
+    let blastCount = 0;       // Track number of blasts
+    let lastDelta = 0;        // For display
+    
+    async function initAudio() {
+      if (audioInitialized) return;
+      
+      try {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        analyser = audioContext.createAnalyser();
+        analyser.fftSize = 256;
+        analyser.smoothingTimeConstant = 0.4;
+        audioData = new Uint8Array(analyser.frequencyBinCount);
+        
+        // Try to get microphone
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(analyser);
+        
+        audioInitialized = true;
+        console.error('Audio initialized - listening for high frequencies');
+      } catch (err) {
+        console.error('Audio init failed:', err);
+      }
+    }
+    
+    function updateAudio() {
+      if (!audioInitialized || !analyser) return;
+      
+      analyser.getByteFrequencyData(audioData);
+      
+      // Calculate high frequency energy (configurable range)
+      const highStartIdx = Math.floor(audioData.length * highFreqStart);
+      let highSum = 0;
+      for (let i = highStartIdx; i < audioData.length; i++) {
+        highSum += audioData[i];
+      }
+      const avgHigh = highSum / (audioData.length - highStartIdx) / 255;
+      
+      // Calculate low frequency energy (configurable range)
+      const lowEndIdx = Math.floor(audioData.length * lowFreqEnd);
+      let lowSum = 0;
+      for (let i = 0; i < lowEndIdx; i++) {
+        lowSum += audioData[i];
+      }
+      const avgLow = lowSum / lowEndIdx / 255;
+      
+      // Apply sensitivity and smooth with configurable decay
+      highFreqEnergy = highFreqEnergy * highDecay + avgHigh * audioSensitivity * (1 - highDecay);
+      lowFreqEnergy = lowFreqEnergy * lowDecay + avgLow * audioSensitivity * (1 - lowDecay);
+      
+      // Detect transient (sudden increase in highs)
+      const delta = highFreqEnergy - lastHighFreqEnergy;
+      lastDelta = delta;
+      if (delta > blastThreshold && !blastActive) {
+        triggerBlast();
+        blastCount++;
+      }
+      
+      lastHighFreqEnergy = highFreqEnergy;
+    }
+    
+    // Initialize audio on first click
+    window.addEventListener('click', () => {
+      if (!audioInitialized) {
+        initAudio();
+      }
+    }, { once: false });
+
+    // Generate randomized fractal grid
+    const gridExtent = frustumSize * aspect * 1.3;
+    const allEdges = [];
+    const allNodes = new Map(); // key -> {x, z, level, jitterX, jitterZ}
+    
+    function getNodeKey(x, z, level) {
+      return `${x.toFixed(1)}_${z.toFixed(1)}_${level}`;
+    }
+    
+    function getOrCreateNode(x, z, level) {
+      const key = getNodeKey(x, z, level);
+      if (!allNodes.has(key)) {
+        // Add jitter that increases with level
+        const jitterAmt = 0.3 * (level + 1) * 0.3;
+        allNodes.set(key, {
+          x, z, level,
+          jitterX: (seededRandom() - 0.5) * jitterAmt,
+          jitterZ: (seededRandom() - 0.5) * jitterAmt
+        });
+      }
+      return allNodes.get(key);
+    }
+    
+    function generateGridLevel(spacing, level, skipProb) {
+      const count = Math.ceil(gridExtent * 2 / spacing);
+      const offset = count * spacing / 2;
+      
+      // Horizontal lines with random breaks
+      for (let z = 0; z <= count; z++) {
+        const zPos = z * spacing - offset;
+        let segStart = null;
+        
+        for (let x = 0; x <= count; x++) {
+          const xPos = x * spacing - offset;
+          const shouldBreak = seededRandom() < skipProb * 0.3;
+          
+          if (segStart === null) {
+            segStart = getOrCreateNode(xPos, zPos, level);
+          }
+          
+          if (shouldBreak || x === count) {
+            const segEnd = getOrCreateNode(xPos, zPos, level);
+            if (segStart !== segEnd) {
+              allEdges.push({ n1: segStart, n2: segEnd, level });
+            }
+            segStart = shouldBreak ? null : segEnd;
+          }
+        }
+      }
+      
+      // Vertical lines with random breaks
+      for (let x = 0; x <= count; x++) {
+        const xPos = x * spacing - offset;
+        let segStart = null;
+        
+        for (let z = 0; z <= count; z++) {
+          const zPos = z * spacing - offset;
+          const shouldBreak = seededRandom() < skipProb * 0.3;
+          
+          if (segStart === null) {
+            segStart = getOrCreateNode(xPos, zPos, level);
+          }
+          
+          if (shouldBreak || z === count) {
+            const segEnd = getOrCreateNode(xPos, zPos, level);
+            if (segStart !== segEnd) {
+              allEdges.push({ n1: segStart, n2: segEnd, level });
+            }
+            segStart = shouldBreak ? null : segEnd;
+          }
+        }
+      }
+      
+      // Random diagonals
+      for (let x = 0; x < count; x++) {
+        for (let z = 0; z < count; z++) {
+          const xPos = x * spacing - offset;
+          const zPos = z * spacing - offset;
+          
+          // Random chance for each diagonal
+          if (seededRandom() > 0.6 + skipProb * 0.3) {
+            const n1 = getOrCreateNode(xPos, zPos, level);
+            const n2 = getOrCreateNode(xPos + spacing, zPos + spacing, level);
+            allEdges.push({ n1, n2, level, isDiagonal: true });
+          }
+          if (seededRandom() > 0.6 + skipProb * 0.3) {
+            const n1 = getOrCreateNode(xPos + spacing, zPos, level);
+            const n2 = getOrCreateNode(xPos, zPos + spacing, level);
+            allEdges.push({ n1, n2, level, isDiagonal: true });
+          }
+        }
+      }
+    }
+    
+    // Generate base levels
+    generateGridLevel(8, 0, 0.05);
+    generateGridLevel(4, 1, 0.1);
+    generateGridLevel(2, 2, 0.15);
+    generateGridLevel(1, 3, 0.2);
+    
+    // Subdivision amount (0-2, 1 = default) - read from localStorage
+    let subdivisionAmount = parseFloat(localStorage.getItem('gridSubdivision') || '100') / 100;
+    
+    // Random fractal subdivision - adds detail throughout with probability
+    function addFractalSubdivisions() {
+      if (subdivisionAmount < 0.01) return; // Skip if disabled
+      
+      const maxLevel = 6; // Finest level
+      const baseSpacing = 8;
+      
+      // For each cell in the coarsest grid, randomly decide to subdivide
+      const coarseCount = Math.ceil(gridExtent * 2 / baseSpacing);
+      const offset = coarseCount * baseSpacing / 2;
+      
+      function subdivideCell(cx, cz, size, level) {
+        if (level > maxLevel) return;
+        
+        // Probability decreases with level - deeper subdivisions less likely
+        // subdivisionAmount scales the base probability
+        const baseProb = 0.4 / (level - 2); // level 4: 0.2, level 5: 0.13, level 6: 0.1
+        const prob = baseProb * subdivisionAmount;
+        if (seededRandom() > prob) return;
+        
+        const half = size / 2;
+        const quarter = size / 4;
+        
+        // Create subdivision lines
+        const midX = cx + half;
+        const midZ = cz + half;
+        
+        // Horizontal subdivision
+        if (seededRandom() > 0.3) {
+          const n1 = getOrCreateNode(cx, midZ, level);
+          const n2 = getOrCreateNode(cx + size, midZ, level);
+          allEdges.push({ n1, n2, level });
+        }
+        
+        // Vertical subdivision
+        if (seededRandom() > 0.3) {
+          const n1 = getOrCreateNode(midX, cz, level);
+          const n2 = getOrCreateNode(midX, cz + size, level);
+          allEdges.push({ n1, n2, level });
+        }
+        
+        // Random cross lines within subdivision
+        if (seededRandom() > 0.5) {
+          const n1 = getOrCreateNode(cx + quarter, cz + quarter, level);
+          const n2 = getOrCreateNode(cx + size - quarter, cz + size - quarter, level);
+          allEdges.push({ n1, n2, level, isDiagonal: true });
+        }
+        if (seededRandom() > 0.5) {
+          const n1 = getOrCreateNode(cx + size - quarter, cz + quarter, level);
+          const n2 = getOrCreateNode(cx + quarter, cz + size - quarter, level);
+          allEdges.push({ n1, n2, level, isDiagonal: true });
+        }
+        
+        // Random inner connections
+        if (seededRandom() > 0.6) {
+          const n1 = getOrCreateNode(midX, midZ, level);
+          const corners = [
+            [cx + quarter, cz + quarter],
+            [cx + size - quarter, cz + quarter],
+            [cx + quarter, cz + size - quarter],
+            [cx + size - quarter, cz + size - quarter]
+          ];
+          const corner = corners[Math.floor(seededRandom() * 4)];
+          const n2 = getOrCreateNode(corner[0], corner[1], level);
+          allEdges.push({ n1, n2, level });
+        }
+        
+        // Recursively subdivide quadrants
+        const nextSize = half;
+        subdivideCell(cx, cz, nextSize, level + 1);
+        subdivideCell(cx + half, cz, nextSize, level + 1);
+        subdivideCell(cx, cz + half, nextSize, level + 1);
+        subdivideCell(cx + half, cz + half, nextSize, level + 1);
+      }
+      
+      // Start subdividing from level 4 (finer than the base 1-spacing level)
+      for (let x = 0; x < coarseCount; x++) {
+        for (let z = 0; z < coarseCount; z++) {
+          const cellX = x * baseSpacing - offset;
+          const cellZ = z * baseSpacing - offset;
+          subdivideCell(cellX, cellZ, baseSpacing, 4);
+        }
+      }
+    }
+    
+    addFractalSubdivisions();
+
+    // Create edge geometry
+    function createEdgeMesh() {
+      const positions = [];
+      const levels = [];
+      const midpoints = [];
+      const phases = [];
+      
+      allEdges.forEach((edge, i) => {
+        const x1 = edge.n1.x + edge.n1.jitterX;
+        const z1 = edge.n1.z + edge.n1.jitterZ;
+        const x2 = edge.n2.x + edge.n2.jitterX;
+        const z2 = edge.n2.z + edge.n2.jitterZ;
+        
+        positions.push(x1, 0, z1, x2, 0, z2);
+        levels.push(edge.level, edge.level);
+        
+        const midX = (x1 + x2) / 2;
+        const midZ = (z1 + z2) / 2;
+        midpoints.push(midX, midZ, midX, midZ);
+        phases.push(seededRandom() * 6.28, seededRandom() * 6.28);
+      });
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geo.setAttribute('level', new THREE.Float32BufferAttribute(levels, 1));
+      geo.setAttribute('midpoint', new THREE.Float32BufferAttribute(midpoints, 2));
+      geo.setAttribute('phase', new THREE.Float32BufferAttribute(phases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uMouse: { value: new THREE.Vector2(0, 0) },
+          uMouseRadius: { value: DEFAULT_CONFIG.mouseRadius },
+          uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+          uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
+          uPaintTex: { value: paintTexture },
+          uGridExtent: { value: gridExtent }
+        },
+        vertexShader: `
+          attribute float level;
+          attribute vec2 midpoint;
+          attribute float phase;
+          varying float vLevel;
+          varying float vDistToMouse;
+          varying vec2 vMidpoint;
+          varying float vPhase;
+          varying vec2 vPaintUV;
+          uniform vec2 uMouse;
+          uniform float uGridExtent;
+          
+          void main() {
+            vLevel = level;
+            vMidpoint = midpoint;
+            vPhase = phase;
+            vDistToMouse = length(midpoint - uMouse);
+            // Calculate UV for paint texture sampling (flip Y to match canvas)
+            vPaintUV = vec2(midpoint.x / uGridExtent * 0.5 + 0.5, 1.0 - (midpoint.y / uGridExtent * 0.5 + 0.5));
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          uniform float uMouseRadius;
+          uniform float uColorShift;
+          uniform float uBaseAlpha;
+          uniform sampler2D uPaintTex;
+          varying float vLevel;
+          varying float vDistToMouse;
+          varying vec2 vMidpoint;
+          varying float vPhase;
+          varying vec2 vPaintUV;
+          
+          vec3 hueShift(vec3 color, float shift) {
+            float angle = shift * 6.28318;
+            float s = sin(angle), c = cos(angle);
+            vec3 w = vec3(0.299, 0.587, 0.114);
+            float wSum = dot(color, w);
+            vec3 c1 = vec3(wSum), c2 = color - c1;
+            return c1 + vec3(c2.r*c - (c2.g*0.328 - c2.b*0.883)*s, c2.g*c + (c2.r*0.328 + c2.b*0.557)*s, c2.b*c - (c2.r*0.883 + c2.g*0.557)*s);
+          }
+          
+          // Spatial noise for random detail variation
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+          
+          float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float a = hash(i);
+            float b = hash(i + vec2(1.0, 0.0));
+            float c = hash(i + vec2(0.0, 1.0));
+            float d = hash(i + vec2(1.0, 1.0));
+            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+          }
+          
+          float fbm(vec2 p) {
+            float v = 0.0;
+            v += noise(p * 0.5) * 0.5;
+            v += noise(p * 1.0) * 0.25;
+            v += noise(p * 2.0) * 0.125;
+            return v;
+          }
+          
+          void main() {
+            // Sample the paint buffer - painted areas reveal detail
+            float paintValue = texture2D(uPaintTex, vPaintUV).r;
+            
+            // Spatial variation - some areas naturally have more detail
+            float detailNoise = fbm(vMidpoint * 0.15);
+            float localDetail = smoothstep(0.2, 0.7, detailNoise);
+            
+            // Smooth paint effect with nice falloff
+            float paintEffect = pow(paintValue, 1.5);
+            float combinedDetail = max(localDetail * 0.3, paintEffect);
+            
+            // Base visibility - paint reveals detail elegantly
+            float levelBase[7];
+            levelBase[0] = 0.25 + paintEffect * 0.75;
+            levelBase[1] = 0.15 + paintEffect * 0.85;
+            levelBase[2] = 0.08 + paintEffect * 0.92;
+            levelBase[3] = paintEffect * 0.95;
+            levelBase[4] = paintEffect * 0.9;
+            levelBase[5] = paintEffect * 0.85;
+            levelBase[6] = paintEffect * 0.8;
+            
+            int lvl = int(min(vLevel, 6.0));
+            float alpha = levelBase[lvl] * uBaseAlpha * 5.0;
+            
+            if (alpha < 0.01) discard;
+            
+            // Beautiful color palette - ethereal blues to warm magentas
+            vec3 deepBlue = vec3(0.05, 0.15, 0.35);
+            vec3 electricCyan = vec3(0.1, 0.7, 0.9);
+            vec3 softViolet = vec3(0.5, 0.3, 0.7);
+            vec3 warmMagenta = vec3(0.8, 0.3, 0.5);
+            vec3 hotPink = vec3(1.0, 0.4, 0.6);
+            vec3 white = vec3(1.0, 0.98, 0.95);
+            
+            // Smooth color gradient through levels
+            float levelNorm = vLevel / 6.0;
+            vec3 baseColor = mix(deepBlue, electricCyan, smoothstep(0.0, 0.3, levelNorm));
+            baseColor = mix(baseColor, softViolet, smoothstep(0.2, 0.5, levelNorm));
+            baseColor = mix(baseColor, warmMagenta, smoothstep(0.4, 0.7, levelNorm));
+            baseColor = mix(baseColor, hotPink, smoothstep(0.6, 0.9, levelNorm));
+            
+            // Time-based color shimmer
+            float shimmer = sin(uTime * 1.5 + vPhase + vMidpoint.x * 0.1) * 0.5 + 0.5;
+            baseColor = mix(baseColor, mix(electricCyan, softViolet, shimmer), 0.15);
+            
+            // Paint creates beautiful glow
+            float glowIntensity = paintEffect * paintEffect;
+            vec3 glowColor = mix(electricCyan, white, glowIntensity * 0.7);
+            baseColor = mix(baseColor, glowColor, glowIntensity * 0.8);
+            
+            // Add bloom-friendly brightness in painted areas
+            baseColor += white * glowIntensity * 0.5;
+            
+            // Subtle breathing pulse
+            float pulse = sin(uTime * 1.2 + vPhase) * 0.1 + 1.0;
+            baseColor *= pulse;
+            
+            // Edge shimmer effect
+            float edgeShimmer = sin(uTime * 3.0 + length(vMidpoint) * 0.5) * 0.5 + 0.5;
+            baseColor += vec3(0.1, 0.15, 0.2) * edgeShimmer * paintEffect * 0.3;
+            
+            baseColor = hueShift(baseColor, uColorShift);
+            gl_FragColor = vec4(baseColor, alpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.LineSegments(geo, mat);
+    }
+    
+    // Create nodes
+    function createNodes() {
+      const nodeArray = Array.from(allNodes.values());
+      const positions = new Float32Array(nodeArray.length * 3);
+      const levels = new Float32Array(nodeArray.length);
+      const phases = new Float32Array(nodeArray.length);
+      
+      nodeArray.forEach((n, i) => {
+        positions[i * 3] = n.x + n.jitterX;
+        positions[i * 3 + 1] = 0;
+        positions[i * 3 + 2] = n.z + n.jitterZ;
+        levels[i] = n.level;
+        phases[i] = seededRandom() * 6.28;
+      });
+      
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('level', new THREE.BufferAttribute(levels, 1));
+      geo.setAttribute('phase', new THREE.BufferAttribute(phases, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uMouse: { value: new THREE.Vector2(0, 0) },
+          uMouseRadius: { value: DEFAULT_CONFIG.mouseRadius },
+          uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+          uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
+          uPaintTex: { value: paintTexture },
+          uGridExtent: { value: gridExtent }
+        },
+        vertexShader: `
+          attribute float level;
+          attribute float phase;
+          varying float vLevel;
+          varying float vDistToMouse;
+          varying float vAlpha;
+          varying float vPhase;
+          varying vec2 vPaintUV;
+          uniform vec2 uMouse;
+          uniform float uMouseRadius;
+          uniform float uBaseAlpha;
+          uniform float uGridExtent;
+          
+          // Spatial noise functions
+          float hash(vec2 p) {
+            return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+          }
+          
+          float noise(vec2 p) {
+            vec2 i = floor(p);
+            vec2 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            float a = hash(i);
+            float b = hash(i + vec2(1.0, 0.0));
+            float c = hash(i + vec2(0.0, 1.0));
+            float d = hash(i + vec2(1.0, 1.0));
+            return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+          }
+          
+          float fbm(vec2 p) {
+            float v = 0.0;
+            v += noise(p * 0.5) * 0.5;
+            v += noise(p * 1.0) * 0.25;
+            v += noise(p * 2.0) * 0.125;
+            return v;
+          }
+          
+          void main() {
+            vLevel = level;
+            vPhase = phase;
+            vDistToMouse = length(position.xz - uMouse);
+            vPaintUV = vec2(position.x / uGridExtent * 0.5 + 0.5, 1.0 - (position.z / uGridExtent * 0.5 + 0.5));
+            
+            // Pass base alpha - paint will be sampled in fragment
+            vAlpha = uBaseAlpha;
+            
+            float baseSize = 4.0 - level * 0.3;
+            gl_PointSize = max(2.0, baseSize);
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform sampler2D uPaintTex;
+          varying float vLevel;
+          varying float vDistToMouse;
+          varying vec2 vPaintUV;
+          varying float vAlpha;
+          varying float vPhase;
+          uniform float uTime;
+          uniform float uMouseRadius;
+          uniform float uColorShift;
+          
+          vec3 hueShift(vec3 color, float shift) {
+            float angle = shift * 6.28318;
+            float s = sin(angle), c = cos(angle);
+            vec3 w = vec3(0.299, 0.587, 0.114);
+            float wSum = dot(color, w);
+            vec3 c1 = vec3(wSum), c2 = color - c1;
+            return c1 + vec3(c2.r*c - (c2.g*0.328 - c2.b*0.883)*s, c2.g*c + (c2.r*0.328 + c2.b*0.557)*s, c2.b*c - (c2.r*0.883 + c2.g*0.557)*s);
+          }
+          
+          void main() {
+            // Sample paint buffer
+            float paintValue = texture2D(uPaintTex, vPaintUV).r;
+            float paintEffect = pow(paintValue, 1.5);
+            
+            // Visibility based on level and paint
+            float levelBase[7];
+            levelBase[0] = 0.25 + paintEffect * 0.75;
+            levelBase[1] = 0.15 + paintEffect * 0.85;
+            levelBase[2] = 0.08 + paintEffect * 0.92;
+            levelBase[3] = paintEffect * 0.95;
+            levelBase[4] = paintEffect * 0.9;
+            levelBase[5] = paintEffect * 0.85;
+            levelBase[6] = paintEffect * 0.8;
+            
+            int lvl = int(min(vLevel, 6.0));
+            float finalAlpha = levelBase[lvl] * vAlpha * 5.0;
+            
+            if (finalAlpha < 0.01) discard;
+            float d = length(gl_PointCoord - 0.5);
+            
+            // Soft glowing point with bright core
+            float core = exp(-d * 8.0);
+            float glow = exp(-d * 3.0);
+            float a = glow * 0.6 + core * 0.8;
+            
+            // Beautiful color based on level
+            float levelNorm = vLevel / 6.0;
+            vec3 deepBlue = vec3(0.1, 0.2, 0.4);
+            vec3 electricCyan = vec3(0.2, 0.8, 1.0);
+            vec3 softViolet = vec3(0.6, 0.4, 0.8);
+            vec3 hotPink = vec3(1.0, 0.5, 0.7);
+            vec3 white = vec3(1.0, 0.98, 0.95);
+            
+            vec3 baseColor = mix(electricCyan, softViolet, levelNorm);
+            baseColor = mix(baseColor, hotPink, smoothstep(0.5, 1.0, levelNorm));
+            
+            // Paint creates radiant glow
+            float glowIntensity = paintEffect * paintEffect;
+            baseColor = mix(baseColor, white, glowIntensity * 0.8);
+            baseColor += white * glowIntensity * 0.6;
+            
+            // Sparkle effect
+            float sparkle = sin(uTime * 5.0 + vPhase * 10.0) * 0.5 + 0.5;
+            sparkle = pow(sparkle, 4.0) * paintEffect;
+            baseColor += white * sparkle * 0.4;
+            
+            float pulse = sin(uTime * 2.0 + vPhase) * 0.15 + 1.0;
+            baseColor *= pulse;
+            
+            gl_FragColor = vec4(hueShift(baseColor, uColorShift), a * finalAlpha);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false
+      });
+      
+      return new THREE.Points(geo, mat);
+    }
+
+    // =============================================
+    // PARTICLE SYSTEM - Trails along the grid
+    // =============================================
+    const NUM_PARTICLES = 8000;
+    const TRAIL_LENGTH = 8;
+    
+    // Build edge lookup for particles to follow
+    const edgesByNode = new Map();
+    allEdges.forEach((edge, idx) => {
+      const k1 = getNodeKey(edge.n1.x, edge.n1.z, edge.n1.level);
+      const k2 = getNodeKey(edge.n2.x, edge.n2.z, edge.n2.level);
+      if (!edgesByNode.has(k1)) edgesByNode.set(k1, []);
+      if (!edgesByNode.has(k2)) edgesByNode.set(k2, []);
+      edgesByNode.get(k1).push({ edge, idx, other: edge.n2 });
+      edgesByNode.get(k2).push({ edge, idx, other: edge.n1 });
+    });
+    
+    // Particle state - each particle follows edges
+    class Particle {
+      constructor() {
+        this.reset();
+      }
+      
+      reset() {
+        // Pick random starting edge
+        const edgeIdx = Math.floor(Math.random() * allEdges.length);
+        const edge = allEdges[edgeIdx];
+        this.currentNode = Math.random() > 0.5 ? edge.n1 : edge.n2;
+        this.targetNode = this.currentNode === edge.n1 ? edge.n2 : edge.n1;
+        this.progress = Math.random();
+        this.speed = 0.3 + Math.random() * 0.5;
+        this.phase = Math.random() * 6.28;
+        this.colorSeed = Math.random();
+        this.level = edge.level;
+        this.hopTimer = 2 + Math.random() * 5; // Time until next hop attempt
+        
+        // Trail history
+        this.trail = [];
+        for (let i = 0; i < TRAIL_LENGTH; i++) {
+          this.trail.push({ x: 0, z: 0 });
+        }
+      }
+      
+      update(dt, speedMult) {
+        this.progress += dt * this.speed * speedMult;
+        this.hopTimer -= dt;
+        
+        // Calculate current position
+        const x1 = this.currentNode.x + this.currentNode.jitterX;
+        const z1 = this.currentNode.z + this.currentNode.jitterZ;
+        const x2 = this.targetNode.x + this.targetNode.jitterX;
+        const z2 = this.targetNode.z + this.targetNode.jitterZ;
+        
+        const t = Math.min(this.progress, 1);
+        const x = x1 + (x2 - x1) * t;
+        const z = z1 + (z2 - z1) * t;
+        
+        // Update trail
+        for (let i = TRAIL_LENGTH - 1; i > 0; i--) {
+          this.trail[i].x = this.trail[i - 1].x;
+          this.trail[i].z = this.trail[i - 1].z;
+        }
+        this.trail[0].x = x;
+        this.trail[0].z = z;
+        
+        // Check for hop between rails
+        if (this.hopTimer <= 0 && Math.random() < 0.3) {
+          this.tryHop();
+          this.hopTimer = 1 + Math.random() * 4;
+        }
+        
+        // Reached target node
+        if (this.progress >= 1) {
+          this.pickNextEdge();
+        }
+      }
+      
+      tryHop() {
+        // Find nearby edges - sample randomly instead of checking all
+        const currentX = this.trail[0].x;
+        const currentZ = this.trail[0].z;
+        
+        // Look for edges within hop distance
+        const hopDist = 3 + Math.random() * 5;
+        
+        // Sample a limited number of random edges instead of all
+        const sampleSize = Math.min(50, allEdges.length);
+        let bestEdge = null;
+        let bestDist = Infinity;
+        
+        for (let i = 0; i < sampleSize; i++) {
+          const edge = allEdges[Math.floor(Math.random() * allEdges.length)];
+          const ex = (edge.n1.x + edge.n1.jitterX + edge.n2.x + edge.n2.jitterX) / 2;
+          const ez = (edge.n1.z + edge.n1.jitterZ + edge.n2.z + edge.n2.jitterZ) / 2;
+          const dist = Math.hypot(ex - currentX, ez - currentZ);
+          
+          if (dist > 1 && dist < hopDist && dist < bestDist) {
+            bestDist = dist;
+            bestEdge = edge;
+          }
+        }
+        
+        if (bestEdge) {
+          // Jump to this edge
+          this.currentNode = bestEdge.n1;
+          this.targetNode = bestEdge.n2;
+          this.progress = Math.random();
+          this.level = bestEdge.level;
+        }
+      }
+      
+      pickNextEdge() {
+        const key = getNodeKey(this.targetNode.x, this.targetNode.z, this.targetNode.level);
+        const connections = edgesByNode.get(key) || [];
+        
+        if (connections.length === 0) {
+          this.reset();
+          return;
+        }
+        
+        // Filter out the edge we just came from, prefer continuing in similar direction
+        const fromX = this.currentNode.x - this.targetNode.x;
+        const fromZ = this.currentNode.z - this.targetNode.z;
+        
+        let best = null;
+        let bestScore = -Infinity;
+        
+        connections.forEach(conn => {
+          if (conn.other === this.currentNode && connections.length > 1) return;
+          
+          const toX = conn.other.x - this.targetNode.x;
+          const toZ = conn.other.z - this.targetNode.z;
+          
+          // Prefer continuing forward, with some randomness
+          const dot = -fromX * toX - fromZ * toZ;
+          const score = dot + Math.random() * 2;
+          
+          if (score > bestScore) {
+            bestScore = score;
+            best = conn;
+          }
+        });
+        
+        if (best) {
+          this.currentNode = this.targetNode;
+          this.targetNode = best.other;
+          this.progress = 0;
+          this.level = best.edge.level;
+        } else {
+          this.reset();
+        }
+      }
+    }
+    
+    const particles = [];
+    for (let i = 0; i < NUM_PARTICLES; i++) {
+      particles.push(new Particle());
+    }
+    
+    
+    // Create particle trail geometry
+    const TRAIL_VERTS = NUM_PARTICLES * (TRAIL_LENGTH - 1) * 2;
+    const particleGeo = new THREE.BufferGeometry();
+    const particlePositions = new Float32Array(TRAIL_VERTS * 3);
+    const particleAlphas = new Float32Array(TRAIL_VERTS);
+    const particleColors = new Float32Array(TRAIL_VERTS);
+    const particleLevels = new Float32Array(TRAIL_VERTS);
+    
+    particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+    particleGeo.setAttribute('alpha', new THREE.BufferAttribute(particleAlphas, 1));
+    particleGeo.setAttribute('colorSeed', new THREE.BufferAttribute(particleColors, 1));
+    particleGeo.setAttribute('level', new THREE.BufferAttribute(particleLevels, 1));
+    
+    const particleMat = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uMouse: { value: new THREE.Vector2(0, 0) },
+        uMouseRadius: { value: DEFAULT_CONFIG.mouseRadius },
+        uColorShift: { value: DEFAULT_CONFIG.colorShift / 360 },
+        uBaseAlpha: { value: DEFAULT_CONFIG.baseAlpha / 100 },
+        uPaintTex: { value: paintTexture },
+        uGridExtent: { value: gridExtent }
+      },
+      vertexShader: `
+        attribute float alpha;
+        attribute float colorSeed;
+        attribute float level;
+        varying float vAlpha;
+        varying float vColorSeed;
+        varying float vDistToMouse;
+        varying float vLevel;
+        varying vec2 vPaintUV;
+        uniform vec2 uMouse;
+        uniform float uMouseRadius;
+        uniform float uBaseAlpha;
+        uniform float uGridExtent;
+        
+        // Spatial noise functions
+        float hash(vec2 p) {
+          return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
+        }
+        
+        float noise(vec2 p) {
+          vec2 i = floor(p);
+          vec2 f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          float a = hash(i);
+          float b = hash(i + vec2(1.0, 0.0));
+          float c = hash(i + vec2(0.0, 1.0));
+          float d = hash(i + vec2(1.0, 1.0));
+          return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
+        }
+        
+        float fbm(vec2 p) {
+          float v = 0.0;
+          v += noise(p * 0.5) * 0.5;
+          v += noise(p * 1.0) * 0.25;
+          v += noise(p * 2.0) * 0.125;
+          return v;
+        }
+        
+        void main() {
+          vAlpha = alpha;
+          vColorSeed = colorSeed;
+          vLevel = level;
+          vDistToMouse = length(position.xz - uMouse);
+          vPaintUV = vec2(position.x / uGridExtent * 0.5 + 0.5, 1.0 - (position.z / uGridExtent * 0.5 + 0.5));
+          
+          // Pass through - paint will control visibility in fragment
+          // Just pass the trail alpha through
+          int lvl = int(min(level, 6.0));
+          // Store level for fragment shader
+          vAlpha *= 1.0;
+          
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        varying float vAlpha;
+        varying float vColorSeed;
+        varying float vDistToMouse;
+        varying float vLevel;
+        varying vec2 vPaintUV;
+        uniform float uTime;
+        uniform float uMouseRadius;
+        uniform float uColorShift;
+        uniform sampler2D uPaintTex;
+        
+        vec3 hueShift(vec3 color, float shift) {
+          float angle = shift * 6.28318;
+          float s = sin(angle), c = cos(angle);
+          vec3 w = vec3(0.299, 0.587, 0.114);
+          float wSum = dot(color, w);
+          vec3 c1 = vec3(wSum), c2 = color - c1;
+          return c1 + vec3(c2.r*c - (c2.g*0.328 - c2.b*0.883)*s, c2.g*c + (c2.r*0.328 + c2.b*0.557)*s, c2.b*c - (c2.r*0.883 + c2.g*0.557)*s);
+        }
+        
+        void main() {
+          // Sample paint buffer
+          float paintValue = texture2D(uPaintTex, vPaintUV).r;
+          float paintEffect = pow(paintValue, 1.5);
+          
+          // Visibility based on level and paint
+          float levelBase[7];
+          levelBase[0] = 0.35 + paintEffect * 0.65;
+          levelBase[1] = 0.25 + paintEffect * 0.75;
+          levelBase[2] = 0.12 + paintEffect * 0.88;
+          levelBase[3] = paintEffect * 0.95;
+          levelBase[4] = paintEffect * 0.9;
+          levelBase[5] = paintEffect * 0.85;
+          levelBase[6] = paintEffect * 0.8;
+          
+          int lvl = int(min(vLevel, 6.0));
+          float finalAlpha = vAlpha * levelBase[lvl];
+          
+          if (finalAlpha < 0.01) discard;
+          
+          // Beautiful flowing colors
+          vec3 electricCyan = vec3(0.15, 0.85, 1.0);
+          vec3 deepBlue = vec3(0.2, 0.4, 0.9);
+          vec3 softViolet = vec3(0.6, 0.35, 0.85);
+          vec3 warmMagenta = vec3(0.9, 0.4, 0.6);
+          vec3 white = vec3(1.0, 0.98, 0.95);
+          
+          // Flowing color based on seed and time
+          float cm = vColorSeed + sin(uTime * 0.2) * 0.15;
+          float flow = sin(uTime * 0.5 + vColorSeed * 6.28) * 0.5 + 0.5;
+          
+          vec3 baseColor = mix(electricCyan, deepBlue, smoothstep(0.0, 0.33, cm));
+          baseColor = mix(baseColor, softViolet, smoothstep(0.25, 0.6, cm));
+          baseColor = mix(baseColor, warmMagenta, smoothstep(0.5, 0.85, cm));
+          
+          // Add flowing color variation
+          baseColor = mix(baseColor, mix(electricCyan, softViolet, flow), 0.2);
+          
+          // Paint creates luminous trails
+          float glowIntensity = paintEffect * paintEffect;
+          baseColor = mix(baseColor, white, glowIntensity * 0.75);
+          baseColor += white * glowIntensity * 0.5;
+          
+          // Subtle trail shimmer
+          float shimmer = sin(uTime * 4.0 + vColorSeed * 20.0) * 0.5 + 0.5;
+          shimmer = pow(shimmer, 3.0) * paintEffect * 0.3;
+          baseColor += vec3(0.3, 0.4, 0.5) * shimmer;
+          
+          gl_FragColor = vec4(hueShift(baseColor, uColorShift), finalAlpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    const particleMesh = new THREE.LineSegments(particleGeo, particleMat);
+
+    // Update particle positions
+    function updateParticles(dt, speedMult) {
+      particles.forEach(p => p.update(dt, speedMult));
+      
+      let vi = 0;
+      particles.forEach(p => {
+        for (let i = 0; i < TRAIL_LENGTH - 1; i++) {
+          const t0 = p.trail[i];
+          const t1 = p.trail[i + 1];
+          
+          particlePositions[vi * 3] = t0.x;
+          particlePositions[vi * 3 + 1] = 0.1;
+          particlePositions[vi * 3 + 2] = t0.z;
+          particleAlphas[vi] = 1.0 - i / TRAIL_LENGTH;
+          particleColors[vi] = p.colorSeed;
+          particleLevels[vi] = p.level;
+          vi++;
+          
+          particlePositions[vi * 3] = t1.x;
+          particlePositions[vi * 3 + 1] = 0.1;
+          particlePositions[vi * 3 + 2] = t1.z;
+          particleAlphas[vi] = 1.0 - (i + 1) / TRAIL_LENGTH;
+          particleColors[vi] = p.colorSeed;
+          particleLevels[vi] = p.level;
+          vi++;
+        }
+      });
+      
+      particleGeo.attributes.position.needsUpdate = true;
+      particleGeo.attributes.alpha.needsUpdate = true;
+      particleGeo.attributes.colorSeed.needsUpdate = true;
+      particleGeo.attributes.level.needsUpdate = true;
+    }
+
+    const edgesMesh = createEdgeMesh();
+    const nodesMesh = createNodes();
+    
+    scene.add(edgesMesh);
+    scene.add(nodesMesh);
+    scene.add(particleMesh);
+
+    // Animation
+    let lastTime = 0;
+    let particleSpeedMult = DEFAULT_CONFIG.particleSpeed / 100;
+    let baseMouseRadius = DEFAULT_CONFIG.mouseRadius;
+    let baseAberration = 1.0;
+    
+    // Blast effect state
+    let blastActive = false;
+    let blastStartTime = 0;
+    const BLAST_EXPAND_DURATION = 0.15; // Fast expand
+    const BLAST_CONTRACT_DURATION = 0.6; // Slower contract
+    const BLAST_MAX_MULTIPLIER = 4.0; // How big the blast gets
+    
+    function triggerBlast() {
+      blastActive = true;
+      blastStartTime = performance.now() * 0.001;
+    }
+    
+    function getBlastRadius(t) {
+      if (!blastActive) return baseMouseRadius;
+      
+      const elapsed = t - blastStartTime;
+      const totalDuration = BLAST_EXPAND_DURATION + BLAST_CONTRACT_DURATION;
+      
+      if (elapsed > totalDuration) {
+        blastActive = false;
+        return baseMouseRadius;
+      }
+      
+      let multiplier;
+      if (elapsed < BLAST_EXPAND_DURATION) {
+        // Expanding phase - ease out (fast start, slow end)
+        const expandProgress = elapsed / BLAST_EXPAND_DURATION;
+        multiplier = 1 + (BLAST_MAX_MULTIPLIER - 1) * (1 - Math.pow(1 - expandProgress, 3));
+      } else {
+        // Contracting phase - ease in-out
+        const contractElapsed = elapsed - BLAST_EXPAND_DURATION;
+        const contractProgress = contractElapsed / BLAST_CONTRACT_DURATION;
+        // Smooth ease-in-out
+        const eased = contractProgress < 0.5 
+          ? 2 * contractProgress * contractProgress 
+          : 1 - Math.pow(-2 * contractProgress + 2, 2) / 2;
+        multiplier = BLAST_MAX_MULTIPLIER - (BLAST_MAX_MULTIPLIER - 1) * eased;
+      }
+      
+      return baseMouseRadius * multiplier;
+    }
+    
+    // Click no longer triggers blast - painting only
+    
+    function animate(time) {
+      const t = time * 0.001;
+      const dt = Math.min(t - lastTime, 0.1);
+      lastTime = t;
+      
+      // Fade the paint buffer and show debug
+      fadePaintBuffer();
+      drawPaintDebug();
+      
+      // Auto-paint after 3 seconds idle
+      autoPaint(dt, t);
+      
+      // Update audio analysis
+      updateAudio();
+      
+      // Update focus point - either follow mouse or wander
+      if (mouseOnScreen) {
+        // Smoothly follow mouse
+        focusPoint.x += (mouseWorld.x - focusPoint.x) * 0.15;
+        focusPoint.z += (mouseWorld.z - focusPoint.z) * 0.15;
+      } else {
+        // Wander aimlessly
+        updateWander(dt);
+      }
+      
+      // Calculate current mouse radius (with blast effect)
+      const currentRadius = getBlastRadius(t);
+      
+      // Add audio reactivity to radius (bass = size pulse)
+      let audioRadiusBoost = 1.0;
+      if (audioInitialized) {
+        audioRadiusBoost = 1.0 + lowFreqEnergy * bassPulseStrength * 0.8;
+      }
+      
+      const finalRadius = currentRadius * audioRadiusBoost;
+      
+      // Calculate blast intensity for chromatic aberration boost
+      let blastIntensity = 0;
+      if (blastActive) {
+        const elapsed = t - blastStartTime;
+        const totalDuration = BLAST_EXPAND_DURATION + BLAST_CONTRACT_DURATION;
+        if (elapsed < totalDuration) {
+          // Peak intensity during expand, fade during contract
+          if (elapsed < BLAST_EXPAND_DURATION) {
+            blastIntensity = elapsed / BLAST_EXPAND_DURATION;
+          } else {
+            const contractProgress = (elapsed - BLAST_EXPAND_DURATION) / BLAST_CONTRACT_DURATION;
+            blastIntensity = 1 - contractProgress;
+          }
+          blastIntensity = Math.pow(blastIntensity, 0.5); // Ease the falloff
+        }
+      }
+      
+      // Add high freq energy to chromatic aberration
+      const aberrationBoost = 1.0 + highFreqEnergy * 2.0;
+      
+      // Update uniforms - use focusPoint instead of mouseWorld
+      edgesMesh.material.uniforms.uMouse.value.set(focusPoint.x, focusPoint.z);
+      edgesMesh.material.uniforms.uMouseRadius.value = finalRadius;
+      edgesMesh.material.uniforms.uTime.value = t;
+      
+      nodesMesh.material.uniforms.uMouse.value.set(focusPoint.x, focusPoint.z);
+      nodesMesh.material.uniforms.uMouseRadius.value = finalRadius;
+      nodesMesh.material.uniforms.uTime.value = t;
+      
+      particleMat.uniforms.uMouse.value.set(focusPoint.x, focusPoint.z);
+      particleMat.uniforms.uMouseRadius.value = finalRadius;
+      particleMat.uniforms.uTime.value = t;
+      
+      // Update post-processing
+      postPass.uniforms.uTime.value = t;
+      postPass.uniforms.uBlastIntensity.value = blastIntensity + highFreqEnergy;
+      postPass.uniforms.uAberration.value = baseAberration * aberrationBoost;
+      
+      // Update particles
+      updateParticles(dt, particleSpeedMult);
+      
+      composer.render();
+      
+      // Draw FFT visualization (only when debug panel visible)
+      drawFFT();
+      
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    // Resize handler
+    window.addEventListener('resize', () => {
+      const newAspect = window.innerWidth / window.innerHeight;
+      camera.left = -frustumSize * newAspect;
+      camera.right = frustumSize * newAspect;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // Debug Panel
+    const debugPanel = document.getElementById('debugPanel');
+    const sliderBloom = document.getElementById('sliderBloom');
+    const bloomValue = document.getElementById('bloomValue');
+    const sliderRadius = document.getElementById('sliderRadius');
+    const radiusValue = document.getElementById('radiusValue');
+    const sliderSpeed = document.getElementById('sliderSpeed');
+    const speedValue = document.getElementById('speedValue');
+    const sliderColorShift = document.getElementById('sliderColorShift');
+    const colorShiftValue = document.getElementById('colorShiftValue');
+    const sliderBaseAlpha = document.getElementById('sliderBaseAlpha');
+    const baseAlphaValue = document.getElementById('baseAlphaValue');
+    
+    sliderBloom.addEventListener('input', () => {
+      bloomPass.strength = sliderBloom.value / 100;
+      bloomValue.textContent = sliderBloom.value + '%';
+    });
+    
+    sliderRadius.addEventListener('input', () => {
+      const r = parseInt(sliderRadius.value);
+      baseMouseRadius = r;
+      radiusValue.textContent = r;
+    });
+    
+    sliderSpeed.addEventListener('input', () => {
+      particleSpeedMult = sliderSpeed.value / 100;
+      speedValue.textContent = sliderSpeed.value + '%';
+    });
+    
+    sliderColorShift.addEventListener('input', () => {
+      const deg = parseInt(sliderColorShift.value);
+      edgesMesh.material.uniforms.uColorShift.value = deg / 360;
+      nodesMesh.material.uniforms.uColorShift.value = deg / 360;
+      particleMat.uniforms.uColorShift.value = deg / 360;
+      colorShiftValue.textContent = deg + '°';
+    });
+    
+    sliderBaseAlpha.addEventListener('input', () => {
+      const val = parseInt(sliderBaseAlpha.value);
+      edgesMesh.material.uniforms.uBaseAlpha.value = val / 100;
+      nodesMesh.material.uniforms.uBaseAlpha.value = val / 100;
+      particleMat.uniforms.uBaseAlpha.value = val / 100;
+      baseAlphaValue.textContent = val + '%';
+    });
+    
+    const sliderAberration = document.getElementById('sliderAberration');
+    const aberrationValue = document.getElementById('aberrationValue');
+    sliderAberration.addEventListener('input', () => {
+      const val = parseInt(sliderAberration.value);
+      baseAberration = val / 100;
+      aberrationValue.textContent = val + '%';
+    });
+    
+    // Subdivision slider - requires reload to take effect
+    const sliderSubdivision = document.getElementById('sliderSubdivision');
+    const subdivisionValue = document.getElementById('subdivisionValue');
+    // Load saved value
+    const savedSubdiv = localStorage.getItem('gridSubdivision');
+    if (savedSubdiv) {
+      sliderSubdivision.value = savedSubdiv;
+      subdivisionValue.textContent = savedSubdiv + '%';
+    }
+    sliderSubdivision.addEventListener('input', () => {
+      const val = parseInt(sliderSubdivision.value);
+      subdivisionValue.textContent = val + '%';
+      localStorage.setItem('gridSubdivision', val);
+    });
+    sliderSubdivision.addEventListener('change', () => {
+      // Reload to apply new subdivision amount
+      location.reload();
+    });
+    
+    // Paint brush controls
+    const sliderBrushSize = document.getElementById('sliderBrushSize');
+    const brushSizeValue = document.getElementById('brushSizeValue');
+    sliderBrushSize.addEventListener('input', () => {
+      const val = parseInt(sliderBrushSize.value);
+      paintBrushSize = val;
+      brushSizeValue.textContent = val;
+    });
+    
+    const sliderFadeSpeed = document.getElementById('sliderFadeSpeed');
+    const fadeSpeedValue = document.getElementById('fadeSpeedValue');
+    sliderFadeSpeed.addEventListener('input', () => {
+      const val = parseInt(sliderFadeSpeed.value);
+      paintFadeRate = 1 - (val / 10000); // Convert to fade rate (higher slider = faster fade)
+      fadeSpeedValue.textContent = (val / 10).toFixed(1) + '%';
+    });
+    
+    // Audio sliders
+    const sliderAudioSens = document.getElementById('sliderAudioSens');
+    const audioSensValue = document.getElementById('audioSensValue');
+    sliderAudioSens.addEventListener('input', () => {
+      const val = parseInt(sliderAudioSens.value);
+      audioSensitivity = val / 100;
+      audioSensValue.textContent = val + '%';
+    });
+    
+    const sliderThreshold = document.getElementById('sliderThreshold');
+    const thresholdValue = document.getElementById('thresholdValue');
+    sliderThreshold.addEventListener('input', () => {
+      const val = parseInt(sliderThreshold.value);
+      blastThreshold = val / 100;
+      thresholdValue.textContent = val + '%';
+    });
+    
+    const sliderBassPulse = document.getElementById('sliderBassPulse');
+    const bassPulseValue = document.getElementById('bassPulseValue');
+    sliderBassPulse.addEventListener('input', () => {
+      const val = parseInt(sliderBassPulse.value);
+      bassPulseStrength = val / 100;
+      bassPulseValue.textContent = val + '%';
+    });
+    
+    // Frequency range sliders
+    const sliderHighStart = document.getElementById('sliderHighStart');
+    const highStartValue = document.getElementById('highStartValue');
+    sliderHighStart.addEventListener('input', () => {
+      const val = parseInt(sliderHighStart.value);
+      highFreqStart = val / 100;
+      highStartValue.textContent = val + '%';
+    });
+    
+    const sliderLowEnd = document.getElementById('sliderLowEnd');
+    const lowEndValue = document.getElementById('lowEndValue');
+    sliderLowEnd.addEventListener('input', () => {
+      const val = parseInt(sliderLowEnd.value);
+      lowFreqEnd = val / 100;
+      lowEndValue.textContent = val + '%';
+    });
+    
+    // Decay sliders
+    const sliderHighDecay = document.getElementById('sliderHighDecay');
+    const highDecayValue = document.getElementById('highDecayValue');
+    sliderHighDecay.addEventListener('input', () => {
+      const val = parseInt(sliderHighDecay.value);
+      highDecay = val / 100;
+      highDecayValue.textContent = val + '%';
+    });
+    
+    const sliderLowDecay = document.getElementById('sliderLowDecay');
+    const lowDecayValue = document.getElementById('lowDecayValue');
+    sliderLowDecay.addEventListener('input', () => {
+      const val = parseInt(sliderLowDecay.value);
+      lowDecay = val / 100;
+      lowDecayValue.textContent = val + '%';
+    });
+    
+    // FFT visualization
+    const fftCanvas = document.getElementById('fftCanvas');
+    const fftCtx = fftCanvas.getContext('2d');
+    const audioStatus = document.getElementById('audioStatus');
+    const highFreqDisplay = document.getElementById('highFreqDisplay');
+    const lowFreqDisplay = document.getElementById('lowFreqDisplay');
+    const deltaDisplay = document.getElementById('deltaDisplay');
+    const blastCountDisplay = document.getElementById('blastCountDisplay');
+    
+    function resizeFftCanvas() {
+      const rect = fftCanvas.getBoundingClientRect();
+      fftCanvas.width = rect.width * window.devicePixelRatio;
+      fftCanvas.height = rect.height * window.devicePixelRatio;
+      // Reset transform before scaling to prevent accumulation
+      fftCtx.setTransform(window.devicePixelRatio, 0, 0, window.devicePixelRatio, 0, 0);
+    }
+    resizeFftCanvas();
+    
+    // Called from main animate loop, not its own loop
+    function drawFFT() {
+      // Only draw if panel is visible and audio is active
+      const panel = document.getElementById('debugPanel');
+      if (!panel || !panel.classList.contains('visible')) return;
+      if (!audioInitialized || !audioData) return;
+      
+      const width = fftCanvas.width / window.devicePixelRatio;
+      const height = fftCanvas.height / window.devicePixelRatio;
+      
+      fftCtx.fillStyle = 'rgba(0, 0, 10, 0.3)';
+      fftCtx.fillRect(0, 0, width, height);
+      
+      const barCount = audioData.length;
+      const barWidth = width / barCount;
+      const lowEndIdx = Math.floor(barCount * lowFreqEnd);
+      const highStartIdx = Math.floor(barCount * highFreqStart);
+      
+      for (let i = 0; i < barCount; i++) {
+        const value = audioData[i] / 255;
+        const barHeight = value * height;
+        
+        // Color based on frequency range
+        let color;
+        if (i < lowEndIdx) {
+          // Low freq - green/cyan
+          color = `rgba(100, 255, 180, ${0.5 + value * 0.5})`;
+        } else if (i >= highStartIdx) {
+          // High freq - magenta/red
+          color = `rgba(255, 100, 150, ${0.5 + value * 0.5})`;
+        } else {
+          // Mid freq - white/gray
+          color = `rgba(150, 150, 180, ${0.3 + value * 0.4})`;
+        }
+        
+        fftCtx.fillStyle = color;
+        fftCtx.fillRect(
+          i * barWidth, 
+          height - barHeight, 
+          barWidth - 1, 
+          barHeight
+        );
+      }
+      
+      // Draw threshold line
+      const thresholdY = height - (blastThreshold * height * 2);
+      fftCtx.strokeStyle = 'rgba(255, 200, 100, 0.6)';
+      fftCtx.lineWidth = 1;
+      fftCtx.setLineDash([4, 4]);
+      fftCtx.beginPath();
+      fftCtx.moveTo(highStartIdx * barWidth, thresholdY);
+      fftCtx.lineTo(width, thresholdY);
+      fftCtx.stroke();
+      fftCtx.setLineDash([]);
+      
+      // Draw range markers
+      fftCtx.strokeStyle = 'rgba(100, 255, 180, 0.4)';
+      fftCtx.beginPath();
+      fftCtx.moveTo(lowEndIdx * barWidth, 0);
+      fftCtx.lineTo(lowEndIdx * barWidth, height);
+      fftCtx.stroke();
+      
+      fftCtx.strokeStyle = 'rgba(255, 100, 150, 0.4)';
+      fftCtx.beginPath();
+      fftCtx.moveTo(highStartIdx * barWidth, 0);
+      fftCtx.lineTo(highStartIdx * barWidth, height);
+      fftCtx.stroke();
+      
+      // Update value displays
+      highFreqDisplay.textContent = highFreqEnergy.toFixed(3);
+      lowFreqDisplay.textContent = lowFreqEnergy.toFixed(3);
+      deltaDisplay.textContent = lastDelta.toFixed(3);
+      deltaDisplay.style.color = lastDelta > blastThreshold ? '#ffa060' : 'rgba(100, 200, 255, 0.9)';
+      blastCountDisplay.textContent = blastCount;
+      
+      // Update audio status
+      if (audioInitialized) {
+        audioStatus.textContent = 'Audio active';
+        audioStatus.classList.add('active');
+      }
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'd' || e.key === 'D') debugPanel.classList.toggle('visible');
+    });
+    
+    // Panel dragging
+    const panelHeader = debugPanel.querySelector('h3');
+    let isDragging = false, dragStartX, dragStartY, panelStartX, panelStartY;
+    
+    panelHeader.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      debugPanel.classList.add('dragging');
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      const rect = debugPanel.getBoundingClientRect();
+      panelStartX = rect.left;
+      panelStartY = rect.top;
+      e.preventDefault();
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      debugPanel.style.left = Math.max(0, panelStartX + e.clientX - dragStartX) + 'px';
+      debugPanel.style.top = Math.max(0, panelStartY + e.clientY - dragStartY) + 'px';
+      debugPanel.style.right = 'auto';
+    });
+    
+    window.addEventListener('mouseup', () => {
+      isDragging = false;
+      debugPanel.classList.remove('dragging');
+    });
+    
+    document.getElementById('btnReload').addEventListener('click', () => location.reload());
+  </script>
+</body>
+</html>

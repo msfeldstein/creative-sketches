@@ -1335,7 +1335,13 @@
     sliderUndulation.addEventListener('input', () => { neuronMat.uniforms.uUndulation.value = sliderUndulation.value / 100; undulationValue.textContent = sliderUndulation.value + '%'; saveSettings(); });
     sliderSomaPulse.addEventListener('input', () => { somas.forEach(s => s.material.uniforms.uPulse.value = sliderSomaPulse.value / 100); somaPulseValue.textContent = sliderSomaPulse.value + '%'; saveSettings(); });
     
-    window.addEventListener('keydown', (e) => { if (e.key === 'd' || e.key === 'D') { debugPanel.classList.toggle('visible'); saveSettings(); } });
+    // Detect if we're in an iframe (grid overview) and hide debug UI
+    const isInIframe = window.self !== window.top;
+    if (isInIframe) {
+      document.querySelector('.hint')?.remove();
+    }
+
+    window.addEventListener('keydown', (e) => { if (isInIframe) return; if (e.key === 'd' || e.key === 'D') { debugPanel.classList.toggle('visible'); saveSettings(); } });
     
     const panelHeader = debugPanel.querySelector('h3');
     let isDragging = false;

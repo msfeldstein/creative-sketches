@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>The Spirit Tree</title>
+  <title>The Spirit Tree - Enhanced</title>
   <style>
     * { margin: 0; padding: 0; }
-    body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; cursor: crosshair; }
     canvas { display: block; }
     
     #debugPanel {
@@ -584,7 +584,7 @@
     const paths = tree.paths;
 
     // Create massive particle system for the tree
-    const PARTICLES = 20000;
+    const PARTICLES = 20000; // Particle count for the tree visualization
     const MAX_PATH = 10;
     const TRAIL_LENGTH = 6; // Fewer but more visible trail segments
 
@@ -1908,8 +1908,15 @@
       saveSettings();
     });
     
-    // Toggle debug panel with 'D' key
+    // Detect if we're in an iframe (grid overview) and hide debug UI
+    const isInIframe = window.self !== window.top;
+    if (isInIframe) {
+      document.querySelector('.hint')?.remove();
+    }
+
+    // Toggle debug panel with 'D' key (disabled in iframe)
     window.addEventListener('keydown', (e) => {
+      if (isInIframe) return;
       if (e.key === 'd' || e.key === 'D') {
         debugPanel.classList.toggle('visible');
         saveSettings();
