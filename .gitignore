@@ -3,3 +3,7 @@ dist
 .vercel
 .DS_Store
 *.log
+
+# Audio files (too large for git)
+public/audio/
+*.mp3

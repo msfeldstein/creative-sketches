@@ -266,8 +266,8 @@
       <button id="btnReload">Reload Page</button>
     </div>
   </div>
-  <div class="hint">Click + drag to paint detail | Press D for debug panel</div>
-  <canvas id="paintDebug" style="position:fixed;bottom:20px;right:20px;width:128px;height:128px;border:1px solid rgba(100,200,255,0.3);border-radius:4px;background:#000;"></canvas>
+  <div class="hint" style="display:none;">Click + drag to paint detail | Press D for debug panel</div>
+  <canvas id="paintDebug" style="display:none;position:fixed;bottom:20px;right:20px;width:128px;height:128px;border:1px solid rgba(100,200,255,0.3);border-radius:4px;background:#000;"></canvas>
   
   <script type="importmap">
     {
@@ -362,7 +362,7 @@
     }
 
     // Radial symmetry fold count
-    const RADIAL_SYMMETRY = 6;
+    const RADIAL_SYMMETRY = 3;
 
     // Paint at a world position - radial symmetry around center
     function paintAt(wx, wz, intensity = 1.0) {

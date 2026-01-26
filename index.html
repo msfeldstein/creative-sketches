@@ -36,6 +36,9 @@
     header {
       padding: 2rem;
       border-bottom: 1px solid rgba(255,255,255,0.05);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
     header h1 {
@@ -44,6 +47,23 @@
       letter-spacing: 0.3em;
       text-transform: uppercase;
       color: var(--text-dim);
+    }
+
+    header a {
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      text-decoration: none;
+      padding: 0.5rem 1rem;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 4px;
+      transition: all 0.2s;
+    }
+
+    header a:hover {
+      color: var(--accent);
+      border-color: var(--accent);
     }
 
     .gallery {
@@ -110,6 +130,7 @@
 <body>
   <header>
     <h1>Sketches</h1>
+    <a href="sketches/songs/index.html">Song Manager</a>
   </header>
 
   <main class="gallery">

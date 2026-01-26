@@ -107,6 +107,106 @@
       color: rgba(255, 255, 255, 0.3);
       font-size: 12px;
     }
+    
+    /* Audio Panel */
+    #audioPanel {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: rgba(0, 0, 0, 0.85);
+      border: 1px solid rgba(255, 107, 53, 0.3);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: #fff;
+      min-width: 280px;
+      z-index: 1000;
+      font-size: 12px;
+      display: none;
+    }
+    #audioPanel.visible { display: block; }
+    #audioPanel h4 {
+      font-size: 11px;
+      color: rgba(255, 107, 53, 0.9);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 10px;
+    }
+    #audioPanel .audio-controls {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    #audioPanel button {
+      padding: 6px 12px;
+      background: rgba(255, 107, 53, 0.15);
+      border: 1px solid rgba(255, 107, 53, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #audioPanel button:hover {
+      background: rgba(255, 107, 53, 0.3);
+      border-color: rgba(255, 107, 53, 0.5);
+    }
+    #audioPanel button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    #audioPanel .track-info {
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.6);
+      margin-bottom: 8px;
+    }
+    #audioPanel .signal-bars {
+      display: flex;
+      gap: 4px;
+      height: 30px;
+      align-items: flex-end;
+      margin-top: 8px;
+    }
+    #audioPanel .signal-bar {
+      flex: 1;
+      background: rgba(255, 107, 53, 0.3);
+      border-radius: 2px;
+      transition: height 0.05s;
+    }
+    #audioPanel .signal-bar.bass { background: rgba(168, 85, 247, 0.6); }
+    #audioPanel .signal-bar.mid { background: rgba(0, 255, 136, 0.6); }
+    #audioPanel .signal-bar.high { background: rgba(0, 212, 255, 0.6); }
+    #audioPanel .beat-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255, 107, 53, 0.2);
+      transition: background 0.1s;
+    }
+    #audioPanel .beat-indicator.active {
+      background: #ff6b35;
+      box-shadow: 0 0 10px #ff6b35;
+    }
+    #audioPanel .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.7);
+    }
+    #audioPanel .checkbox-row input {
+      width: 14px;
+      height: 14px;
+    }
+    #audioPanel select {
+      background: rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(255, 107, 53, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -186,7 +286,31 @@
       <label class="checkbox-label"><input type="checkbox" id="chkLiveReload"> Live Reload (2s)</label>
     </div>
   </div>
-  <div class="hint">Press D for debug panel</div>
+  <div class="hint" style="display:none;">Press D for debug panel • Press A for audio</div>
+  
+  <div id="audioPanel">
+    <h4>Audio Reactive</h4>
+    <div class="track-info" id="trackInfo">No track loaded</div>
+    <div class="audio-controls">
+      <select id="trackSelect">
+        <option value="">Select track...</option>
+        <option value="/tracks/example-track.json">Example Track</option>
+      </select>
+      <button id="btnLoadTrack">Load</button>
+      <button id="btnPlayAudio" disabled>Play</button>
+      <button id="btnStopAudio" disabled>Stop</button>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="chkAudioReactive" checked>
+      <label for="chkAudioReactive">Enable audio reactivity</label>
+    </div>
+    <div class="signal-bars" id="signalBars">
+      <div class="signal-bar bass" id="barBass" style="height: 10%"></div>
+      <div class="signal-bar mid" id="barMid" style="height: 10%"></div>
+      <div class="signal-bar high" id="barHigh" style="height: 10%"></div>
+      <div class="beat-indicator" id="beatIndicator"></div>
+    </div>
+  </div>
   
   <script type="importmap">
     {
@@ -203,6 +327,7 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { AudioSignals } from '/lib/audio-signals.js';
 
     // ===========================================
     // DEFAULT CONFIG - Edit these values directly
@@ -1453,6 +1578,12 @@
     // Camera animation state
     let cameraAnimation = null;
     
+    // Audio signals
+    const audioSignals = new AudioSignals();
+    let audioReactiveEnabled = true;
+    let lastKickTime = 0;
+    let kickBurstActive = false;
+    
     // Rotation speed (controlled by slider)
     let rotationSpeed = (DEFAULT_CONFIG.treeRotation / 100) * 0.05;
     let bloomSpikeFrames = 0;
@@ -1491,6 +1622,53 @@
       }
       
       controls.update();
+      
+      // Audio reactive visuals
+      if (audioReactiveEnabled && audioSignals.isPlaying()) {
+        const s = audioSignals.getCurrentSignals();
+        
+        // Update signal bars UI
+        const barBass = document.getElementById('barBass');
+        const barMid = document.getElementById('barMid');
+        const barHigh = document.getElementById('barHigh');
+        const beatIndicator = document.getElementById('beatIndicator');
+        
+        if (barBass) barBass.style.height = (10 + s.bass * 90) + '%';
+        if (barMid) barMid.style.height = (10 + s.mid * 90) + '%';
+        if (barHigh) barHigh.style.height = (10 + s.high * 90) + '%';
+        if (beatIndicator) {
+          beatIndicator.classList.toggle('active', s.beat);
+        }
+        
+        // Modulate bloom with energy
+        bloomPass.strength = baseBloomStrength + s.energy * 0.4;
+        
+        // Modulate particle speed with bass
+        treeMat.uniforms.uSpeedMult.value = (sliderSpeed.value / 100) * (1 + s.bass * 0.5);
+        
+        // Modulate color shift with mid frequencies
+        treeMat.uniforms.uColorShift.value = (sliderColorShift.value / 360) + s.mid * 0.1;
+        
+        // Modulate branch sway with low frequencies
+        treeMat.uniforms.uUndulation.value = (sliderUndulation.value / 100) * (1 + s.sub * 0.8);
+        
+        // Kick triggers a burst effect (increase brightness temporarily)
+        if (s.kick && time - lastKickTime > 100) {
+          lastKickTime = time;
+          kickBurstActive = true;
+          treeMat.uniforms.uBrightness.value = (sliderTrailBrightness.value / 100) * 2.0;
+        }
+        
+        // Decay kick burst
+        if (kickBurstActive) {
+          const currentBrightness = treeMat.uniforms.uBrightness.value;
+          const targetBrightness = sliderTrailBrightness.value / 100;
+          treeMat.uniforms.uBrightness.value = Math.max(targetBrightness, currentBrightness * 0.95);
+          if (currentBrightness <= targetBrightness * 1.05) {
+            kickBurstActive = false;
+          }
+        }
+      }
       
       if (glitchBloom) {
         if (bloomSpikeFrames <= 0 && Math.random() < 0.02) {
@@ -1921,7 +2099,113 @@
         debugPanel.classList.toggle('visible');
         saveSettings();
       }
+      if (e.key === 'a' || e.key === 'A') {
+        document.getElementById('audioPanel').classList.toggle('visible');
+      }
     });
+    
+    // Audio panel controls
+    const audioPanel = document.getElementById('audioPanel');
+    const trackSelect = document.getElementById('trackSelect');
+    const btnLoadTrack = document.getElementById('btnLoadTrack');
+    const btnPlayAudio = document.getElementById('btnPlayAudio');
+    const btnStopAudio = document.getElementById('btnStopAudio');
+    const trackInfo = document.getElementById('trackInfo');
+    const chkAudioReactive = document.getElementById('chkAudioReactive');
+    
+    btnLoadTrack.addEventListener('click', async () => {
+      const trackUrl = trackSelect.value;
+      if (!trackUrl) return;
+      
+      trackInfo.textContent = 'Loading...';
+      
+      try {
+        // For the example track, we don't have audio, so we'll simulate playback
+        const response = await fetch(trackUrl);
+        const trackData = await response.json();
+        
+        // Load track data without audio (for demo/testing)
+        audioSignals.trackData = trackData;
+        audioSignals.playing = false;
+        audioSignals.pauseTime = 0;
+        
+        trackInfo.textContent = `${trackData.name} (${formatTimeAudio(trackData.duration)}) - ${trackData.bpm} BPM`;
+        btnPlayAudio.disabled = false;
+        btnStopAudio.disabled = false;
+      } catch (error) {
+        trackInfo.textContent = 'Error loading track';
+        console.error('Error loading track:', error);
+      }
+    });
+    
+    // Simulated playback for tracks without audio file
+    let simulatedPlayback = null;
+    let simulatedStartTime = 0;
+    
+    btnPlayAudio.addEventListener('click', () => {
+      if (!audioSignals.trackData) return;
+      
+      if (simulatedPlayback) {
+        // Pause
+        clearInterval(simulatedPlayback);
+        simulatedPlayback = null;
+        audioSignals.pauseTime = (Date.now() - simulatedStartTime) / 1000;
+        audioSignals.playing = false;
+        btnPlayAudio.textContent = 'Play';
+      } else {
+        // Play (simulated)
+        simulatedStartTime = Date.now() - (audioSignals.pauseTime || 0) * 1000;
+        audioSignals.playing = true;
+        btnPlayAudio.textContent = 'Pause';
+        
+        simulatedPlayback = setInterval(() => {
+          const currentTime = (Date.now() - simulatedStartTime) / 1000;
+          if (currentTime >= audioSignals.trackData.duration) {
+            clearInterval(simulatedPlayback);
+            simulatedPlayback = null;
+            audioSignals.playing = false;
+            audioSignals.pauseTime = 0;
+            btnPlayAudio.textContent = 'Play';
+          }
+        }, 100);
+        
+        // Override getCurrentTime for simulated playback
+        audioSignals.getCurrentTime = () => {
+          if (!audioSignals.playing) return audioSignals.pauseTime || 0;
+          return (Date.now() - simulatedStartTime) / 1000;
+        };
+      }
+    });
+    
+    btnStopAudio.addEventListener('click', () => {
+      if (simulatedPlayback) {
+        clearInterval(simulatedPlayback);
+        simulatedPlayback = null;
+      }
+      audioSignals.playing = false;
+      audioSignals.pauseTime = 0;
+      audioSignals.resetBeatTracking(0);
+      btnPlayAudio.textContent = 'Play';
+    });
+    
+    chkAudioReactive.addEventListener('change', () => {
+      audioReactiveEnabled = chkAudioReactive.checked;
+      
+      // Reset visual parameters when disabled
+      if (!audioReactiveEnabled) {
+        bloomPass.strength = baseBloomStrength;
+        treeMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100;
+        treeMat.uniforms.uColorShift.value = sliderColorShift.value / 360;
+        treeMat.uniforms.uUndulation.value = sliderUndulation.value / 100;
+        treeMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100;
+      }
+    });
+    
+    function formatTimeAudio(seconds) {
+      const mins = Math.floor(seconds / 60);
+      const secs = Math.floor(seconds % 60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    }
     
     // Make debug panel draggable
     const panelHeader = debugPanel.querySelector('h3');

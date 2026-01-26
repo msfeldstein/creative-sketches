@@ -1,0 +1,1595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Song Manager - Audio Signal Editor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    :root {
+      --bg: #0a0a0b;
+      --bg-light: #111113;
+      --bg-lighter: #1a1a1e;
+      --bg-track: #0d0d0f;
+      --text: #e8e8e8;
+      --text-dim: #555;
+      --accent: #ff6b35;
+      --accent-dim: rgba(255, 107, 53, 0.2);
+      --cyan: #00d4ff;
+      --green: #00ff88;
+      --purple: #a855f7;
+      --yellow: #fbbf24;
+      --border: rgba(255, 255, 255, 0.06);
+      --track-height: 60px;
+      --track-header-width: 180px;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow: hidden;
+    }
+
+    /* Header */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-light);
+      height: 50px;
+    }
+
+    header h1 {
+      font-size: 0.7rem;
+      font-weight: 400;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+    }
+
+    header .header-controls {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+    }
+
+    header a, header button {
+      color: var(--text-dim);
+      text-decoration: none;
+      font-size: 0.65rem;
+      letter-spacing: 0.1em;
+      background: none;
+      border: 1px solid var(--border);
+      padding: 0.4rem 0.8rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    header a:hover, header button:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+
+    /* Main Layout */
+    .container {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      height: calc(100vh - 50px);
+    }
+
+    /* Sidebar */
+    .sidebar {
+      background: var(--bg-light);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar-section {
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .sidebar h2 {
+      font-size: 0.6rem;
+      font-weight: 400;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 0.5rem;
+    }
+
+    /* Drop Zone */
+    .drop-zone {
+      border: 1px dashed var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.2s;
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--accent);
+      background: var(--accent-dim);
+      color: var(--text);
+    }
+
+    .drop-zone input { display: none; }
+
+    /* Song List */
+    .song-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem;
+    }
+
+    .song-item {
+      background: var(--bg-lighter);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.6rem 0.75rem;
+      margin-bottom: 0.4rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .song-item:hover { border-color: rgba(255,255,255,0.15); }
+    .song-item.active { border-color: var(--accent); background: var(--accent-dim); }
+
+    .song-item .name {
+      font-size: 0.75rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .song-item .meta {
+      font-size: 0.6rem;
+      color: var(--text-dim);
+      margin-top: 0.2rem;
+    }
+
+    /* Timeline Editor */
+    .timeline-editor {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+
+    .timeline-placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-dim);
+      font-size: 0.8rem;
+    }
+
+    /* Transport Bar */
+    .transport-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-light);
+      border-bottom: 1px solid var(--border);
+      height: 44px;
+    }
+
+    .transport-bar button {
+      background: var(--bg-lighter);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.8rem;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.7rem;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .transport-bar button:hover { border-color: var(--accent); }
+    .transport-bar button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .transport-bar button.playing { background: var(--accent); border-color: var(--accent); }
+
+    .transport-bar .time-display {
+      font-size: 0.8rem;
+      color: var(--text-dim);
+      min-width: 100px;
+    }
+
+    .transport-bar .bpm-display {
+      font-size: 0.7rem;
+      color: var(--cyan);
+      margin-left: auto;
+    }
+
+    .transport-bar .add-track-btn {
+      margin-left: 1rem;
+      background: var(--green);
+      border-color: var(--green);
+      color: #000;
+    }
+
+    .transport-bar .add-track-btn:hover {
+      background: #00ff99;
+      border-color: #00ff99;
+    }
+
+    /* Timeline Container */
+    .timeline-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+    }
+
+    /* Waveform Track (always first) */
+    .waveform-track {
+      display: flex;
+      height: 80px;
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-track);
+    }
+
+    .waveform-track .track-header {
+      width: var(--track-header-width);
+      min-width: var(--track-header-width);
+      padding: 0.5rem;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .waveform-track .track-header .label {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+
+    .waveform-track .track-content {
+      flex: 1;
+      position: relative;
+    }
+
+    .waveform-track canvas {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Signal Track */
+    .signal-track {
+      display: flex;
+      height: var(--track-height);
+      border-bottom: 1px solid var(--border);
+      background: var(--bg-track);
+      transition: height 0.2s;
+    }
+
+    .signal-track.expanded {
+      height: calc(var(--track-height) + 50px);
+    }
+
+    .signal-track .track-header {
+      width: var(--track-header-width);
+      min-width: var(--track-header-width);
+      padding: 0.4rem 0.5rem;
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .signal-track .track-header .value-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      bottom: 0;
+      width: 0%;
+      opacity: 0.3;
+      transition: width 0.05s ease-out;
+      pointer-events: none;
+    }
+
+    .signal-track[data-type="beat"] .value-bar { background: var(--accent); }
+    .signal-track[data-type="frequency"] .value-bar { background: var(--purple); }
+    .signal-track[data-type="automation"] .value-bar { background: var(--cyan); }
+    .signal-track[data-type="trigger"] .value-bar { background: var(--yellow); }
+
+    .signal-track .track-header .track-name {
+      font-size: 0.7rem;
+      background: none;
+      border: none;
+      color: var(--text);
+      position: relative;
+      z-index: 1;
+      padding: 0;
+      width: 100%;
+      outline: none;
+      cursor: text;
+    }
+
+    .signal-track .track-header .track-name:hover {
+      color: var(--accent);
+    }
+
+    .signal-track .track-header .track-type {
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      position: relative;
+      z-index: 1;
+    }
+
+    .signal-track .track-header .track-value {
+      font-size: 0.75rem;
+      color: #fff;
+      font-weight: 600;
+      position: relative;
+      z-index: 1;
+      text-shadow: 0 0 10px currentColor;
+    }
+
+    .signal-track .track-header .track-controls {
+      display: flex;
+      gap: 0.25rem;
+      margin-top: auto;
+      position: relative;
+      z-index: 1;
+    }
+
+    .signal-track .track-header .track-controls button {
+      background: none;
+      border: none;
+      color: var(--text-dim);
+      font-size: 0.6rem;
+      cursor: pointer;
+      padding: 0.15rem 0.3rem;
+      border-radius: 2px;
+    }
+
+    .signal-track .track-header .track-controls button:hover {
+      color: var(--text);
+      background: var(--bg-lighter);
+    }
+
+    .signal-track .track-content {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .signal-track canvas {
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+
+    /* Envelope Controls */
+    .envelope-controls {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 50px;
+      background: var(--bg-lighter);
+      border-top: 1px solid var(--border);
+      padding: 0.4rem 0.5rem;
+      display: none;
+      gap: 1rem;
+    }
+
+    .signal-track.expanded .envelope-controls {
+      display: flex;
+    }
+
+    .envelope-controls .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.2rem;
+    }
+
+    .envelope-controls label {
+      font-size: 0.55rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+    }
+
+    .envelope-controls input[type="range"] {
+      width: 80px;
+      height: 4px;
+      cursor: pointer;
+    }
+
+    /* Playhead */
+    .playhead {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 2px;
+      background: var(--accent);
+      pointer-events: none;
+      z-index: 100;
+      box-shadow: 0 0 8px var(--accent);
+    }
+
+    /* Add Track Modal */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.8);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    }
+
+    .modal-overlay.visible { display: flex; }
+
+    .modal {
+      background: var(--bg-light);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      min-width: 320px;
+    }
+
+    .modal h3 {
+      font-size: 0.8rem;
+      font-weight: 500;
+      margin-bottom: 1rem;
+      color: var(--text);
+    }
+
+    .modal .track-type-options {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .modal .track-type-option {
+      background: var(--bg-lighter);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.75rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .modal .track-type-option:hover {
+      border-color: var(--accent);
+    }
+
+    .modal .track-type-option .option-title {
+      font-size: 0.75rem;
+      font-weight: 500;
+      margin-bottom: 0.25rem;
+    }
+
+    .modal .track-type-option .option-desc {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+    }
+
+    .modal .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 1rem;
+    }
+
+    .modal button {
+      background: var(--bg-lighter);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.5rem 1rem;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.7rem;
+      cursor: pointer;
+    }
+
+    .modal button:hover { border-color: var(--accent); }
+
+    /* Export Section */
+    .export-bar {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: var(--bg-light);
+      border-top: 1px solid var(--border);
+    }
+
+    .export-bar button {
+      background: var(--bg-lighter);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 0.4rem 0.8rem;
+      color: var(--text);
+      font-family: inherit;
+      font-size: 0.65rem;
+      cursor: pointer;
+    }
+
+    .export-bar button:hover { border-color: var(--accent); }
+    .export-bar button.primary { background: var(--green); border-color: var(--green); color: #000; }
+    .export-bar button.primary:hover { background: #00ff99; }
+
+    .export-bar .spacer { flex: 1; }
+
+    /* Track Colors */
+    .signal-track[data-type="beat"] .track-type { color: var(--accent); }
+    .signal-track[data-type="frequency"] .track-type { color: var(--purple); }
+    .signal-track[data-type="automation"] .track-type { color: var(--cyan); }
+    .signal-track[data-type="trigger"] .track-type { color: var(--yellow); }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
+
+    /* Analysis Progress */
+    .analysis-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(10, 10, 11, 0.95);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 500;
+    }
+
+    .analysis-overlay .spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .analysis-overlay p { font-size: 0.8rem; color: var(--text-dim); }
+    .analysis-overlay .progress-bar {
+      width: 200px;
+      height: 3px;
+      background: var(--border);
+      border-radius: 2px;
+      margin-top: 0.75rem;
+      overflow: hidden;
+    }
+    .analysis-overlay .progress-fill {
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.1s;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Signal Editor</h1>
+    <div class="header-controls">
+      <a href="/">← Sketches</a>
+    </div>
+  </header>
+
+  <div class="container">
+    <aside class="sidebar">
+      <div class="sidebar-section">
+        <h2>Import</h2>
+        <div class="drop-zone" id="dropZone">
+          Click or drop MP3
+          <input type="file" id="fileInput" accept="audio/*">
+        </div>
+      </div>
+      <h2 style="padding: 0.5rem 0.75rem 0;">Songs</h2>
+      <div class="song-list" id="songList"></div>
+    </aside>
+
+    <main class="timeline-editor" id="timelineEditor">
+      <div class="timeline-placeholder">Select or import a song to begin</div>
+    </main>
+  </div>
+
+  <!-- Add Track Modal -->
+  <div class="modal-overlay" id="addTrackModal">
+    <div class="modal">
+      <h3>Add Signal Track</h3>
+      <div class="track-type-options">
+        <div class="track-type-option" data-type="beat">
+          <div class="option-title">Beat Detection</div>
+          <div class="option-desc">Auto-detected kicks, snares, hi-hats, or all beats</div>
+        </div>
+        <div class="track-type-option" data-type="frequency">
+          <div class="option-title">Frequency Band</div>
+          <div class="option-desc">Sub, bass, mid, or high frequency energy</div>
+        </div>
+        <div class="track-type-option" data-type="automation">
+          <div class="option-title">Automation Curve</div>
+          <div class="option-desc">Draw custom value curves over time</div>
+        </div>
+        <div class="track-type-option" data-type="trigger">
+          <div class="option-title">Trigger Events</div>
+          <div class="option-desc">Piano roll style - place events at specific times</div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button id="cancelAddTrack">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module">
+    import { analyzeAudio, decodeAudio, generateWaveform } from '/lib/audio-analyzer.js';
+    import { AudioSignals } from '/lib/audio-signals.js';
+
+    // State
+    let songs = [];
+    let currentSong = null;
+    let audioBuffer = null;
+    let waveformData = null;
+    let isAnalyzing = false;
+    
+    // Playback
+    const signals = new AudioSignals();
+    let animationFrame = null;
+    let playheadTime = 0;
+    
+    // IndexedDB for file handles
+    let db = null;
+    const DB_NAME = 'AudioTracksDB';
+    const DB_VERSION = 1;
+    const HANDLE_STORE = 'fileHandles';
+
+    // Track type configurations
+    const TRACK_CONFIGS = {
+      beat: {
+        subtypes: ['all', 'kicks', 'snares', 'hihats'],
+        defaultName: 'Beats',
+        color: '#ff6b35'
+      },
+      frequency: {
+        subtypes: ['sub', 'bass', 'mid', 'high'],
+        defaultName: 'Frequency',
+        color: '#a855f7'
+      },
+      automation: {
+        subtypes: null,
+        defaultName: 'Automation',
+        color: '#00d4ff'
+      },
+      trigger: {
+        subtypes: null,
+        defaultName: 'Triggers',
+        color: '#fbbf24'
+      }
+    };
+
+    // DOM Elements
+    const dropZone = document.getElementById('dropZone');
+    const fileInput = document.getElementById('fileInput');
+    const songList = document.getElementById('songList');
+    const timelineEditor = document.getElementById('timelineEditor');
+    const addTrackModal = document.getElementById('addTrackModal');
+
+    // Initialize
+    initDB().then(() => {
+      loadSongsFromStorage();
+      renderSongList();
+    });
+
+    // IndexedDB setup
+    async function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => { db = request.result; resolve(db); };
+        request.onupgradeneeded = (e) => {
+          const database = e.target.result;
+          if (!database.objectStoreNames.contains(HANDLE_STORE)) {
+            database.createObjectStore(HANDLE_STORE, { keyPath: 'id' });
+          }
+        };
+      });
+    }
+
+    async function storeFileHandle(id, handle) {
+      if (!db) return;
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([HANDLE_STORE], 'readwrite');
+        tx.objectStore(HANDLE_STORE).put({ id, handle });
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+      });
+    }
+
+    async function getFileHandle(id) {
+      if (!db) return null;
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction([HANDLE_STORE], 'readonly');
+        const req = tx.objectStore(HANDLE_STORE).get(id);
+        req.onsuccess = () => resolve(req.result?.handle || null);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    async function getFileFromHandle(handle) {
+      if (!handle) return null;
+      const permission = await handle.queryPermission({ mode: 'read' });
+      if (permission === 'granted') return await handle.getFile();
+      const newPerm = await handle.requestPermission({ mode: 'read' });
+      if (newPerm === 'granted') return await handle.getFile();
+      return null;
+    }
+
+    // File upload
+    dropZone.addEventListener('click', async () => {
+      if ('showOpenFilePicker' in window) {
+        try {
+          const [handle] = await window.showOpenFilePicker({
+            types: [{ description: 'Audio', accept: { 'audio/*': ['.mp3', '.wav', '.ogg', '.m4a'] } }]
+          });
+          const file = await handle.getFile();
+          processFile(file, handle);
+        } catch (e) { if (e.name !== 'AbortError') console.error(e); }
+      } else {
+        fileInput.click();
+      }
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      if (e.target.files[0]) processFile(e.target.files[0], null);
+    });
+
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+    dropZone.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dropZone.classList.remove('dragover');
+      const file = e.dataTransfer.files[0];
+      if (file) processFile(file, null);
+    });
+
+    async function processFile(file, fileHandle) {
+      if (isAnalyzing) return;
+      isAnalyzing = true;
+      
+      renderAnalysisProgress();
+      
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const audioDataCopy = arrayBuffer.slice(0);
+        audioBuffer = await decodeAudio(arrayBuffer);
+        waveformData = generateWaveform(audioBuffer, 2000);
+        
+        const analysis = await analyzeAudio(audioBuffer, updateAnalysisProgress);
+        analysis.name = file.name.replace(/\.[^/.]+$/, '');
+        
+        const songId = Date.now().toString();
+        if (fileHandle) await storeFileHandle(songId, fileHandle);
+        
+        // Create default signal tracks from analysis
+        const signalTracks = [
+          { id: 't1', name: 'All Beats', type: 'beat', subtype: 'all', attack: 0, decay: 0.1, expanded: false },
+          { id: 't2', name: 'Bass', type: 'frequency', subtype: 'bass', attack: 0.01, decay: 0.1, expanded: false },
+          { id: 't3', name: 'High', type: 'frequency', subtype: 'high', attack: 0.01, decay: 0.1, expanded: false },
+        ];
+        
+        const song = {
+          id: songId,
+          ...analysis,
+          fileName: file.name,
+          hasFileHandle: !!fileHandle,
+          audioData: audioDataCopy,
+          waveform: Array.from(waveformData),
+          signalTracks
+        };
+        
+        songs.push(song);
+        saveSongsToStorage();
+        renderSongList();
+        selectSong(songId);
+        
+      } catch (error) {
+        console.error('Error processing file:', error);
+        alert('Error: ' + error.message);
+      }
+      
+      isAnalyzing = false;
+    }
+
+    function renderAnalysisProgress() {
+      timelineEditor.innerHTML = `
+        <div class="analysis-overlay">
+          <div class="spinner"></div>
+          <p id="analysisStatus">Decoding audio...</p>
+          <div class="progress-bar"><div class="progress-fill" id="progressFill" style="width:0%"></div></div>
+        </div>
+      `;
+    }
+
+    function updateAnalysisProgress(progress) {
+      const status = document.getElementById('analysisStatus');
+      const fill = document.getElementById('progressFill');
+      if (status) {
+        if (progress < 0.5) status.textContent = 'Analyzing frequencies...';
+        else if (progress < 0.9) status.textContent = 'Detecting beats...';
+        else status.textContent = 'Finalizing...';
+      }
+      if (fill) fill.style.width = Math.round(progress * 100) + '%';
+    }
+
+    // Song selection
+    async function selectSong(songId) {
+      currentSong = songs.find(s => s.id === songId);
+      if (!currentSong) return;
+      
+      document.querySelectorAll('.song-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.id === songId);
+      });
+      
+      if (currentSong.waveform?.length) {
+        waveformData = new Float32Array(currentSong.waveform);
+      }
+      
+      // Load audio
+      if (currentSong.audioData?.byteLength > 0) {
+        const blob = new Blob([currentSong.audioData], { type: 'audio/mpeg' });
+        signals.loadTrackData(currentSong, URL.createObjectURL(blob));
+      } else if (currentSong.hasFileHandle) {
+        const handle = await getFileHandle(currentSong.id);
+        if (handle) {
+          try {
+            const file = await getFileFromHandle(handle);
+            if (file) {
+              const ab = await file.arrayBuffer();
+              currentSong.audioData = ab.slice(0);
+              const blob = new Blob([currentSong.audioData], { type: 'audio/mpeg' });
+              signals.loadTrackData(currentSong, URL.createObjectURL(blob));
+            }
+          } catch (e) { console.warn('Could not reload audio:', e); }
+        }
+      }
+      
+      renderTimeline();
+    }
+
+    function renderSongList() {
+      songList.innerHTML = songs.map(song => `
+        <div class="song-item ${currentSong?.id === song.id ? 'active' : ''}" data-id="${song.id}">
+          <div class="name">${song.name}</div>
+          <div class="meta">${formatTime(song.duration)} • ${song.bpm} BPM</div>
+        </div>
+      `).join('');
+      
+      document.querySelectorAll('.song-item').forEach(el => {
+        el.addEventListener('click', () => selectSong(el.dataset.id));
+      });
+    }
+
+    // Timeline rendering
+    function renderTimeline() {
+      if (!currentSong) {
+        timelineEditor.innerHTML = '<div class="timeline-placeholder">Select or import a song to begin</div>';
+        return;
+      }
+      
+      const hasAudio = currentSong.audioData?.byteLength > 0;
+      
+      timelineEditor.innerHTML = `
+        <div class="transport-bar">
+          ${!hasAudio ? `<button id="linkAudioBtn" style="background:var(--accent);border-color:var(--accent);">🔗 Link Audio File</button>` : ''}
+          <button id="playBtn" ${!hasAudio ? 'disabled' : ''}>▶ Play</button>
+          <button id="stopBtn" ${!hasAudio ? 'disabled' : ''}>■ Stop</button>
+          <div class="time-display">
+            <span id="currentTime">0:00.0</span> / ${formatTime(currentSong.duration)}
+          </div>
+          ${!hasAudio ? '<span style="color:var(--accent);font-size:0.7rem;">Audio not loaded</span>' : ''}
+          <div class="bpm-display">${currentSong.bpm} BPM</div>
+          <button class="add-track-btn" id="addTrackBtn">+ Add Track</button>
+        </div>
+        
+        <div class="timeline-container" id="timelineContainer">
+          <div class="waveform-track">
+            <div class="track-header">
+              <div class="label">Waveform</div>
+            </div>
+            <div class="track-content">
+              <canvas id="waveformCanvas"></canvas>
+              <div class="playhead" id="playhead" style="left:0"></div>
+            </div>
+          </div>
+          
+          <div id="signalTracksContainer"></div>
+        </div>
+        
+        <div class="export-bar">
+          <button class="primary" id="exportBtn">Export JSON</button>
+          <button id="copyBtn">Copy</button>
+          <span class="spacer"></span>
+          <button id="deleteBtn" style="color:var(--accent)">Delete Song</button>
+        </div>
+      `;
+      
+      setupTimelineEvents();
+      renderSignalTracks();
+      drawWaveform();
+    }
+
+    function renderSignalTracks() {
+      const container = document.getElementById('signalTracksContainer');
+      if (!container || !currentSong) return;
+      
+      container.innerHTML = currentSong.signalTracks.map((track, index) => `
+        <div class="signal-track ${track.expanded ? 'expanded' : ''}" data-type="${track.type}" data-index="${index}">
+          <div class="track-header">
+            <div class="value-bar" id="valueBar${index}"></div>
+            <input class="track-name" value="${track.name}" data-index="${index}">
+            <div class="track-type">${track.type}${track.subtype ? ': ' + track.subtype : ''}</div>
+            <div class="track-value" id="trackValue${index}">0.00</div>
+            <div class="track-controls">
+              <button class="expand-btn" data-index="${index}">${track.expanded ? '▼' : '▶'}</button>
+              <button class="delete-track-btn" data-index="${index}">×</button>
+            </div>
+            <div class="envelope-controls">
+              <div class="control-group">
+                <label>Attack</label>
+                <input type="range" min="0" max="500" value="${track.attack * 1000}" data-index="${index}" data-param="attack">
+              </div>
+              <div class="control-group">
+                <label>Decay</label>
+                <input type="range" min="0" max="1000" value="${track.decay * 1000}" data-index="${index}" data-param="decay">
+              </div>
+              ${track.type === 'beat' ? `
+                <div class="control-group">
+                  <label>Type</label>
+                  <select data-index="${index}" data-param="subtype">
+                    ${['all', 'kicks', 'snares', 'hihats'].map(t => 
+                      `<option value="${t}" ${track.subtype === t ? 'selected' : ''}>${t}</option>`
+                    ).join('')}
+                  </select>
+                </div>
+              ` : ''}
+              ${track.type === 'frequency' ? `
+                <div class="control-group">
+                  <label>Band</label>
+                  <select data-index="${index}" data-param="subtype">
+                    ${['sub', 'bass', 'mid', 'high'].map(t => 
+                      `<option value="${t}" ${track.subtype === t ? 'selected' : ''}>${t}</option>`
+                    ).join('')}
+                  </select>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+          <div class="track-content">
+            <canvas id="trackCanvas${index}"></canvas>
+          </div>
+        </div>
+      `).join('');
+      
+      // Setup track events
+      container.querySelectorAll('.track-name').forEach(input => {
+        input.addEventListener('change', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          currentSong.signalTracks[idx].name = e.target.value;
+          saveSongsToStorage();
+        });
+      });
+      
+      container.querySelectorAll('.expand-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          currentSong.signalTracks[idx].expanded = !currentSong.signalTracks[idx].expanded;
+          renderSignalTracks();
+          drawAllTracks();
+        });
+      });
+      
+      container.querySelectorAll('.delete-track-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          currentSong.signalTracks.splice(idx, 1);
+          saveSongsToStorage();
+          renderSignalTracks();
+        });
+      });
+      
+      container.querySelectorAll('input[type="range"]').forEach(input => {
+        input.addEventListener('input', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          const param = e.target.dataset.param;
+          currentSong.signalTracks[idx][param] = e.target.value / 1000;
+          saveSongsToStorage();
+        });
+      });
+      
+      container.querySelectorAll('select').forEach(select => {
+        select.addEventListener('change', (e) => {
+          const idx = parseInt(e.target.dataset.index);
+          currentSong.signalTracks[idx].subtype = e.target.value;
+          saveSongsToStorage();
+          drawTrack(idx);
+        });
+      });
+      
+      // Setup automation/trigger canvas events
+      container.querySelectorAll('.signal-track').forEach((trackEl, idx) => {
+        const track = currentSong.signalTracks[idx];
+        const canvas = document.getElementById(`trackCanvas${idx}`);
+        
+        if (track.type === 'automation') {
+          setupAutomationCanvas(canvas, idx);
+        } else if (track.type === 'trigger') {
+          setupTriggerCanvas(canvas, idx);
+        }
+      });
+      
+      drawAllTracks();
+    }
+
+    function setupAutomationCanvas(canvas, trackIndex) {
+      const track = currentSong.signalTracks[trackIndex];
+      if (!track.points) track.points = [[0, 0.5], [currentSong.duration, 0.5]];
+      
+      let draggingPoint = -1;
+      
+      canvas.addEventListener('mousedown', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const time = (x / rect.width) * currentSong.duration;
+        const value = 1 - (y / rect.height);
+        
+        // Check for existing point
+        for (let i = 0; i < track.points.length; i++) {
+          const [pt, pv] = track.points[i];
+          const px = (pt / currentSong.duration) * rect.width;
+          const py = (1 - pv) * rect.height;
+          if (Math.abs(x - px) < 8 && Math.abs(y - py) < 8) {
+            draggingPoint = i;
+            return;
+          }
+        }
+        
+        // Add new point
+        let insertIdx = track.points.length;
+        for (let i = 0; i < track.points.length; i++) {
+          if (track.points[i][0] > time) { insertIdx = i; break; }
+        }
+        track.points.splice(insertIdx, 0, [time, Math.max(0, Math.min(1, value))]);
+        draggingPoint = insertIdx;
+        saveSongsToStorage();
+        drawTrack(trackIndex);
+      });
+      
+      canvas.addEventListener('mousemove', (e) => {
+        if (draggingPoint < 0) return;
+        const rect = canvas.getBoundingClientRect();
+        let time = ((e.clientX - rect.left) / rect.width) * currentSong.duration;
+        const value = 1 - ((e.clientY - rect.top) / rect.height);
+        
+        // Clamp time
+        if (draggingPoint === 0) time = 0;
+        else if (draggingPoint === track.points.length - 1) time = currentSong.duration;
+        else {
+          time = Math.max(track.points[draggingPoint - 1][0] + 0.01, 
+                          Math.min(track.points[draggingPoint + 1][0] - 0.01, time));
+        }
+        
+        track.points[draggingPoint] = [time, Math.max(0, Math.min(1, value))];
+        drawTrack(trackIndex);
+      });
+      
+      canvas.addEventListener('mouseup', () => {
+        if (draggingPoint >= 0) saveSongsToStorage();
+        draggingPoint = -1;
+      });
+      
+      canvas.addEventListener('dblclick', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        for (let i = 1; i < track.points.length - 1; i++) {
+          const [pt, pv] = track.points[i];
+          const px = (pt / currentSong.duration) * rect.width;
+          const py = (1 - pv) * rect.height;
+          if (Math.abs(x - px) < 8 && Math.abs(y - py) < 8) {
+            track.points.splice(i, 1);
+            saveSongsToStorage();
+            drawTrack(trackIndex);
+            return;
+          }
+        }
+      });
+    }
+
+    function setupTriggerCanvas(canvas, trackIndex) {
+      const track = currentSong.signalTracks[trackIndex];
+      if (!track.triggers) track.triggers = [];
+      
+      canvas.addEventListener('click', (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        const time = (x / rect.width) * currentSong.duration;
+        const velocity = 1 - (y / rect.height);
+        
+        // Check for existing trigger to remove
+        for (let i = 0; i < track.triggers.length; i++) {
+          const t = track.triggers[i];
+          const tx = (t.time / currentSong.duration) * rect.width;
+          if (Math.abs(x - tx) < 6) {
+            track.triggers.splice(i, 1);
+            saveSongsToStorage();
+            drawTrack(trackIndex);
+            return;
+          }
+        }
+        
+        // Add new trigger
+        track.triggers.push({ time, velocity: Math.max(0.1, Math.min(1, velocity)) });
+        track.triggers.sort((a, b) => a.time - b.time);
+        saveSongsToStorage();
+        drawTrack(trackIndex);
+      });
+    }
+
+    function setupTimelineEvents() {
+      document.getElementById('linkAudioBtn')?.addEventListener('click', linkAudioFile);
+      document.getElementById('playBtn')?.addEventListener('click', togglePlay);
+      document.getElementById('stopBtn')?.addEventListener('click', stop);
+      document.getElementById('addTrackBtn')?.addEventListener('click', () => {
+        addTrackModal.classList.add('visible');
+      });
+      document.getElementById('cancelAddTrack')?.addEventListener('click', () => {
+        addTrackModal.classList.remove('visible');
+      });
+      document.getElementById('exportBtn')?.addEventListener('click', exportSong);
+      document.getElementById('copyBtn')?.addEventListener('click', copySong);
+      document.getElementById('deleteBtn')?.addEventListener('click', deleteSong);
+      
+      // Waveform click to seek
+      document.getElementById('waveformCanvas')?.addEventListener('click', (e) => {
+        const rect = e.target.getBoundingClientRect();
+        const x = (e.clientX - rect.left) / rect.width;
+        signals.seek(x * currentSong.duration);
+        updatePlayhead();
+      });
+      
+      // Track type selection in modal
+      document.querySelectorAll('.track-type-option').forEach(opt => {
+        opt.addEventListener('click', () => {
+          addTrack(opt.dataset.type);
+          addTrackModal.classList.remove('visible');
+        });
+      });
+    }
+
+    function addTrack(type) {
+      const config = TRACK_CONFIGS[type];
+      const newTrack = {
+        id: 't' + Date.now(),
+        name: config.defaultName,
+        type,
+        subtype: config.subtypes ? config.subtypes[0] : null,
+        attack: 0.01,
+        decay: 0.1,
+        expanded: false
+      };
+      
+      if (type === 'automation') {
+        newTrack.points = [[0, 0.5], [currentSong.duration, 0.5]];
+      } else if (type === 'trigger') {
+        newTrack.triggers = [];
+      }
+      
+      currentSong.signalTracks.push(newTrack);
+      saveSongsToStorage();
+      renderSignalTracks();
+    }
+
+    // Link audio file to current song
+    async function linkAudioFile() {
+      if (!currentSong) return;
+      
+      if ('showOpenFilePicker' in window) {
+        try {
+          const [handle] = await window.showOpenFilePicker({
+            types: [{ description: 'Audio', accept: { 'audio/*': ['.mp3', '.wav', '.ogg', '.m4a'] } }]
+          });
+          const file = await handle.getFile();
+          const ab = await file.arrayBuffer();
+          currentSong.audioData = ab.slice(0);
+          currentSong.hasFileHandle = true;
+          
+          // Store handle for persistence
+          await storeFileHandle(currentSong.id, handle);
+          
+          // Load into audio player
+          const blob = new Blob([currentSong.audioData], { type: 'audio/mpeg' });
+          signals.loadTrackData(currentSong, URL.createObjectURL(blob));
+          
+          saveSongsToStorage();
+          renderTimeline();
+        } catch (e) {
+          if (e.name !== 'AbortError') console.error('Link audio error:', e);
+        }
+      } else {
+        // Fallback for browsers without File System Access API
+        const input = document.createElement('input');
+        input.type = 'file';
+        input.accept = 'audio/*';
+        input.onchange = async () => {
+          const file = input.files[0];
+          if (file) {
+            const ab = await file.arrayBuffer();
+            currentSong.audioData = ab.slice(0);
+            const blob = new Blob([currentSong.audioData], { type: 'audio/mpeg' });
+            signals.loadTrackData(currentSong, URL.createObjectURL(blob));
+            renderTimeline();
+          }
+        };
+        input.click();
+      }
+    }
+
+    // Playback
+    async function togglePlay() {
+      const btn = document.getElementById('playBtn');
+      if (signals.isPlaying()) {
+        signals.pause();
+        btn.textContent = '▶ Play';
+        btn.classList.remove('playing');
+        cancelAnimationFrame(animationFrame);
+      } else {
+        await signals.play();
+        btn.textContent = '❚❚ Pause';
+        btn.classList.add('playing');
+        updateLoop();
+      }
+    }
+
+    function stop() {
+      signals.stop();
+      const btn = document.getElementById('playBtn');
+      if (btn) {
+        btn.textContent = '▶ Play';
+        btn.classList.remove('playing');
+      }
+      cancelAnimationFrame(animationFrame);
+      playheadTime = 0;
+      updatePlayhead();
+    }
+
+    function updateLoop() {
+      if (!signals.isPlaying()) return;
+      playheadTime = signals.getCurrentTime();
+      updatePlayhead();
+      updateTrackValues();
+      animationFrame = requestAnimationFrame(updateLoop);
+    }
+
+    function updatePlayhead() {
+      const playhead = document.getElementById('playhead');
+      const timeDisplay = document.getElementById('currentTime');
+      if (!currentSong) return;
+      
+      const pct = (playheadTime / currentSong.duration) * 100;
+      if (playhead) playhead.style.left = pct + '%';
+      if (timeDisplay) timeDisplay.textContent = formatTimeMs(playheadTime);
+    }
+
+    function updateTrackValues() {
+      if (!currentSong) return;
+      
+      currentSong.signalTracks.forEach((track, idx) => {
+        const valueEl = document.getElementById(`trackValue${idx}`);
+        const barEl = document.getElementById(`valueBar${idx}`);
+        if (!valueEl) return;
+        
+        let value = 0;
+        if (track.type === 'beat') {
+          const beats = currentSong.beats[track.subtype] || [];
+          // Check if there's a recent beat
+          for (const bt of beats) {
+            if (bt <= playheadTime && bt > playheadTime - track.decay) {
+              const elapsed = playheadTime - bt;
+              value = Math.max(value, 1 - (elapsed / track.decay));
+            }
+          }
+        } else if (track.type === 'frequency') {
+          const freq = currentSong.frequency[track.subtype];
+          if (freq) {
+            const freqIdx = Math.floor(playheadTime * currentSong.frequency.sampleRate);
+            value = freq[Math.min(freqIdx, freq.length - 1)] || 0;
+          }
+        } else if (track.type === 'automation' && track.points) {
+          value = interpolateAutomation(track.points, playheadTime);
+        } else if (track.type === 'trigger' && track.triggers) {
+          for (const t of track.triggers) {
+            if (t.time <= playheadTime && t.time > playheadTime - track.decay) {
+              const elapsed = playheadTime - t.time;
+              value = Math.max(value, t.velocity * (1 - elapsed / track.decay));
+            }
+          }
+        }
+        
+        // Update value display
+        valueEl.textContent = value.toFixed(2);
+        
+        // Update value bar - fills from left to right
+        if (barEl) {
+          barEl.style.width = (value * 100) + '%';
+          barEl.style.opacity = 0.2 + value * 0.4; // More opaque when higher
+        }
+      });
+    }
+
+    function interpolateAutomation(points, time) {
+      if (!points.length) return 0;
+      if (time <= points[0][0]) return points[0][1];
+      if (time >= points[points.length - 1][0]) return points[points.length - 1][1];
+      
+      for (let i = 0; i < points.length - 1; i++) {
+        if (time >= points[i][0] && time < points[i + 1][0]) {
+          const [t0, v0] = points[i];
+          const [t1, v1] = points[i + 1];
+          const t = (time - t0) / (t1 - t0);
+          return v0 + (v1 - v0) * t * t * (3 - 2 * t); // Smooth step
+        }
+      }
+      return 0;
+    }
+
+    // Drawing
+    function drawWaveform() {
+      const canvas = document.getElementById('waveformCanvas');
+      if (!canvas || !waveformData) return;
+      
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = canvas.offsetHeight * dpr;
+      ctx.scale(dpr, dpr);
+      
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      const centerY = h / 2;
+      
+      ctx.fillStyle = '#0a0a0b';
+      ctx.fillRect(0, 0, w, h);
+      
+      const numPoints = waveformData.length / 2;
+      const step = w / numPoints;
+      
+      ctx.fillStyle = 'rgba(0, 212, 255, 0.5)';
+      for (let i = 0; i < numPoints; i++) {
+        const min = waveformData[i * 2];
+        const max = waveformData[i * 2 + 1];
+        ctx.fillRect(i * step, centerY + min * centerY, Math.max(1, step - 0.5), (max - min) * centerY);
+      }
+    }
+
+    function drawAllTracks() {
+      if (!currentSong) return;
+      currentSong.signalTracks.forEach((_, idx) => drawTrack(idx));
+    }
+
+    function drawTrack(index) {
+      const canvas = document.getElementById(`trackCanvas${index}`);
+      if (!canvas || !currentSong) return;
+      
+      const track = currentSong.signalTracks[index];
+      const ctx = canvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = canvas.offsetHeight * dpr;
+      ctx.scale(dpr, dpr);
+      
+      const w = canvas.offsetWidth;
+      const h = canvas.offsetHeight;
+      
+      ctx.fillStyle = '#08080a';
+      ctx.fillRect(0, 0, w, h);
+      
+      // Grid lines
+      ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        ctx.moveTo(0, (i / 4) * h);
+        ctx.lineTo(w, (i / 4) * h);
+        ctx.stroke();
+      }
+      
+      const color = TRACK_CONFIGS[track.type]?.color || '#666';
+      
+      if (track.type === 'beat') {
+        const beats = currentSong.beats[track.subtype] || [];
+        ctx.fillStyle = color;
+        beats.forEach(time => {
+          const x = (time / currentSong.duration) * w;
+          ctx.fillRect(x - 1, 4, 2, h - 8);
+        });
+      } else if (track.type === 'frequency') {
+        const freq = currentSong.frequency[track.subtype];
+        if (freq) {
+          ctx.fillStyle = color + '99';
+          const step = w / freq.length;
+          freq.forEach((val, i) => {
+            ctx.fillRect(i * step, h - val * (h - 8), Math.max(1, step - 0.5), val * (h - 8));
+          });
+        }
+      } else if (track.type === 'automation' && track.points) {
+        // Draw curve
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        track.points.forEach(([t, v], i) => {
+          const x = (t / currentSong.duration) * w;
+          const y = (1 - v) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        
+        // Draw points
+        track.points.forEach(([t, v]) => {
+          const x = (t / currentSong.duration) * w;
+          const y = (1 - v) * h;
+          ctx.fillStyle = color;
+          ctx.beginPath();
+          ctx.arc(x, y, 5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.beginPath();
+          ctx.arc(x, y, 2, 0, Math.PI * 2);
+          ctx.fill();
+        });
+      } else if (track.type === 'trigger' && track.triggers) {
+        ctx.fillStyle = color;
+        track.triggers.forEach(({ time, velocity }) => {
+          const x = (time / currentSong.duration) * w;
+          const barH = velocity * (h - 8);
+          ctx.fillRect(x - 3, h - 4 - barH, 6, barH);
+        });
+      }
+    }
+
+    // Export
+    function exportSong() {
+      const data = buildExportData();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = currentSong.name.replace(/[^a-z0-9]/gi, '-').toLowerCase() + '.json';
+      a.click();
+    }
+
+    async function copySong() {
+      const data = buildExportData();
+      await navigator.clipboard.writeText(JSON.stringify(data, null, 2));
+      const btn = document.getElementById('copyBtn');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 1500);
+    }
+
+    function buildExportData() {
+      // Build signals object from tracks
+      const signals = {};
+      currentSong.signalTracks.forEach(track => {
+        const signalName = track.name.replace(/\s+/g, '_').toLowerCase();
+        signals[signalName] = {
+          type: track.type,
+          subtype: track.subtype,
+          attack: track.attack,
+          decay: track.decay,
+          points: track.points,
+          triggers: track.triggers
+        };
+      });
+      
+      return {
+        name: currentSong.name,
+        duration: currentSong.duration,
+        bpm: currentSong.bpm,
+        beats: currentSong.beats,
+        frequency: currentSong.frequency,
+        energy: currentSong.energy,
+        signals
+      };
+    }
+
+    function deleteSong() {
+      if (!confirm(`Delete "${currentSong.name}"?`)) return;
+      songs = songs.filter(s => s.id !== currentSong.id);
+      currentSong = null;
+      saveSongsToStorage();
+      renderSongList();
+      timelineEditor.innerHTML = '<div class="timeline-placeholder">Select or import a song to begin</div>';
+    }
+
+    // Storage
+    function saveSongsToStorage() {
+      const data = songs.map(s => ({
+        id: s.id,
+        name: s.name,
+        fileName: s.fileName,
+        duration: s.duration,
+        bpm: s.bpm,
+        beats: s.beats,
+        frequency: s.frequency,
+        energy: s.energy,
+        waveform: s.waveform,
+        hasFileHandle: s.hasFileHandle,
+        signalTracks: s.signalTracks
+      }));
+      
+      try {
+        localStorage.setItem('audioSongs', JSON.stringify(data));
+      } catch (e) {
+        console.error('Storage error:', e);
+      }
+    }
+
+    function loadSongsFromStorage() {
+      try {
+        const saved = localStorage.getItem('audioSongs');
+        if (saved) {
+          songs = JSON.parse(saved).map(s => ({ ...s, audioData: null }));
+        }
+      } catch (e) {
+        console.error('Load error:', e);
+        songs = [];
+      }
+    }
+
+    // Utility
+    function formatTime(s) {
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      return `${m}:${sec.toString().padStart(2, '0')}`;
+    }
+
+    function formatTimeMs(s) {
+      const m = Math.floor(s / 60);
+      const sec = Math.floor(s % 60);
+      const ms = Math.floor((s % 1) * 10);
+      return `${m}:${sec.toString().padStart(2, '0')}.${ms}`;
+    }
+
+    // Window resize
+    window.addEventListener('resize', () => {
+      if (currentSong) {
+        drawWaveform();
+        drawAllTracks();
+      }
+    });
+  </script>
+</body>
+</html>
