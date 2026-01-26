@@ -161,46 +161,29 @@
     <h3>Grid Controls</h3>
     <div class="section">
       <div class="section-title">Visual Controls</div>
-      <label class="slider-label">
-        <span>Bloom <span id="bloomValue">55%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="150" value="55">
-      </label>
-      <label class="slider-label">
-        <span>Mouse Radius <span id="radiusValue">18</span></span>
-        <input type="range" id="sliderRadius" min="5" max="40" value="18">
-      </label>
-      <label class="slider-label">
-        <span>Particle Speed <span id="speedValue">100%</span></span>
-        <input type="range" id="sliderSpeed" min="20" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Color Shift <span id="colorShiftValue">0°</span></span>
-        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
-      </label>
-      <label class="slider-label">
-        <span>Base Brightness <span id="baseAlphaValue">25%</span></span>
-        <input type="range" id="sliderBaseAlpha" min="0" max="50" value="25">
-      </label>
-      <label class="slider-label">
-        <span>Chromatic Aberration <span id="aberrationValue">100%</span></span>
-        <input type="range" id="sliderAberration" min="0" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Fractal Detail <span id="subdivisionValue">100%</span></span>
-        <input type="range" id="sliderSubdivision" min="0" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Paint Brush Size <span id="brushSizeValue">15</span></span>
-        <input type="range" id="sliderBrushSize" min="5" max="40" value="15">
-      </label>
-      <label class="slider-label">
-        <span>Paint Fade Speed <span id="fadeSpeedValue">0.3%</span></span>
-        <input type="range" id="sliderFadeSpeed" min="1" max="50" value="3">
-      </label>
+      <div id="visualControls"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Paint Controls</div>
+      <canvas id="paintDebug" style="width:100%;height:80px;background:#000;border:1px solid rgba(100,200,255,0.2);border-radius:4px;margin-bottom:8px;"></canvas>
+      <div id="paintControls"></div>
+    </div>
+    <div class="section">
+      <div class="section-title">Audio</div>
+      <div class="audio-row" style="margin-bottom:6px;">
+        <select id="trackSelect" style="width:100%;padding:6px 8px;background:rgba(100,200,255,0.1);border:1px solid rgba(100,200,255,0.3);border-radius:4px;color:#fff;font-size:11px;">
+          <option value="">Loading songs...</option>
+        </select>
+      </div>
+      <div id="trackInfo" style="font-size:10px;color:rgba(255,255,255,0.5);margin-bottom:6px;">No track loaded</div>
+      <div class="audio-row" style="display:flex;gap:4px;margin-bottom:6px;">
+        <button id="btnPlayAudio" disabled>▶ Play</button>
+        <button id="btnStopAudio" disabled>■ Stop</button>
+      </div>
     </div>
     <details>
       <summary>Audio Reactivity</summary>
-      <div id="audioStatus" class="audio-status">Click for mic, or drop an MP3 file</div>
+      <div id="audioStatus" class="audio-status">Mic: Click to enable | Or drop MP3</div>
       <div id="audioMeter" style="position:relative; height:30px; background:rgba(0,0,0,0.5); border-radius:4px; margin-bottom:8px; overflow:hidden;">
         <div id="deltaBar" style="position:absolute; left:0; top:0; height:100%; background:linear-gradient(90deg, #4080ff, #60c0ff); transition:width 0.05s;"></div>
         <div id="thresholdLine" style="position:absolute; top:0; height:100%; width:2px; background:#ff8040;"></div>
@@ -232,42 +215,14 @@
           <div class="value-num" id="blobCountDisplay">0</div>
         </div>
       </div>
-      <label class="slider-label">
-        <span>Sensitivity <span id="audioSensValue">100%</span></span>
-        <input type="range" id="sliderAudioSens" min="20" max="500" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Blast Threshold <span id="thresholdValue">8%</span></span>
-        <input type="range" id="sliderThreshold" min="2" max="50" value="8">
-      </label>
-      <label class="slider-label">
-        <span>Bass Pulse <span id="bassPulseValue">100%</span></span>
-        <input type="range" id="sliderBassPulse" min="0" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>High Freq Start <span id="highStartValue">60%</span></span>
-        <input type="range" id="sliderHighStart" min="30" max="90" value="60">
-      </label>
-      <label class="slider-label">
-        <span>Low Freq End <span id="lowEndValue">30%</span></span>
-        <input type="range" id="sliderLowEnd" min="10" max="50" value="30">
-      </label>
-      <label class="slider-label">
-        <span>High Decay <span id="highDecayValue">60%</span></span>
-        <input type="range" id="sliderHighDecay" min="20" max="95" value="60">
-      </label>
-      <label class="slider-label">
-        <span>Low Decay <span id="lowDecayValue">70%</span></span>
-        <input type="range" id="sliderLowDecay" min="20" max="95" value="70">
-      </label>
+      <div id="audioControls"></div>
     </details>
     <div class="section">
       <div class="section-title">Dev Tools</div>
       <button id="btnReload">Reload Page</button>
     </div>
   </div>
-  <div class="hint">Click + drag to paint detail | Press D for debug panel</div>
-  <canvas id="paintDebug" style="position:fixed;bottom:20px;right:20px;width:128px;height:128px;border:1px solid rgba(100,200,255,0.3);border-radius:4px;background:#000;"></canvas>
+  <div class="hint" style="display:none;">Click + drag to paint detail | Press D for debug panel</div>
   
   <script type="importmap">
     {
@@ -283,6 +238,32 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { DebugControls } from '/lib/debug-controls.js';
+    import { AudioSignals } from '/lib/audio-signals.js';
+    import { getSongList, loadSongWithAudio } from '/lib/song-storage.js';
+
+    // ===========================================
+    // CONTROL SCHEMA
+    // ===========================================
+    const CONTROL_SCHEMA = {
+      bloom: { type: 'number', label: 'Bloom', min: 0, max: 150, step: 1, default: 55, unit: '%', group: 'visual' },
+      mouseRadius: { type: 'number', label: 'Mouse Radius', min: 5, max: 40, step: 1, default: 18, unit: '', group: 'visual' },
+      particleSpeed: { type: 'number', label: 'Particle Speed', min: 20, max: 300, step: 1, default: 100, unit: '%', group: 'visual' },
+      colorShift: { type: 'number', label: 'Color Shift', min: 0, max: 360, step: 1, default: 0, unit: '°', group: 'visual' },
+      baseAlpha: { type: 'number', label: 'Base Brightness', min: 0, max: 50, step: 1, default: 25, unit: '%', group: 'visual' },
+      aberration: { type: 'number', label: 'Chromatic Aberration', min: 0, max: 300, step: 1, default: 100, unit: '%', group: 'visual' },
+      subdivision: { type: 'number', label: 'Fractal Detail', min: 0, max: 200, step: 1, default: 100, unit: '%', group: 'visual' },
+      brushSize: { type: 'number', label: 'Paint Brush Size', min: 5, max: 40, step: 1, default: 15, unit: '', group: 'paint' },
+      fadeSpeed: { type: 'number', label: 'Paint Fade Speed', min: 1, max: 50, step: 1, default: 10, unit: '', group: 'paint' },
+      spawnPainter: { type: 'trigger', label: 'Spawn Painter', buttonLabel: '+ Spawn', group: 'paint' },
+      audioSens: { type: 'number', label: 'Sensitivity', min: 20, max: 500, step: 1, default: 100, unit: '%', group: 'audio' },
+      blastThreshold: { type: 'number', label: 'Blast Threshold', min: 2, max: 50, step: 1, default: 8, unit: '%', group: 'audio' },
+      bassPulse: { type: 'number', label: 'Bass Pulse', min: 0, max: 300, step: 1, default: 100, unit: '%', group: 'audio' },
+      highStart: { type: 'number', label: 'High Freq Start', min: 30, max: 90, step: 1, default: 60, unit: '%', group: 'audio' },
+      lowEnd: { type: 'number', label: 'Low Freq End', min: 10, max: 50, step: 1, default: 30, unit: '%', group: 'audio' },
+      highDecay: { type: 'number', label: 'High Decay', min: 20, max: 95, step: 1, default: 60, unit: '%', group: 'audio' },
+      lowDecay: { type: 'number', label: 'Low Decay', min: 20, max: 95, step: 1, default: 70, unit: '%', group: 'audio' }
+    };
 
     const DEFAULT_CONFIG = {
       bloom: 55,
@@ -334,7 +315,7 @@
     paintTexture.magFilter = THREE.LinearFilter;
     
     let isPainting = false;
-    let paintFadeRate = 0.997; // How fast trails fade (closer to 1 = slower fade)
+    let paintFadeRate = 0.98; // How fast trails fade (closer to 1 = slower fade)
     let paintBrushSize = 15;
     
     // Paint buffer extent - matches visible screen area
@@ -350,6 +331,10 @@
     
     // Paint a single point (internal helper)
     function paintSinglePoint(px, py, size, alpha) {
+      // Guard against invalid values
+      if (!isFinite(px) || !isFinite(py) || !isFinite(size) || size <= 0 || !isFinite(alpha)) {
+        return;
+      }
       const gradient = paintCtx.createRadialGradient(px, py, 0, px, py, size);
       gradient.addColorStop(0, `rgba(255, 255, 255, ${0.6 * alpha})`);
       gradient.addColorStop(0.3, `rgba(255, 255, 255, ${0.4 * alpha})`);
@@ -360,11 +345,106 @@
       paintCtx.arc(px, py, size, 0, Math.PI * 2);
       paintCtx.fill();
     }
+    
+    // Paint a line with soft edges
+    function paintLine(px1, py1, px2, py2, width, alpha) {
+      if (!isFinite(px1) || !isFinite(py1) || !isFinite(px2) || !isFinite(py2) || !isFinite(width) || width <= 0) {
+        return;
+      }
+      paintCtx.save();
+      paintCtx.lineCap = 'round';
+      paintCtx.lineWidth = width;
+      paintCtx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.5})`;
+      paintCtx.beginPath();
+      paintCtx.moveTo(px1, py1);
+      paintCtx.lineTo(px2, py2);
+      paintCtx.stroke();
+      // Softer glow
+      paintCtx.lineWidth = width * 2;
+      paintCtx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.15})`;
+      paintCtx.stroke();
+      paintCtx.restore();
+    }
+    
+    // Paint a grid of small squares
+    function paintGrid(px, py, cellSize, gridSize, alpha, rotation) {
+      if (!isFinite(px) || !isFinite(py) || !isFinite(cellSize) || cellSize <= 0) {
+        return;
+      }
+      paintCtx.save();
+      paintCtx.translate(px, py);
+      paintCtx.rotate(rotation);
+      const offset = (gridSize - 1) * cellSize / 2;
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          const cx = i * cellSize - offset;
+          const cy = j * cellSize - offset;
+          const dist = Math.sqrt(cx * cx + cy * cy) / (offset + cellSize);
+          const cellAlpha = alpha * (1 - dist * 0.5);
+          paintCtx.fillStyle = `rgba(255, 255, 255, ${cellAlpha * 0.4})`;
+          paintCtx.fillRect(cx - cellSize * 0.3, cy - cellSize * 0.3, cellSize * 0.6, cellSize * 0.6);
+        }
+      }
+      paintCtx.restore();
+    }
+    
+    // Paint a rotating cross/star
+    function paintCross(px, py, size, alpha, rotation, arms = 4) {
+      if (!isFinite(px) || !isFinite(py) || !isFinite(size) || size <= 0) {
+        return;
+      }
+      paintCtx.save();
+      paintCtx.translate(px, py);
+      paintCtx.rotate(rotation);
+      const armLength = size;
+      const armWidth = size * 0.15;
+      for (let i = 0; i < arms; i++) {
+        const angle = (i / arms) * Math.PI * 2;
+        const x2 = Math.cos(angle) * armLength;
+        const y2 = Math.sin(angle) * armLength;
+        paintLine(0, 0, x2, y2, armWidth, alpha);
+      }
+      paintCtx.restore();
+    }
+    
+    // Paint a ring/arc
+    function paintRing(px, py, radius, thickness, alpha, startAngle, endAngle) {
+      if (!isFinite(px) || !isFinite(py) || !isFinite(radius) || radius <= 0) {
+        return;
+      }
+      paintCtx.save();
+      paintCtx.lineWidth = thickness;
+      paintCtx.lineCap = 'round';
+      paintCtx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.4})`;
+      paintCtx.beginPath();
+      paintCtx.arc(px, py, radius, startAngle, endAngle);
+      paintCtx.stroke();
+      // Outer glow
+      paintCtx.lineWidth = thickness * 2;
+      paintCtx.strokeStyle = `rgba(255, 255, 255, ${alpha * 0.1})`;
+      paintCtx.stroke();
+      paintCtx.restore();
+    }
+    
+    // Paint scattered dots in a pattern
+    function paintScatter(px, py, spread, count, dotSize, alpha) {
+      if (!isFinite(px) || !isFinite(py) || !isFinite(spread)) {
+        return;
+      }
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+        const dist = spread * (0.3 + Math.random() * 0.7);
+        const dx = Math.cos(angle) * dist;
+        const dy = Math.sin(angle) * dist;
+        const size = dotSize * (0.5 + Math.random() * 0.5);
+        paintSinglePoint(px + dx, py + dy, size, alpha * (0.5 + Math.random() * 0.5));
+      }
+    }
 
     // Radial symmetry fold count
-    const RADIAL_SYMMETRY = 6;
+    const RADIAL_SYMMETRY = 3;
 
-    // Paint at a world position - radial symmetry around center
+    // Paint at a world position - radial symmetry around center (basic dot)
     function paintAt(wx, wz, intensity = 1.0) {
       const alpha = intensity;
       const size = paintBrushSize * (0.8 + intensity * 0.4);
@@ -381,6 +461,53 @@
         const rz = Math.sin(rotatedAngle) * radius;
         const p = worldToPaint(rx, rz);
         paintSinglePoint(p.x, p.y, size, alpha);
+      }
+    }
+    
+    // Paint with a specific brush type at world position - with radial symmetry
+    function paintWithBrush(wx, wz, brushType, intensity, rotation, params = {}) {
+      const alpha = intensity;
+      const size = paintBrushSize * (0.8 + intensity * 0.4);
+      
+      // Convert to polar coordinates for symmetry
+      const radius = Math.sqrt(wx * wx + wz * wz);
+      const angle = Math.atan2(wz, wx);
+      
+      const angleStep = (Math.PI * 2) / RADIAL_SYMMETRY;
+      for (let i = 0; i < RADIAL_SYMMETRY; i++) {
+        const rotatedAngle = angle + i * angleStep;
+        const rx = Math.cos(rotatedAngle) * radius;
+        const rz = Math.sin(rotatedAngle) * radius;
+        const p = worldToPaint(rx, rz);
+        const symRotation = rotation + i * angleStep;
+        
+        switch (brushType) {
+          case 'dot':
+            paintSinglePoint(p.x, p.y, size, alpha);
+            break;
+          case 'line':
+            const lineLen = size * 2;
+            const lx = Math.cos(symRotation) * lineLen;
+            const ly = Math.sin(symRotation) * lineLen;
+            paintLine(p.x - lx, p.y - ly, p.x + lx, p.y + ly, size * 0.3, alpha);
+            break;
+          case 'grid':
+            paintGrid(p.x, p.y, size * 0.8, params.gridSize || 2, alpha, symRotation);
+            break;
+          case 'cross':
+            paintCross(p.x, p.y, size * 1.5, alpha, symRotation, params.arms || 4);
+            break;
+          case 'ring':
+            paintRing(p.x, p.y, size, size * 0.25, alpha, params.startAngle || 0, params.endAngle || Math.PI * 2);
+            break;
+          case 'scatter':
+            paintScatter(p.x, p.y, size * 1.5, params.count || 6, size * 0.3, alpha);
+            break;
+          case 'arc':
+            const arcSpan = params.arcSpan || Math.PI;
+            paintRing(p.x, p.y, size, size * 0.3, alpha, symRotation - arcSpan / 2, symRotation + arcSpan / 2);
+            break;
+        }
       }
     }
     
@@ -414,11 +541,18 @@
     // Debug: show paint buffer
     const paintDebugCanvas = document.getElementById('paintDebug');
     const paintDebugCtx = paintDebugCanvas.getContext('2d');
-    paintDebugCanvas.width = 128;
-    paintDebugCanvas.height = 128;
+    
+    function resizePaintDebug() {
+      const rect = paintDebugCanvas.getBoundingClientRect();
+      paintDebugCanvas.width = rect.width * window.devicePixelRatio;
+      paintDebugCanvas.height = rect.height * window.devicePixelRatio;
+    }
+    resizePaintDebug();
     
     function drawPaintDebug() {
-      paintDebugCtx.drawImage(paintCanvas, 0, 0, 128, 128);
+      const w = paintDebugCanvas.width;
+      const h = paintDebugCanvas.height;
+      paintDebugCtx.drawImage(paintCanvas, 0, 0, w, h);
     }
 
     // Post-processing
@@ -626,8 +760,31 @@
     // PAINT BLOB SYSTEM - Audio-triggered painters
     // =============================================
     const paintBlobs = [];
-    const MAX_BLOBS = 12;
-    const BLOB_LIFETIME = 2.0; // seconds
+    const MAX_BLOBS = 15;
+    const BLOB_LIFETIME = 3.0; // seconds
+    
+    // Available brush types with their parameters
+    const BRUSH_TYPES = [
+      { type: 'dot', weight: 2 },
+      { type: 'line', weight: 3 },
+      { type: 'grid', weight: 2, params: { gridSize: 2 } },
+      { type: 'grid', weight: 1, params: { gridSize: 3 } },
+      { type: 'cross', weight: 2, params: { arms: 4 } },
+      { type: 'cross', weight: 1, params: { arms: 6 } },
+      { type: 'ring', weight: 2 },
+      { type: 'arc', weight: 2, params: { arcSpan: Math.PI * 0.7 } },
+      { type: 'scatter', weight: 2, params: { count: 5 } },
+    ];
+    
+    function pickRandomBrush() {
+      const totalWeight = BRUSH_TYPES.reduce((sum, b) => sum + b.weight, 0);
+      let r = Math.random() * totalWeight;
+      for (const brush of BRUSH_TYPES) {
+        r -= brush.weight;
+        if (r <= 0) return brush;
+      }
+      return BRUSH_TYPES[0];
+    }
     
     class PaintBlob {
       constructor(x, z, energy) {
@@ -636,6 +793,15 @@
         this.age = 0;
         this.lifetime = BLOB_LIFETIME * (0.5 + Math.random() * 0.5);
         this.energy = energy; // Initial energy affects size/intensity
+        
+        // Pick a random brush type
+        const brushInfo = pickRandomBrush();
+        this.brushType = brushInfo.type;
+        this.brushParams = brushInfo.params || {};
+        
+        // Rotation parameters
+        this.rotation = Math.random() * Math.PI * 2;
+        this.rotationSpeed = (Math.random() - 0.5) * 3; // -1.5 to 1.5 rad/s
         
         // Movement parameters - each blob has unique movement style
         this.speedMult = 0.5 + Math.random() * 1.0;
@@ -652,14 +818,26 @@
         this.phaseX = Math.random() * Math.PI * 2;
         this.phaseZ = Math.random() * Math.PI * 2;
         
-        // Movement style (0: wanderer, 1: spiraler, 2: bouncer)
-        this.style = Math.floor(Math.random() * 3);
+        // Movement style (0: wanderer, 1: spiraler, 2: bouncer, 3: orbiter, 4: zigzag)
+        this.style = Math.floor(Math.random() * 5);
+        
+        // For orbiter style
+        this.orbitRadius = paintExtent * (0.2 + Math.random() * 0.4);
+        this.orbitSpeed = 0.5 + Math.random() * 1.5;
+        this.orbitCenter = { x: (Math.random() - 0.5) * paintExtent * 0.5, z: (Math.random() - 0.5) * paintExtent * 0.5 };
+        
+        // For zigzag
+        this.zigFreq = 2 + Math.random() * 4;
+        this.zigAmp = paintExtent * 0.1;
       }
       
       update(dt) {
         this.age += dt;
         const t = this.age * this.speedMult;
         const lifeRatio = this.age / this.lifetime;
+        
+        // Update rotation
+        this.rotation += this.rotationSpeed * dt;
         
         // Fade intensity over lifetime
         const fadeIn = Math.min(1, this.age * 3); // Quick fade in
@@ -702,6 +880,26 @@
             this.vx += Math.sin(t * 2) * paintExtent * 0.01 * dt;
             this.vz += Math.cos(t * 2) * paintExtent * 0.01 * dt;
             break;
+            
+          case 3: // Orbiter - circles around a point
+            const orbitAngle = t * this.orbitSpeed + this.phaseX;
+            const targetX = this.orbitCenter.x + Math.cos(orbitAngle) * this.orbitRadius;
+            const targetZ = this.orbitCenter.z + Math.sin(orbitAngle) * this.orbitRadius;
+            this.x += (targetX - this.x) * dt * 3;
+            this.z += (targetZ - this.z) * dt * 3;
+            break;
+            
+          case 4: // Zigzag - moves forward with perpendicular oscillation
+            const dir = this.angle;
+            const forward = paintExtent * 0.08 * dt;
+            this.x += Math.cos(dir) * forward;
+            this.z += Math.sin(dir) * forward;
+            // Perpendicular zigzag
+            const perpDir = dir + Math.PI / 2;
+            const zig = Math.sin(t * this.zigFreq) * this.zigAmp * dt;
+            this.x += Math.cos(perpDir) * zig;
+            this.z += Math.sin(perpDir) * zig;
+            break;
         }
         
         // Keep within bounds
@@ -709,18 +907,17 @@
         this.x = Math.max(-maxExtent, Math.min(maxExtent, this.x));
         this.z = Math.max(-maxExtent, Math.min(maxExtent, this.z));
         
-        // Paint main trail
-        paintAt(this.x, this.z, intensity);
+        // Paint with the assigned brush type
+        paintWithBrush(this.x, this.z, this.brushType, intensity, this.rotation, this.brushParams);
         
-        // Occasionally paint secondary dots around main position
-        if (Math.random() < 0.3 * intensity) {
-          const scatter = paintExtent * 0.03 * intensity;
-          const angle = Math.random() * Math.PI * 2;
-          paintAt(
-            this.x + Math.cos(angle) * scatter,
-            this.z + Math.sin(angle) * scatter,
-            intensity * 0.5
-          );
+        // Occasionally paint secondary elements based on brush type
+        if (Math.random() < 0.2 * intensity) {
+          const scatter = paintExtent * 0.04 * intensity;
+          const scatterAngle = Math.random() * Math.PI * 2;
+          const sx = this.x + Math.cos(scatterAngle) * scatter;
+          const sz = this.z + Math.sin(scatterAngle) * scatter;
+          // Use dot for secondary
+          paintWithBrush(sx, sz, 'dot', intensity * 0.4, this.rotation, {});
         }
         
         return this.age >= this.lifetime;
@@ -728,6 +925,9 @@
     }
     
     function spawnPaintBlob(energy = 1.0) {
+      // Ensure energy is a valid finite number
+      if (!isFinite(energy) || energy <= 0) energy = 0.8;
+      
       // Spawn at random position within visible area, biased toward edges
       const angle = Math.random() * Math.PI * 2;
       const dist = paintExtent * (0.3 + Math.random() * 0.5);
@@ -951,12 +1151,18 @@
       lastHighFreqEnergy = highFreqEnergy;
     }
     
-    // Initialize audio on first click
+    // Initialize audio on first click (mic)
     window.addEventListener('click', () => {
-      if (!audioInitialized) {
+      if (!audioInitialized && !trackAudioActive) {
         initAudio();
       }
     }, { once: false });
+    
+    // ===========================================
+    // TRACK-BASED AUDIO (from Signal Editor)
+    // ===========================================
+    const audioSignals = new AudioSignals();
+    let trackAudioActive = false;
 
     // Generate randomized fractal grid
     const gridExtent = frustumSize * aspect * 1.3;
@@ -1911,8 +2117,50 @@
       // Auto-paint after 3 seconds idle (spawns blobs when no activity)
       autoPaint(dt, t);
       
-      // Update audio analysis
+      // Update audio analysis (mic/file)
       updateAudio();
+      
+      // Update signal-bound control values from track
+      if (trackAudioActive && audioSignals.isPlaying() && audioSignals.trackData) {
+        const playbackTime = audioSignals.getCurrentTime();
+        
+        // Apply bound values from visual controls
+        const bloom = visualControls.get('bloom', playbackTime);
+        const mouseRadius = visualControls.get('mouseRadius', playbackTime);
+        const particleSpeed = visualControls.get('particleSpeed', playbackTime);
+        const colorShift = visualControls.get('colorShift', playbackTime);
+        const baseAlpha = visualControls.get('baseAlpha', playbackTime);
+        const aberration = visualControls.get('aberration', playbackTime);
+        
+        bloomPass.strength = bloom / 100;
+        baseMouseRadius = mouseRadius;
+        particleSpeedMult = particleSpeed / 100;
+        edgesMesh.material.uniforms.uColorShift.value = colorShift / 360;
+        nodesMesh.material.uniforms.uColorShift.value = colorShift / 360;
+        particleMat.uniforms.uColorShift.value = colorShift / 360;
+        edgesMesh.material.uniforms.uBaseAlpha.value = baseAlpha / 100;
+        nodesMesh.material.uniforms.uBaseAlpha.value = baseAlpha / 100;
+        particleMat.uniforms.uBaseAlpha.value = baseAlpha / 100;
+        baseAberration = aberration / 100;
+        
+        // Apply paint controls
+        paintBrushSize = paintControls.get('brushSize', playbackTime);
+        paintFadeRate = 1 - (paintControls.get('fadeSpeed', playbackTime) / 500);
+        
+        // Apply audio controls
+        audioSensitivity = audioControls.get('audioSens', playbackTime) / 100;
+        blastThreshold = audioControls.get('blastThreshold', playbackTime) / 100;
+        bassPulseStrength = audioControls.get('bassPulse', playbackTime) / 100;
+        highFreqStart = audioControls.get('highStart', playbackTime) / 100;
+        lowFreqEnd = audioControls.get('lowEnd', playbackTime) / 100;
+        highDecay = audioControls.get('highDecay', playbackTime) / 100;
+        lowDecay = audioControls.get('lowDecay', playbackTime) / 100;
+        
+        // Update UI
+        visualControls.updateUI(playbackTime);
+        paintControls.updateUI(playbackTime);
+        audioControls.updateUI(playbackTime);
+      }
       
       // Update focus point - either follow mouse or wander
       if (mouseOnScreen) {
@@ -1998,152 +2246,196 @@
 
     // Debug Panel
     const debugPanel = document.getElementById('debugPanel');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderRadius = document.getElementById('sliderRadius');
-    const radiusValue = document.getElementById('radiusValue');
-    const sliderSpeed = document.getElementById('sliderSpeed');
-    const speedValue = document.getElementById('speedValue');
-    const sliderColorShift = document.getElementById('sliderColorShift');
-    const colorShiftValue = document.getElementById('colorShiftValue');
-    const sliderBaseAlpha = document.getElementById('sliderBaseAlpha');
-    const baseAlphaValue = document.getElementById('baseAlphaValue');
     
-    sliderBloom.addEventListener('input', () => {
-      bloomPass.strength = sliderBloom.value / 100;
-      bloomValue.textContent = sliderBloom.value + '%';
-    });
-    
-    sliderRadius.addEventListener('input', () => {
-      const r = parseInt(sliderRadius.value);
-      baseMouseRadius = r;
-      radiusValue.textContent = r;
-    });
-    
-    sliderSpeed.addEventListener('input', () => {
-      particleSpeedMult = sliderSpeed.value / 100;
-      speedValue.textContent = sliderSpeed.value + '%';
-    });
-    
-    sliderColorShift.addEventListener('input', () => {
-      const deg = parseInt(sliderColorShift.value);
-      edgesMesh.material.uniforms.uColorShift.value = deg / 360;
-      nodesMesh.material.uniforms.uColorShift.value = deg / 360;
-      particleMat.uniforms.uColorShift.value = deg / 360;
-      colorShiftValue.textContent = deg + '°';
-    });
-    
-    sliderBaseAlpha.addEventListener('input', () => {
-      const val = parseInt(sliderBaseAlpha.value);
-      edgesMesh.material.uniforms.uBaseAlpha.value = val / 100;
-      nodesMesh.material.uniforms.uBaseAlpha.value = val / 100;
-      particleMat.uniforms.uBaseAlpha.value = val / 100;
-      baseAlphaValue.textContent = val + '%';
-    });
-    
-    const sliderAberration = document.getElementById('sliderAberration');
-    const aberrationValue = document.getElementById('aberrationValue');
-    sliderAberration.addEventListener('input', () => {
-      const val = parseInt(sliderAberration.value);
-      baseAberration = val / 100;
-      aberrationValue.textContent = val + '%';
-    });
-    
-    // Subdivision slider - requires reload to take effect
-    const sliderSubdivision = document.getElementById('sliderSubdivision');
-    const subdivisionValue = document.getElementById('subdivisionValue');
-    // Load saved value
-    const savedSubdiv = localStorage.getItem('gridSubdivision');
-    if (savedSubdiv) {
-      sliderSubdivision.value = savedSubdiv;
-      subdivisionValue.textContent = savedSubdiv + '%';
+    // Build schemas by group
+    const visualSchema = {}, paintSchema = {}, audioSchema = {};
+    for (const [name, config] of Object.entries(CONTROL_SCHEMA)) {
+      if (config.group === 'paint') paintSchema[name] = config;
+      else if (config.group === 'audio') audioSchema[name] = config;
+      else visualSchema[name] = config;
     }
-    sliderSubdivision.addEventListener('input', () => {
-      const val = parseInt(sliderSubdivision.value);
-      subdivisionValue.textContent = val + '%';
-      localStorage.setItem('gridSubdivision', val);
-    });
-    sliderSubdivision.addEventListener('change', () => {
-      // Reload to apply new subdivision amount
-      location.reload();
+    
+    // Apply control value changes
+    function applyControlValue(name, value) {
+      switch (name) {
+        case 'bloom':
+          bloomPass.strength = value / 100;
+          break;
+        case 'mouseRadius':
+          baseMouseRadius = value;
+          break;
+        case 'particleSpeed':
+          particleSpeedMult = value / 100;
+          break;
+        case 'colorShift':
+          edgesMesh.material.uniforms.uColorShift.value = value / 360;
+          nodesMesh.material.uniforms.uColorShift.value = value / 360;
+          particleMat.uniforms.uColorShift.value = value / 360;
+          break;
+        case 'baseAlpha':
+          edgesMesh.material.uniforms.uBaseAlpha.value = value / 100;
+          nodesMesh.material.uniforms.uBaseAlpha.value = value / 100;
+          particleMat.uniforms.uBaseAlpha.value = value / 100;
+          break;
+        case 'aberration':
+          baseAberration = value / 100;
+          break;
+        case 'subdivision':
+          localStorage.setItem('gridSubdivision', value);
+          break;
+        case 'brushSize':
+          paintBrushSize = value;
+          break;
+        case 'fadeSpeed':
+          paintFadeRate = 1 - (value / 500);
+          break;
+        case 'spawnPainter':
+          // Trigger - spawn a painter blob
+          const energy = isFinite(value) ? 0.7 + value * 0.3 : 0.8;
+          spawnPaintBlob(energy);
+          break;
+        case 'audioSens':
+          audioSensitivity = value / 100;
+          break;
+        case 'blastThreshold':
+          blastThreshold = value / 100;
+          break;
+        case 'bassPulse':
+          bassPulseStrength = value / 100;
+          break;
+        case 'highStart':
+          highFreqStart = value / 100;
+          break;
+        case 'lowEnd':
+          lowFreqEnd = value / 100;
+          break;
+        case 'highDecay':
+          highDecay = value / 100;
+          break;
+        case 'lowDecay':
+          lowDecay = value / 100;
+          break;
+      }
+    }
+    
+    // Create debug controls
+    const visualControls = new DebugControls(visualSchema, {
+      storageKey: 'gridNetworkVisualControls',
+      onChange: applyControlValue
     });
     
-    // Paint brush controls
-    const sliderBrushSize = document.getElementById('sliderBrushSize');
-    const brushSizeValue = document.getElementById('brushSizeValue');
-    sliderBrushSize.addEventListener('input', () => {
-      const val = parseInt(sliderBrushSize.value);
-      paintBrushSize = val;
-      brushSizeValue.textContent = val;
+    const paintControls = new DebugControls(paintSchema, {
+      storageKey: 'gridNetworkPaintControls',
+      onChange: applyControlValue
     });
     
-    const sliderFadeSpeed = document.getElementById('sliderFadeSpeed');
-    const fadeSpeedValue = document.getElementById('fadeSpeedValue');
-    sliderFadeSpeed.addEventListener('input', () => {
-      const val = parseInt(sliderFadeSpeed.value);
-      paintFadeRate = 1 - (val / 10000); // Convert to fade rate (higher slider = faster fade)
-      fadeSpeedValue.textContent = (val / 10).toFixed(1) + '%';
+    const audioControls = new DebugControls(audioSchema, {
+      storageKey: 'gridNetworkAudioControls',
+      onChange: applyControlValue
     });
     
-    // Audio sliders
-    const sliderAudioSens = document.getElementById('sliderAudioSens');
-    const audioSensValue = document.getElementById('audioSensValue');
-    sliderAudioSens.addEventListener('input', () => {
-      const val = parseInt(sliderAudioSens.value);
-      audioSensitivity = val / 100;
-      audioSensValue.textContent = val + '%';
+    // Render controls
+    visualControls.render(document.getElementById('visualControls'));
+    paintControls.render(document.getElementById('paintControls'));
+    audioControls.render(document.getElementById('audioControls'));
+    
+    // Apply initial values from loaded state
+    for (const name of Object.keys(visualSchema)) {
+      applyControlValue(name, visualControls.values[name]);
+    }
+    for (const name of Object.keys(paintSchema)) {
+      applyControlValue(name, paintControls.values[name]);
+    }
+    for (const name of Object.keys(audioSchema)) {
+      applyControlValue(name, audioControls.values[name]);
+    }
+    
+    // Special handling for subdivision - reload on change
+    const subdivisionEl = visualControls.elements['subdivision'];
+    if (subdivisionEl && subdivisionEl._slider) {
+      subdivisionEl._slider.addEventListener('change', () => {
+        location.reload();
+      });
+    }
+    
+    // ===========================================
+    // TRACK AUDIO PLAYER
+    // ===========================================
+    const trackSelect = document.getElementById('trackSelect');
+    const btnPlayAudio = document.getElementById('btnPlayAudio');
+    const btnStopAudio = document.getElementById('btnStopAudio');
+    const trackInfo = document.getElementById('trackInfo');
+    
+    // Load song list from IndexedDB
+    async function loadSongOptions() {
+      try {
+        const songs = await getSongList();
+        trackSelect.innerHTML = songs.length === 0
+          ? '<option value="">No songs - import in Signal Editor</option>'
+          : '<option value="">Select track...</option>' + 
+            songs.map(s => `<option value="${s.id}">${s.name}${s.hasAudio ? '' : ' [no audio]'}</option>`).join('');
+      } catch (e) {
+        console.error('Could not load songs:', e);
+        trackSelect.innerHTML = '<option value="">Error loading songs</option>';
+      }
+    }
+    loadSongOptions();
+    
+    // Auto-load track when selected
+    trackSelect.addEventListener('change', async () => {
+      const songId = trackSelect.value;
+      if (!songId) return;
+      
+      trackInfo.textContent = 'Loading...';
+      trackSelect.disabled = true;
+      
+      try {
+        const { song, audioUrl } = await loadSongWithAudio(songId);
+        
+        if (song) {
+          await audioSignals.loadTrackData(song, audioUrl);
+          
+          // Set track data on controls for signal binding
+          visualControls.setTrackData(song);
+          paintControls.setTrackData(song);
+          audioControls.setTrackData(song);
+          
+          const hasAudio = !!audioUrl;
+          trackInfo.textContent = `${song.name} (${Math.floor(song.duration / 60)}:${String(Math.floor(song.duration % 60)).padStart(2, '0')})${hasAudio ? '' : ' [no audio]'}`;
+          btnPlayAudio.disabled = false;
+          btnStopAudio.disabled = false;
+          trackAudioActive = true;
+          
+          // Update status
+          const audioStatus = document.getElementById('audioStatus');
+          if (audioStatus) {
+            audioStatus.textContent = 'Track loaded - mic disabled';
+            audioStatus.classList.add('active');
+          }
+        }
+      } catch (e) {
+        console.error('Load error:', e);
+        trackInfo.textContent = 'Error loading track';
+      }
+      
+      trackSelect.disabled = false;
     });
     
-    const sliderThreshold = document.getElementById('sliderThreshold');
-    const thresholdValue = document.getElementById('thresholdValue');
-    sliderThreshold.addEventListener('input', () => {
-      const val = parseInt(sliderThreshold.value);
-      blastThreshold = val / 100;
-      thresholdValue.textContent = val + '%';
+    btnPlayAudio.addEventListener('click', async () => {
+      if (audioSignals.isPlaying()) {
+        audioSignals.pause();
+        btnPlayAudio.textContent = '▶ Play';
+      } else {
+        await audioSignals.play();
+        btnPlayAudio.textContent = '❚❚ Pause';
+      }
     });
     
-    const sliderBassPulse = document.getElementById('sliderBassPulse');
-    const bassPulseValue = document.getElementById('bassPulseValue');
-    sliderBassPulse.addEventListener('input', () => {
-      const val = parseInt(sliderBassPulse.value);
-      bassPulseStrength = val / 100;
-      bassPulseValue.textContent = val + '%';
+    btnStopAudio.addEventListener('click', () => {
+      audioSignals.stop();
+      btnPlayAudio.textContent = '▶ Play';
     });
-    
-    // Frequency range sliders
-    const sliderHighStart = document.getElementById('sliderHighStart');
-    const highStartValue = document.getElementById('highStartValue');
-    sliderHighStart.addEventListener('input', () => {
-      const val = parseInt(sliderHighStart.value);
-      highFreqStart = val / 100;
-      highStartValue.textContent = val + '%';
-    });
-    
-    const sliderLowEnd = document.getElementById('sliderLowEnd');
-    const lowEndValue = document.getElementById('lowEndValue');
-    sliderLowEnd.addEventListener('input', () => {
-      const val = parseInt(sliderLowEnd.value);
-      lowFreqEnd = val / 100;
-      lowEndValue.textContent = val + '%';
-    });
-    
-    // Decay sliders
-    const sliderHighDecay = document.getElementById('sliderHighDecay');
-    const highDecayValue = document.getElementById('highDecayValue');
-    sliderHighDecay.addEventListener('input', () => {
-      const val = parseInt(sliderHighDecay.value);
-      highDecay = val / 100;
-      highDecayValue.textContent = val + '%';
-    });
-    
-    const sliderLowDecay = document.getElementById('sliderLowDecay');
-    const lowDecayValue = document.getElementById('lowDecayValue');
-    sliderLowDecay.addEventListener('input', () => {
-      const val = parseInt(sliderLowDecay.value);
-      lowDecay = val / 100;
-      lowDecayValue.textContent = val + '%';
-    });
-    
+
     // FFT visualization
     const fftCanvas = document.getElementById('fftCanvas');
     const fftCtx = fftCanvas.getContext('2d');

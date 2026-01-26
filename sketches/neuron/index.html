@@ -103,12 +103,133 @@
       color: rgba(255, 255, 255, 0.3);
       font-size: 12px;
     }
+    
+    /* Signal bar in debug panel */
+    .signal-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 4px 0;
+      font-size: 11px;
+    }
+    .signal-row label {
+      min-width: 45px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .signal-bar-container {
+      flex: 1;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .signal-bar {
+      height: 100%;
+      background: rgba(100, 200, 255, 0.6);
+      transition: width 0.05s;
+      width: 0%;
+    }
+    .signal-value {
+      min-width: 32px;
+      text-align: right;
+      font-family: monospace;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+    }
+    #debugPanel .audio-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    #debugPanel .audio-row select {
+      flex: 1;
+      padding: 6px 8px;
+      background: rgba(100, 200, 255, 0.1);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+    }
+    #debugPanel .audio-row button {
+      padding: 6px 10px;
+    }
+    #debugPanel .track-info {
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 6px;
+    }
+    #debugPanel .binding-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      margin: 4px 0;
+    }
+    #debugPanel .binding-row label {
+      color: rgba(255, 255, 255, 0.6);
+    }
+    #debugPanel .binding-row select {
+      flex: 1;
+      padding: 4px 6px;
+      background: rgba(100, 200, 255, 0.1);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+    }
+    #debugPanel .binding-row input {
+      width: 50px;
+      padding: 4px 6px;
+      background: rgba(100, 200, 255, 0.1);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      border-radius: 4px;
+      color: #fff;
+      font-size: 11px;
+    }
   </style>
 </head>
 <body>
   <div id="debugPanel">
     <h3>Neural Controls</h3>
     <div class="section">
+      <div class="section-title">Audio</div>
+      <div class="audio-row">
+        <select id="trackSelect">
+          <option value="">Select track...</option>
+        </select>
+        <button id="btnLoadTrack">Load</button>
+      </div>
+      <div class="track-info" id="trackInfo">No track loaded</div>
+      <div class="audio-row">
+        <button id="btnPlayAudio" disabled>▶ Play</button>
+        <button id="btnStopAudio" disabled>■ Stop</button>
+      </div>
+      <div class="signal-row">
+        <label>Signal</label>
+        <div class="signal-bar-container"><div class="signal-bar" id="barSignal"></div></div>
+        <span class="signal-value" id="valSignal">0.00</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Actions</div>
+      <button id="btnTriggerSpike">⚡ Trigger Spike</button>
+      <div class="binding-row">
+        <label>Bind to:</label>
+        <select id="spikeSignalSelect">
+          <option value="">None (manual)</option>
+          <option value="kick">Kicks</option>
+          <option value="snare">Snares</option>
+          <option value="hihat">Hi-hats</option>
+          <option value="bass">Bass</option>
+          <option value="high">High</option>
+          <option value="energy">Energy</option>
+        </select>
+      </div>
+      <div class="binding-row">
+        <label>Threshold:</label>
+        <input type="range" id="spikeThreshold" min="10" max="100" value="70" style="flex:1">
+        <span id="thresholdValue" style="min-width:30px;text-align:right">70%</span>
+      </div>
       <button id="btnRegenerate">Regenerate Network</button>
     </div>
     <div class="section">
@@ -119,40 +240,11 @@
     </div>
     <div class="section">
       <div class="section-title">Visual Controls</div>
-      <label class="slider-label">
-        <span>Rotation <span id="rotationValue">100%</span></span>
-        <input type="range" id="sliderRotation" min="0" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Bloom Intensity <span id="bloomValue">18%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="150" value="18">
-      </label>
-      <label class="slider-label">
-        <span>Signal Speed <span id="speedValue">186%</span></span>
-        <input type="range" id="sliderSpeed" min="10" max="300" value="186">
-      </label>
-      <label class="slider-label">
-        <span>Color Shift <span id="colorShiftValue">360°</span></span>
-        <input type="range" id="sliderColorShift" min="0" max="360" value="360">
-      </label>
-      <label class="slider-label">
-        <span>Trail Brightness <span id="trailBrightnessValue">141%</span></span>
-        <input type="range" id="sliderTrailBrightness" min="10" max="200" value="141">
-      </label>
-      <label class="slider-label">
-        <span>Dendrite Sway <span id="undulationValue">200%</span></span>
-        <input type="range" id="sliderUndulation" min="0" max="200" value="200">
-      </label>
-      <label class="slider-label">
-        <span>Soma Pulse <span id="somaPulseValue">100%</span></span>
-        <input type="range" id="sliderSomaPulse" min="0" max="200" value="100">
-      </label>
+      <div id="visualControls"></div>
     </div>
     <div class="section">
       <div class="section-title">Glitch Lab</div>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchBloom" checked> Bloom Spikes</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchWrap" checked> Ignore Trail Wrap</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchPath" checked> Path Jitter</label>
+      <div id="glitchControls"></div>
     </div>
     <div class="section">
       <div class="section-title">Dev Tools</div>
@@ -160,7 +252,7 @@
       <button id="btnReload">Reload Page</button>
     </div>
   </div>
-  <div class="hint">Press D for debug panel</div>
+  <div class="hint" style="display:none;">Press D for debug panel</div>
   
   <script type="importmap">
     {
@@ -177,22 +269,98 @@
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { AudioSignals } from '/lib/audio-signals.js';
+    import { DebugControls } from '/lib/debug-controls.js';
+    import { getSongList, loadSongWithAudio } from '/lib/song-storage.js';
 
     // ===========================================
-    // DEFAULT CONFIG
+    // CONTROL SCHEMA - defines all adjustable parameters
     // ===========================================
-    const DEFAULT_CONFIG = {
-      rotation: 100,
-      bloom: 18,
-      particleSpeed: 186,
-      colorShift: 360,
-      trailBrightness: 141,
-      undulation: 200,
-      somaPulse: 100,
-      glitchBloom: true,
-      glitchWrap: true,
-      glitchPath: true
+    const CONTROL_SCHEMA = {
+      rotation: {
+        type: 'number',
+        label: 'Rotation',
+        min: 0, max: 200, step: 1,
+        default: 100,
+        unit: '%',
+        group: 'visual'
+      },
+      bloom: {
+        type: 'number',
+        label: 'Bloom Intensity',
+        min: 0, max: 150, step: 1,
+        default: 18,
+        unit: '%',
+        group: 'visual'
+      },
+      signalSpeed: {
+        type: 'number',
+        label: 'Signal Speed',
+        min: 10, max: 300, step: 1,
+        default: 186,
+        unit: '%',
+        group: 'visual'
+      },
+      colorShift: {
+        type: 'number',
+        label: 'Color Shift',
+        min: 0, max: 360, step: 1,
+        default: 360,
+        unit: '°',
+        group: 'visual'
+      },
+      trailBrightness: {
+        type: 'number',
+        label: 'Trail Brightness',
+        min: 10, max: 200, step: 1,
+        default: 141,
+        unit: '%',
+        group: 'visual'
+      },
+      dendriteSway: {
+        type: 'number',
+        label: 'Dendrite Sway',
+        min: 0, max: 200, step: 1,
+        default: 200,
+        unit: '%',
+        group: 'visual'
+      },
+      somaPulse: {
+        type: 'number',
+        label: 'Soma Pulse',
+        min: 0, max: 200, step: 1,
+        default: 100,
+        unit: '%',
+        group: 'visual'
+      },
+      glitchBloom: {
+        type: 'boolean',
+        label: 'Bloom Spikes',
+        default: true,
+        group: 'glitch'
+      },
+      glitchWrap: {
+        type: 'boolean',
+        label: 'Ignore Trail Wrap',
+        default: true,
+        group: 'glitch'
+      },
+      glitchPath: {
+        type: 'boolean',
+        label: 'Path Jitter',
+        default: true,
+        group: 'glitch'
+      }
     };
+    
+    // Build DEFAULT_CONFIG from schema for shader initialization
+    const DEFAULT_CONFIG = {};
+    for (const [name, config] of Object.entries(CONTROL_SCHEMA)) {
+      DEFAULT_CONFIG[name] = config.default;
+    }
+    // Map schema names to legacy names used in shaders
+    DEFAULT_CONFIG.particleSpeed = DEFAULT_CONFIG.signalSpeed;
+    DEFAULT_CONFIG.undulation = DEFAULT_CONFIG.dendriteSway;
     // ===========================================
 
     const NUM_NEURONS = 5;
@@ -1139,33 +1307,119 @@
     let glitchWrap = DEFAULT_CONFIG.glitchWrap;
     let glitchPath = DEFAULT_CONFIG.glitchPath;
     
+    // Audio signals integration
+    const audioSignals = new AudioSignals();
+    let spikeSignalBinding = ''; // Which signal triggers spikes
+    let spikeThreshold = 0.7; // Threshold for triggering
+    let lastSpikeTime = 0;
+    
     // Track next fire time for each neuron
     const nextFireTimes = [];
     for (let i = 0; i <= NUM_NEURONS; i++) {
       nextFireTimes.push(1 + Math.random() * 3); // Stagger initial fires
     }
     
+    // Function to fire a specific neuron from audio
+    function fireNeuronFromAudio(neuronIdx, currentTime) {
+      if (neuronIdx >= 0 && neuronIdx <= NUM_NEURONS) {
+        neuronFireTimes[neuronIdx] = currentTime;
+        nextFireTimes[neuronIdx] = currentTime + 2.5 + Math.random() * 4; // Reset auto-fire timer
+        if (somas[neuronIdx]) {
+          somas[neuronIdx].material.uniforms.uFireTime.value = currentTime;
+        }
+      }
+    }
+    
+    // Fire random neuron
+    function fireRandomNeuron(currentTime) {
+      const idx = Math.floor(Math.random() * (NUM_NEURONS + 1));
+      fireNeuronFromAudio(idx, currentTime);
+    }
+    
     function animate(time) {
       const t = time * 0.001;
       
-      // Check for neuron firings
-      for (let i = 0; i <= NUM_NEURONS; i++) {
-        if (t >= nextFireTimes[i]) {
-          // Fire this neuron!
-          neuronFireTimes[i] = t;
-          
-          // Schedule next fire with random interval
-          nextFireTimes[i] = t + 2.5 + Math.random() * 4;
-          
-          // Update soma uniform
-          if (somas[i]) {
-            somas[i].material.uniforms.uFireTime.value = t;
+      // Check for audio-triggered neuron firings
+      if (audioSignals.isPlaying()) {
+        const s = audioSignals.getCurrentSignals();
+        
+        // Get bound signal value
+        const boundSignal = spikeSignalBinding;
+        let signalValue = 0;
+        if (boundSignal === 'kick') signalValue = s.kick;
+        else if (boundSignal === 'snare') signalValue = s.snare;
+        else if (boundSignal === 'hihat') signalValue = s.hihat;
+        else if (boundSignal === 'bass') signalValue = s.bass;
+        else if (boundSignal === 'high') signalValue = s.high;
+        else if (boundSignal === 'energy') signalValue = s.energy;
+        
+        // Update UI signal bar
+        const barSignal = document.getElementById('barSignal');
+        const valSignal = document.getElementById('valSignal');
+        if (barSignal) barSignal.style.width = (signalValue * 100) + '%';
+        if (valSignal) valSignal.textContent = signalValue.toFixed(2);
+        
+        // Trigger spike if bound signal exceeds threshold
+        if (boundSignal && signalValue > spikeThreshold && t - lastSpikeTime > 0.12) {
+          fireRandomNeuron(t);
+          lastSpikeTime = t;
+          // Boost bloom on spike
+          if (glitchBloom) {
+            bloomSpikeFrames = 8;
+            bloomSpikeStrength = baseBloomStrength * 3;
+          }
+        }
+      }
+      
+      // Check for automatic neuron firings (when no signal bound or no audio playing)
+      if (!spikeSignalBinding || !audioSignals.isPlaying()) {
+        for (let i = 0; i <= NUM_NEURONS; i++) {
+          if (t >= nextFireTimes[i]) {
+            neuronFireTimes[i] = t;
+            nextFireTimes[i] = t + 2.5 + Math.random() * 4;
+            if (somas[i]) {
+              somas[i].material.uniforms.uFireTime.value = t;
+            }
           }
         }
       }
       
       // Update particle shader fire times
       neuronMat.uniforms.uFireTimes.value = neuronFireTimes;
+      
+      // Apply signal-bound control values
+      const playbackTime = audioSignals.getCurrentTime();
+      if (audioSignals.isPlaying() && audioSignals.trackData) {
+        // Get bound values and apply them
+        const rotation = visualControls.get('rotation', playbackTime);
+        const bloom = visualControls.get('bloom', playbackTime);
+        const signalSpeed = visualControls.get('signalSpeed', playbackTime);
+        const colorShift = visualControls.get('colorShift', playbackTime);
+        const trailBrightness = visualControls.get('trailBrightness', playbackTime);
+        const dendriteSway = visualControls.get('dendriteSway', playbackTime);
+        const somaPulse = visualControls.get('somaPulse', playbackTime);
+        
+        rotationSpeed = (rotation / 100) * 0.05;
+        baseBloomStrength = bloom / 100;
+        neuronMat.uniforms.uSpeedMult.value = signalSpeed / 100;
+        neuronMat.uniforms.uColorShift.value = colorShift / 360;
+        somas.forEach(s => s.material.uniforms.uColorShift.value = colorShift / 360);
+        terminals.material.uniforms.uColorShift.value = colorShift / 360;
+        neuronMat.uniforms.uBrightness.value = trailBrightness / 100;
+        neuronMat.uniforms.uUndulation.value = dendriteSway / 100;
+        somas.forEach(s => s.material.uniforms.uPulse.value = somaPulse / 100);
+        
+        // Update glitch values too
+        glitchBloom = glitchControls.get('glitchBloom', playbackTime);
+        glitchWrap = glitchControls.get('glitchWrap', playbackTime);
+        glitchPath = glitchControls.get('glitchPath', playbackTime);
+        neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+        neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+        
+        // Update UI sliders to show bound values
+        visualControls.updateUI(playbackTime);
+        glitchControls.updateUI(playbackTime);
+      }
       
       neuronMat.uniforms.uTime.value = t;
       somas.forEach(s => s.material.uniforms.uTime.value = t);
@@ -1212,79 +1466,98 @@
     const btnSideView = document.getElementById('btnSideView');
     const btnResetCamera = document.getElementById('btnResetCamera');
     
-    const sliderRotation = document.getElementById('sliderRotation');
-    const rotationValue = document.getElementById('rotationValue');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderSpeed = document.getElementById('sliderSpeed');
-    const speedValue = document.getElementById('speedValue');
-    const sliderColorShift = document.getElementById('sliderColorShift');
-    const colorShiftValue = document.getElementById('colorShiftValue');
-    const sliderTrailBrightness = document.getElementById('sliderTrailBrightness');
-    const trailBrightnessValue = document.getElementById('trailBrightnessValue');
-    const sliderUndulation = document.getElementById('sliderUndulation');
-    const undulationValue = document.getElementById('undulationValue');
-    const sliderSomaPulse = document.getElementById('sliderSomaPulse');
-    const somaPulseValue = document.getElementById('somaPulseValue');
-    const chkGlitchBloom = document.getElementById('chkGlitchBloom');
-    const chkGlitchWrap = document.getElementById('chkGlitchWrap');
-    const chkGlitchPath = document.getElementById('chkGlitchPath');
-    
     const STORAGE_KEY = 'neuronNetworkSettings';
     
-    function getCurrentConfig() {
-      return {
-        rotation: parseInt(sliderRotation.value),
-        bloom: parseInt(sliderBloom.value),
-        particleSpeed: parseInt(sliderSpeed.value),
-        colorShift: parseInt(sliderColorShift.value),
-        trailBrightness: parseInt(sliderTrailBrightness.value),
-        undulation: parseInt(sliderUndulation.value),
-        somaPulse: parseInt(sliderSomaPulse.value),
-        glitchBloom: chkGlitchBloom.checked,
-        glitchWrap: chkGlitchWrap.checked,
-        glitchPath: chkGlitchPath.checked
-      };
+    // Create visual controls using schema-based system
+    const visualSchema = {};
+    const glitchSchema = {};
+    for (const [name, config] of Object.entries(CONTROL_SCHEMA)) {
+      if (config.group === 'glitch') {
+        glitchSchema[name] = config;
+      } else {
+        visualSchema[name] = config;
+      }
     }
     
-    function saveSettings() {
+    // Function to apply control values to uniforms
+    function applyControlValue(name, value) {
+      switch (name) {
+        case 'rotation':
+          rotationSpeed = (value / 100) * 0.05;
+          break;
+        case 'bloom':
+          baseBloomStrength = value / 100;
+          bloomPass.strength = baseBloomStrength;
+          break;
+        case 'signalSpeed':
+          neuronMat.uniforms.uSpeedMult.value = value / 100;
+          break;
+        case 'colorShift':
+          neuronMat.uniforms.uColorShift.value = value / 360;
+          somas.forEach(s => s.material.uniforms.uColorShift.value = value / 360);
+          terminals.material.uniforms.uColorShift.value = value / 360;
+          break;
+        case 'trailBrightness':
+          neuronMat.uniforms.uBrightness.value = value / 100;
+          break;
+        case 'dendriteSway':
+          neuronMat.uniforms.uUndulation.value = value / 100;
+          break;
+        case 'somaPulse':
+          somas.forEach(s => s.material.uniforms.uPulse.value = value / 100);
+          break;
+        case 'glitchBloom':
+          glitchBloom = value;
+          if (!glitchBloom) bloomPass.strength = baseBloomStrength;
+          break;
+        case 'glitchWrap':
+          glitchWrap = value;
+          neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+          break;
+        case 'glitchPath':
+          glitchPath = value;
+          neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+          break;
+      }
+    }
+    
+    // Create debug controls instances
+    const visualControls = new DebugControls(visualSchema, {
+      storageKey: 'neuronVisualControls',
+      onChange: applyControlValue
+    });
+    
+    const glitchControls = new DebugControls(glitchSchema, {
+      storageKey: 'neuronGlitchControls',
+      onChange: applyControlValue
+    });
+    
+    // Render controls
+    visualControls.render(document.getElementById('visualControls'));
+    glitchControls.render(document.getElementById('glitchControls'));
+    
+    // Apply initial values from loaded state
+    for (const name of Object.keys(visualSchema)) {
+      applyControlValue(name, visualControls.values[name]);
+    }
+    for (const name of Object.keys(glitchSchema)) {
+      applyControlValue(name, glitchControls.values[name]);
+    }
+    
+    // Panel position saving
+    function savePanelPosition() {
       const rect = debugPanel.getBoundingClientRect();
       const settings = {
         debugOpen: debugPanel.classList.contains('visible'),
         panelX: debugPanel.style.left ? rect.left : null,
-        panelY: debugPanel.style.top ? rect.top : null,
-        ...getCurrentConfig()
+        panelY: debugPanel.style.top ? rect.top : null
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
     }
     
-    function loadSettings() {
-      sliderRotation.value = DEFAULT_CONFIG.rotation;
-      rotationValue.textContent = DEFAULT_CONFIG.rotation + '%';
-      sliderBloom.value = DEFAULT_CONFIG.bloom;
-      bloomValue.textContent = DEFAULT_CONFIG.bloom + '%';
-      sliderSpeed.value = DEFAULT_CONFIG.particleSpeed;
-      speedValue.textContent = DEFAULT_CONFIG.particleSpeed + '%';
-      sliderColorShift.value = DEFAULT_CONFIG.colorShift;
-      colorShiftValue.textContent = DEFAULT_CONFIG.colorShift + '°';
-      sliderTrailBrightness.value = DEFAULT_CONFIG.trailBrightness;
-      trailBrightnessValue.textContent = DEFAULT_CONFIG.trailBrightness + '%';
-      sliderUndulation.value = DEFAULT_CONFIG.undulation;
-      undulationValue.textContent = DEFAULT_CONFIG.undulation + '%';
-      sliderSomaPulse.value = DEFAULT_CONFIG.somaPulse;
-      somaPulseValue.textContent = DEFAULT_CONFIG.somaPulse + '%';
-      chkGlitchBloom.checked = DEFAULT_CONFIG.glitchBloom;
-      glitchBloom = DEFAULT_CONFIG.glitchBloom;
-      chkGlitchWrap.checked = DEFAULT_CONFIG.glitchWrap;
-      glitchWrap = DEFAULT_CONFIG.glitchWrap;
-      neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
-      chkGlitchPath.checked = DEFAULT_CONFIG.glitchPath;
-      glitchPath = DEFAULT_CONFIG.glitchPath;
-      neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
-      
+    function loadPanelPosition() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (!saved) return;
-      
       try {
         const s = JSON.parse(saved);
         if (s.debugOpen) debugPanel.classList.add('visible');
@@ -1293,47 +1566,19 @@
           debugPanel.style.top = s.panelY + 'px';
           debugPanel.style.right = 'auto';
         }
-        if (s.rotation !== undefined) { sliderRotation.value = s.rotation; rotationSpeed = (s.rotation / 100) * 0.05; rotationValue.textContent = s.rotation + '%'; }
-        if (s.bloom !== undefined) { sliderBloom.value = s.bloom; baseBloomStrength = s.bloom / 100; bloomPass.strength = baseBloomStrength; bloomValue.textContent = s.bloom + '%'; }
-        if (s.particleSpeed !== undefined) { sliderSpeed.value = s.particleSpeed; neuronMat.uniforms.uSpeedMult.value = s.particleSpeed / 100; speedValue.textContent = s.particleSpeed + '%'; }
-        if (s.colorShift !== undefined) {
-          sliderColorShift.value = s.colorShift;
-          neuronMat.uniforms.uColorShift.value = s.colorShift / 360;
-          somas.forEach(soma => soma.material.uniforms.uColorShift.value = s.colorShift / 360);
-          terminals.material.uniforms.uColorShift.value = s.colorShift / 360;
-          colorShiftValue.textContent = s.colorShift + '°';
-        }
-        if (s.trailBrightness !== undefined) { sliderTrailBrightness.value = s.trailBrightness; neuronMat.uniforms.uBrightness.value = s.trailBrightness / 100; trailBrightnessValue.textContent = s.trailBrightness + '%'; }
-        if (s.undulation !== undefined) { sliderUndulation.value = s.undulation; neuronMat.uniforms.uUndulation.value = s.undulation / 100; undulationValue.textContent = s.undulation + '%'; }
-        if (s.somaPulse !== undefined) { sliderSomaPulse.value = s.somaPulse; somas.forEach(soma => soma.material.uniforms.uPulse.value = s.somaPulse / 100); somaPulseValue.textContent = s.somaPulse + '%'; }
-        if (s.glitchBloom !== undefined) { chkGlitchBloom.checked = s.glitchBloom; glitchBloom = s.glitchBloom; }
-        if (s.glitchWrap !== undefined) { chkGlitchWrap.checked = s.glitchWrap; glitchWrap = s.glitchWrap; neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0; }
-        if (s.glitchPath !== undefined) { chkGlitchPath.checked = s.glitchPath; glitchPath = s.glitchPath; neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0; }
       } catch (e) {
-        console.error('Failed to load settings:', e);
+        console.error('Failed to load panel position:', e);
       }
     }
+    loadPanelPosition();
     
-    loadSettings();
-    
-    // Event listeners
-    chkGlitchBloom.addEventListener('change', () => { glitchBloom = chkGlitchBloom.checked; if (!glitchBloom) bloomPass.strength = baseBloomStrength; saveSettings(); });
-    chkGlitchWrap.addEventListener('change', () => { glitchWrap = chkGlitchWrap.checked; neuronMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0; saveSettings(); });
-    chkGlitchPath.addEventListener('change', () => { glitchPath = chkGlitchPath.checked; neuronMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0; saveSettings(); });
-    sliderRotation.addEventListener('input', () => { rotationSpeed = (sliderRotation.value / 100) * 0.05; rotationValue.textContent = sliderRotation.value + '%'; saveSettings(); });
-    sliderBloom.addEventListener('input', () => { baseBloomStrength = sliderBloom.value / 100; bloomPass.strength = baseBloomStrength; bloomValue.textContent = sliderBloom.value + '%'; saveSettings(); });
-    sliderSpeed.addEventListener('input', () => { neuronMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100; speedValue.textContent = sliderSpeed.value + '%'; saveSettings(); });
-    sliderColorShift.addEventListener('input', () => {
-      const deg = parseInt(sliderColorShift.value);
-      neuronMat.uniforms.uColorShift.value = deg / 360;
-      somas.forEach(s => s.material.uniforms.uColorShift.value = deg / 360);
-      terminals.material.uniforms.uColorShift.value = deg / 360;
-      colorShiftValue.textContent = deg + '°';
-      saveSettings();
-    });
-    sliderTrailBrightness.addEventListener('input', () => { neuronMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100; trailBrightnessValue.textContent = sliderTrailBrightness.value + '%'; saveSettings(); });
-    sliderUndulation.addEventListener('input', () => { neuronMat.uniforms.uUndulation.value = sliderUndulation.value / 100; undulationValue.textContent = sliderUndulation.value + '%'; saveSettings(); });
-    sliderSomaPulse.addEventListener('input', () => { somas.forEach(s => s.material.uniforms.uPulse.value = sliderSomaPulse.value / 100); somaPulseValue.textContent = sliderSomaPulse.value + '%'; saveSettings(); });
+    // Get current config for copy button
+    function getCurrentConfig() {
+      return {
+        ...visualControls.values,
+        ...glitchControls.values
+      };
+    }
     
     // Detect if we're in an iframe (grid overview) and hide debug UI
     const isInIframe = window.self !== window.top;
@@ -1341,7 +1586,13 @@
       document.querySelector('.hint')?.remove();
     }
 
-    window.addEventListener('keydown', (e) => { if (isInIframe) return; if (e.key === 'd' || e.key === 'D') { debugPanel.classList.toggle('visible'); saveSettings(); } });
+    window.addEventListener('keydown', (e) => {
+      if (isInIframe) return;
+      if (e.key === 'd' || e.key === 'D') {
+        debugPanel.classList.toggle('visible');
+        savePanelPosition();
+      }
+    });
     
     const panelHeader = debugPanel.querySelector('h3');
     let isDragging = false;
@@ -1367,7 +1618,7 @@
       debugPanel.style.right = 'auto';
     });
     
-    window.addEventListener('mouseup', () => { if (isDragging) { isDragging = false; debugPanel.classList.remove('dragging'); saveSettings(); } });
+    window.addEventListener('mouseup', () => { if (isDragging) { isDragging = false; debugPanel.classList.remove('dragging'); savePanelPosition(); } });
     
     const btnCopyConfig = document.getElementById('btnCopyConfig');
     const btnReload = document.getElementById('btnReload');
@@ -1444,6 +1695,108 @@
       terminals = createSynapticTerminals(paths);
       terminals.material.uniforms.uColorShift.value = parseInt(sliderColorShift.value) / 360;
       neuronGroup.add(terminals);
+    });
+
+    // Audio & Signal Binding Controls
+    const trackSelect = document.getElementById('trackSelect');
+    const btnLoadTrack = document.getElementById('btnLoadTrack');
+    const btnPlayAudio = document.getElementById('btnPlayAudio');
+    const btnStopAudio = document.getElementById('btnStopAudio');
+    const trackInfo = document.getElementById('trackInfo');
+    const btnTriggerSpike = document.getElementById('btnTriggerSpike');
+    const spikeSignalSelect = document.getElementById('spikeSignalSelect');
+    const spikeThresholdSlider = document.getElementById('spikeThreshold');
+    const thresholdValue = document.getElementById('thresholdValue');
+
+    // Load available songs from IndexedDB
+    async function loadSongOptions() {
+      try {
+        const songs = await getSongList();
+        trackSelect.innerHTML = songs.length === 0
+          ? '<option value="">No songs - import in Signal Editor</option>'
+          : '<option value="">Select track...</option>' + 
+            songs.map(s => `<option value="${s.id}">${s.name}${s.hasAudio ? '' : ' [no audio]'}</option>`).join('');
+      } catch (e) {
+        console.warn('Could not load songs:', e);
+        trackSelect.innerHTML = '<option value="">Error loading songs</option>';
+      }
+    }
+    loadSongOptions();
+
+    btnLoadTrack.addEventListener('click', async () => {
+      const songId = trackSelect.value;
+      if (!songId) return;
+      
+      btnLoadTrack.textContent = '...';
+      btnLoadTrack.disabled = true;
+      
+      try {
+        // Load song from IndexedDB (includes audio data)
+        const { song, audioUrl } = await loadSongWithAudio(songId);
+        
+        if (song) {
+          await audioSignals.loadTrackData(song, audioUrl);
+          
+          // Set track data on controls for signal binding
+          visualControls.setTrackData(song);
+          glitchControls.setTrackData(song);
+          
+          const hasAudio = !!audioUrl;
+          trackInfo.textContent = `${song.name} (${Math.floor(song.duration / 60)}:${String(Math.floor(song.duration % 60)).padStart(2, '0')})${hasAudio ? '' : ' [no audio]'}`;
+          btnPlayAudio.disabled = false;
+          btnStopAudio.disabled = false;
+        }
+      } catch (e) {
+        console.error('Load error:', e);
+        trackInfo.textContent = 'Error loading track';
+      }
+      
+      btnLoadTrack.textContent = 'Load';
+      btnLoadTrack.disabled = false;
+    });
+
+    btnPlayAudio.addEventListener('click', async () => {
+      if (audioSignals.isPlaying()) {
+        audioSignals.pause();
+        btnPlayAudio.textContent = '▶ Play';
+        btnPlayAudio.classList.remove('playing');
+      } else {
+        await audioSignals.play();
+        btnPlayAudio.textContent = '❚❚ Pause';
+        btnPlayAudio.classList.add('playing');
+      }
+    });
+    
+    // Manual trigger spike button
+    btnTriggerSpike.addEventListener('click', () => {
+      const t = performance.now() * 0.001;
+      fireRandomNeuron(t);
+      if (glitchBloom) {
+        bloomSpikeFrames = 8;
+        bloomSpikeStrength = baseBloomStrength * 3;
+      }
+    });
+    
+    // Signal binding
+    spikeSignalSelect.addEventListener('change', () => {
+      spikeSignalBinding = spikeSignalSelect.value;
+    });
+    
+    spikeThresholdSlider.addEventListener('input', () => {
+      spikeThreshold = parseInt(spikeThresholdSlider.value) / 100;
+      thresholdValue.textContent = spikeThresholdSlider.value + '%';
+    });
+
+    btnStopAudio.addEventListener('click', () => {
+      audioSignals.stop();
+      btnPlayAudio.textContent = '▶ Play';
+      btnPlayAudio.classList.remove('playing');
+      
+      // Reset signal bar
+      const barSignal = document.getElementById('barSignal');
+      const valSignal = document.getElementById('valSignal');
+      if (barSignal) barSignal.style.width = '0%';
+      if (valSignal) valSignal.textContent = '0.00';
     });
   </script>
 </body>
