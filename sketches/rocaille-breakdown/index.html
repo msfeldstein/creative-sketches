@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rocaille Shader Breakdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { 
+      overflow: hidden; 
+      background: #000;
+      font-family: 'Space Grotesk', -apple-system, sans-serif;
+    }
+    canvas { 
+      display: block; 
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+    
+    #controls {
+      position: fixed;
+      top: 40px;
+      left: 40px;
+      bottom: 40px;
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      pointer-events: none;
+    }
+    
+    #controls > * {
+      pointer-events: auto;
+    }
+    
+    .header {
+      margin-bottom: 24px;
+    }
+    
+    h1 {
+      font-size: 11px;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+    
+    .title-main {
+      font-size: 28px;
+      font-weight: 300;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+    
+    .steps {
+      flex: 1;
+      overflow-y: auto;
+      mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+      padding-right: 8px;
+    }
+    
+    .steps::-webkit-scrollbar {
+      width: 2px;
+    }
+    
+    .steps::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    
+    .steps::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 1px;
+    }
+    
+    .step {
+      position: relative;
+      padding: 16px 0 16px 32px;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .step::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 24px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .step::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 36px;
+      width: 2px;
+      height: calc(100% - 36px);
+      background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+    }
+    
+    .step:last-child::after {
+      display: none;
+    }
+    
+    .step:hover::before {
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.3);
+    }
+    
+    .step.active::before {
+      background: #ff7a45;
+      box-shadow: 0 0 20px rgba(255, 122, 69, 0.6), 0 0 40px rgba(255, 122, 69, 0.3);
+      transform: scale(1.5);
+    }
+    
+    .step-number {
+      font-size: 10px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.25);
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+      transition: color 0.3s ease;
+    }
+    
+    .step.active .step-number {
+      color: rgba(255, 122, 69, 0.8);
+    }
+    
+    .step-title {
+      font-size: 15px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 6px;
+      transition: color 0.3s ease;
+    }
+    
+    .step.active .step-title {
+      color: #fff;
+    }
+    
+    .step-desc {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.25);
+      line-height: 1.6;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .step.active .step-desc {
+      max-height: 100px;
+      opacity: 1;
+      margin-bottom: 10px;
+    }
+    
+    .step-code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      color: rgba(255, 200, 150, 0.4);
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .step.active .step-code {
+      max-height: 50px;
+      opacity: 1;
+      color: rgba(255, 200, 150, 0.8);
+    }
+    
+    .nav-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 24px;
+      padding-top: 20px;
+    }
+    
+    .nav-btn {
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: transparent;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 16px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    
+    .nav-btn:hover:not(:disabled) {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+    
+    .nav-btn:disabled {
+      opacity: 0.2;
+      cursor: not-allowed;
+    }
+    
+    .progress-track {
+      flex: 1;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff7a45, #ff9a6c);
+      border-radius: 1px;
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    
+    .keyboard-hint {
+      margin-top: 16px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.2);
+      letter-spacing: 0.05em;
+    }
+    
+    .keyboard-hint kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      margin: 0 2px;
+    }
+
+    /* Ambient glow behind panel */
+    #controls::before {
+      content: '';
+      position: absolute;
+      top: -50px;
+      left: -50px;
+      right: -50px;
+      bottom: -50px;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  
+  <div id="controls">
+    <div class="header">
+      <h1>Shader Breakdown</h1>
+      <div class="title-main">Rocaille</div>
+    </div>
+    
+    <div class="steps">
+      <div class="step" data-step="0">
+        <div class="step-number">01</div>
+        <div class="step-title">Coordinate System</div>
+        <div class="step-desc">Normalize pixel coordinates to center at origin. The division by .3 zooms out the view.</div>
+        <div class="step-code">p = (FC.xy*2.-r) / r.y / .3</div>
+      </div>
+      
+      <div class="step" data-step="1">
+        <div class="step-number">02</div>
+        <div class="step-title">Distance Field</div>
+        <div class="step-desc">Color by inverse distance from origin. This is our base before any warping — a simple radial glow.</div>
+        <div class="step-code">o = 1. / length(p)</div>
+      </div>
+      
+      <div class="step" data-step="2">
+        <div class="step-number">03</div>
+        <div class="step-title">Single Warp</div>
+        <div class="step-desc">Add one sinusoidal displacement. Swapping x/y (v.yx) creates the characteristic swirl.</div>
+        <div class="step-code">v += sin(v.yx + t) / 1.</div>
+      </div>
+      
+      <div class="step" data-step="3">
+        <div class="step-number">04</div>
+        <div class="step-title">Two Warps</div>
+        <div class="step-desc">A second warp at double frequency adds finer detail. Dividing by f keeps amplitude balanced.</div>
+        <div class="step-code">v += sin(v.yx*2. + t) / 2.</div>
+      </div>
+      
+      <div class="step" data-step="4">
+        <div class="step-number">05</div>
+        <div class="step-title">Five Warps</div>
+        <div class="step-desc">More iterations create increasingly intricate, self-similar patterns.</div>
+        <div class="step-code">for(f=1.;f&lt;=5.;f++) v+=sin(v.yx*f+t)/f</div>
+      </div>
+      
+      <div class="step" data-step="5">
+        <div class="step-number">06</div>
+        <div class="step-title">Nine Warps</div>
+        <div class="step-desc">Full iteration count. The pattern now has rich fractal-like detail at all scales.</div>
+        <div class="step-code">for(f=1.;f&lt;=9.;f++) v+=sin(v.yx*f+t)/f</div>
+      </div>
+      
+      <div class="step" data-step="6">
+        <div class="step-number">07</div>
+        <div class="step-title">Basic Coloring</div>
+        <div class="step-desc">Brightness based on inverse distance. Points near attractors glow bright.</div>
+        <div class="step-code">o = 1. / length(v)</div>
+      </div>
+      
+      <div class="step" data-step="7">
+        <div class="step-number">08</div>
+        <div class="step-title">Rainbow Colors</div>
+        <div class="step-desc">Cosine with phase offsets (0,1,2,3) creates smooth RGB rainbow transitions.</div>
+        <div class="step-code">o = (cos(vec4(0,1,2,3))+1.) / 6. / length(v)</div>
+      </div>
+      
+      <div class="step" data-step="8">
+        <div class="step-number">09</div>
+        <div class="step-title">Multiple Layers</div>
+        <div class="step-desc">Outer loop runs 10 times, each with a color phase shift. Bands of color emerge.</div>
+        <div class="step-code">for(i;i++&lt;10.; o += ...)</div>
+      </div>
+      
+      <div class="step" data-step="9">
+        <div class="step-number">10</div>
+        <div class="step-title">Layer Variation</div>
+        <div class="step-desc">Adding i to the inner sine means each layer warps slightly differently — depth emerges.</div>
+        <div class="step-code">v += sin(v.yx*f + i + t) / f</div>
+      </div>
+      
+      <div class="step" data-step="10">
+        <div class="step-number">11</div>
+        <div class="step-title">Tone Mapping</div>
+        <div class="step-desc">Square for contrast boost, tanh for soft clipping. Rich colors without blowout.</div>
+        <div class="step-code">o = tanh(o*o)</div>
+      </div>
+    </div>
+    
+    <div class="nav-row">
+      <button class="nav-btn" id="prevBtn">←</button>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <button class="nav-btn" id="nextBtn">→</button>
+    </div>
+    
+    <div class="keyboard-hint">
+      <kbd>←</kbd> <kbd>→</kbd> arrow keys to navigate
+    </div>
+  </div>
+  
+  <script>
+    const canvas = document.getElementById('canvas');
+    const gl = canvas.getContext('webgl2');
+    
+    if (!gl) {
+      alert('WebGL2 not supported');
+    }
+    
+    let currentStep = 0;
+    let displayStep = 0; // Animated step value
+    const totalSteps = 11;
+    const transitionDuration = 1.0; // seconds
+    
+    // Vertex shader - simple fullscreen quad
+    const vertexShaderSource = `#version 300 es
+    in vec4 a_position;
+    void main() {
+      gl_Position = a_position;
+    }`;
+    
+    // Unified fragment shader that morphs parameters between steps
+    // Step 0: Grid only
+    // Step 1: Distance field (1/length(p), no warp)
+    // Step 2: 1 warp iteration
+    // Step 3: 2 warp iterations  
+    // Step 4: 5 warp iterations
+    // Step 5: 9 warp iterations (full)
+    // Step 6: Grayscale coloring
+    // Step 7: Rainbow colors
+    // Step 8: Multiple layers (1→10)
+    // Step 9: Layer variation (i in inner loop)
+    // Step 10: Tone mapping
+    const fragmentShaderSource = `#version 300 es
+    precision highp float;
+    uniform vec2 r;
+    uniform float t;
+    uniform float step;
+    out vec4 o;
+    
+    void main() {
+      vec2 FC = gl_FragCoord.xy;
+      vec2 p = (FC.xy*2.-r)/r.y/.3;
+      float ss = step;
+      
+      // === PARAMETER INTERPOLATION (all branchless) ===
+      
+      // Grid: visible at step 0, fades out during 0→1
+      float gridAmt = clamp(1.0 - ss, 0.0, 1.0);
+      
+      // Warp amount: 0 at steps 0-1, fades in during step 1→2
+      float warpAmt = clamp(ss - 1.0, 0.0, 1.0);
+      
+      // Iterations: 1→2: 0→1, 2→3: 1→2, 3→4: 2→5, 4→5: 5→9, 5+: 9
+      float iterations = 
+        ss < 2.0 ? clamp(ss - 1.0, 0.0, 1.0) :       // 0→1 (during step 1→2)
+        ss < 3.0 ? 1.0 + (ss - 2.0) :                // 1→2
+        ss < 4.0 ? 2.0 + (ss - 3.0) * 3.0 :          // 2→5
+        ss < 5.0 ? 5.0 + (ss - 4.0) * 4.0 :          // 5→9
+        9.0;                                          // 9
+      iterations = clamp(iterations, 0.0, 9.0);
+      
+      // Grayscale: fades in at step 5→6, then fades out at 6→7
+      float grayMix = clamp(ss - 5.0, 0.0, 1.0) * clamp(7.0 - ss, 0.0, 1.0);
+      
+      // Rainbow: fades in at step 6→7
+      float rainbowMix = clamp(ss - 6.0, 0.0, 1.0);
+      
+      // Layers: 1 until step 7, then 1→10 during 7→8
+      float layers = ss < 7.0 ? 1.0 : 
+                     ss < 8.0 ? 1.0 + (ss - 7.0) * 9.0 : 10.0;
+      layers = clamp(layers, 1.0, 10.0);
+      
+      // Layer variation (i multiplier): fades in at step 8→9
+      float iMult = clamp(ss - 8.0, 0.0, 1.0);
+      
+      // Tone mapping: fades in at step 9→10
+      float tonemapAmt = clamp(ss - 9.0, 0.0, 1.0);
+      
+      // === RENDER (no branching) ===
+      vec4 c = vec4(0);
+      
+      for(float i = 0.; i < 10.0; i++) {
+        float layerWeight = clamp(layers - i, 0.0, 1.0);
+        
+        vec2 v = p;
+        
+        // Inner warping loop - always 9 iterations, weighted contribution
+        // Time is ALWAYS applied (no timeMult needed)
+        for(float f = 1.; f <= 9.0; f++) {
+          float iterWeight = clamp(iterations - f + 1.0, 0.0, 1.0);
+          float phase = t + i * iMult;  // Time always on!
+          v += sin(v.yx * f + phase) / f * warpAmt * iterWeight;
+        }
+        
+        // Coloring
+        float d = 1.0 / max(length(v), 0.001);
+        vec4 blueColor = vec4(d * 0.3, d * 0.4, d * 0.6, 1.0);
+        vec4 grayColor = vec4(vec3(d * 0.15), 1.0);
+        
+        // Rainbow: use position-based phase when single layer, layer-based when multiple
+        // This shows the rainbow gradient at step 7, then transitions to layer colors at step 8+
+        float singleLayerPhase = length(v) * 2.0;  // Position-based rainbow
+        float multiLayerPhase = i;                  // Layer-based rainbow  
+        float layerBlend = clamp((layers - 1.0) / 3.0, 0.0, 1.0);  // Blend as layers increase
+        float rainbowPhase = mix(singleLayerPhase, multiLayerPhase, layerBlend);
+        
+        vec4 rainbowColor = (cos(rainbowPhase + vec4(0,1,2,3)) + 1.) / 6. * d;
+        
+        vec4 layerColor = mix(mix(blueColor, grayColor, grayMix), rainbowColor, rainbowMix);
+        c += layerColor * layerWeight;
+      }
+      
+      // Normalize by layer count
+      c /= max(layers, 1.0);
+      c *= layers;
+      
+      // Tone mapping
+      c = mix(c, tanh(c * c), tonemapAmt);
+      
+      // Grid overlay
+      float grid = smoothstep(0.02, 0.0, abs(fract(p.x) - 0.5)) + 
+                   smoothstep(0.02, 0.0, abs(fract(p.y) - 0.5));
+      float axes = smoothstep(0.03, 0.0, abs(p.x)) + smoothstep(0.03, 0.0, abs(p.y));
+      vec4 gridColor = vec4(grid * 0.1 + axes * 0.5, grid * 0.1, grid * 0.15 + axes * 0.3, 1.0);
+      c = mix(c, gridColor, gridAmt);
+      
+      o = vec4(c.rgb, 1.0);
+    }`;
+    
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+    
+    function createProgram(gl, vertexShader, fragmentShader) {
+      const program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program link error:', gl.getProgramInfoLog(program));
+        return null;
+      }
+      return program;
+    }
+    
+    // Create shaders and program
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const program = createProgram(gl, vertexShader, fragmentShader);
+    
+    // Get uniform locations
+    const uniforms = {
+      resolution: gl.getUniformLocation(program, 'r'),
+      time: gl.getUniformLocation(program, 't'),
+      step: gl.getUniformLocation(program, 'step')
+    };
+    
+    // Create fullscreen quad
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,
+       1, -1,
+      -1,  1,
+      -1,  1,
+       1, -1,
+       1,  1,
+    ]), gl.STATIC_DRAW);
+    
+    const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+    
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    
+    resize();
+    window.addEventListener('resize', resize);
+    
+    function updateStepUI() {
+      document.querySelectorAll('.step').forEach((el, i) => {
+        el.classList.toggle('active', i === currentStep);
+      });
+      
+      document.getElementById('prevBtn').disabled = currentStep === 0;
+      document.getElementById('nextBtn').disabled = currentStep === totalSteps - 1;
+      
+      // Update progress bar
+      const progress = ((currentStep + 1) / totalSteps) * 100;
+      document.getElementById('progressFill').style.width = progress + '%';
+      
+      // Scroll active step into view
+      const activeStep = document.querySelector('.step.active');
+      if (activeStep) {
+        activeStep.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+    
+    function goToStep(step) {
+      currentStep = Math.max(0, Math.min(totalSteps - 1, step));
+      updateStepUI();
+    }
+    
+    // Click handlers for steps
+    document.querySelectorAll('.step').forEach((el, i) => {
+      el.addEventListener('click', () => goToStep(i));
+    });
+    
+    // Navigation buttons
+    document.getElementById('prevBtn').addEventListener('click', () => goToStep(currentStep - 1));
+    document.getElementById('nextBtn').addEventListener('click', () => goToStep(currentStep + 1));
+    
+    // Keyboard navigation
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') goToStep(currentStep - 1);
+      if (e.key === 'ArrowRight') goToStep(currentStep + 1);
+    });
+    
+    // Initialize
+    updateStepUI();
+    
+    // Easing function for smooth animation
+    function easeInOutCubic(t) {
+      return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    }
+    
+    let lastTime = 0;
+    
+    // Animation loop
+    function render(time) {
+      const t = time * 0.001;
+      const deltaTime = lastTime ? (time - lastTime) * 0.001 : 0;
+      lastTime = time;
+      
+      // Animate displayStep towards currentStep
+      const stepDiff = currentStep - displayStep;
+      if (Math.abs(stepDiff) > 0.001) {
+        const speed = 1.0 / transitionDuration;
+        const maxMove = Math.abs(stepDiff);
+        const move = Math.min(deltaTime * speed * Math.max(1, Math.abs(stepDiff)), maxMove);
+        displayStep += Math.sign(stepDiff) * move;
+      } else {
+        displayStep = currentStep;
+      }
+      
+      gl.useProgram(program);
+      
+      gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+      gl.uniform1f(uniforms.time, t);
+      gl.uniform1f(uniforms.step, displayStep);
+      
+      gl.enableVertexAttribArray(positionAttributeLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+      
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      
+      requestAnimationFrame(render);
+    }
+    
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>
