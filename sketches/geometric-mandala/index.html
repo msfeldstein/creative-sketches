@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Geometric Mandala</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    // Setup
+    const scene = new THREE.Scene();
+    
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 0, 30);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000);
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    document.body.appendChild(renderer.domElement);
+
+    // Post-processing
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      1.2, 0.4, 0.3
+    );
+    composer.addPass(bloomPass);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 0, 0);
+    controls.enableZoom = false;
+    controls.enablePan = false;
+
+    // Create mandala layers
+    const NUM_LAYERS = 8;
+    const LAYERS = [];
+
+    for (let layer = 0; layer < NUM_LAYERS; layer++) {
+      const layerRadius = 2 + layer * 1.5;
+      const layerSegments = 12 + layer * 4;
+      const layerRotationSpeed = 0.1 + layer * 0.05;
+      const layerRotationDir = layer % 2 === 0 ? 1 : -1;
+      
+      // Create geometry for this layer
+      const geo = new THREE.BufferGeometry();
+      const TOTAL_POINTS = layerSegments * 2; // Each segment has start and end
+      const positions = new Float32Array(TOTAL_POINTS * 3);
+      const indices = new Float32Array(TOTAL_POINTS * 2); // Lines
+      
+      const angles = new Float32Array(TOTAL_POINTS);
+      const radii = new Float32Array(TOTAL_POINTS);
+      
+      let idx = 0;
+      let lineIdx = 0;
+      
+      for (let i = 0; i < layerSegments; i++) {
+        const angle1 = (i / layerSegments) * Math.PI * 2;
+        const angle2 = ((i + 1) / layerSegments) * Math.PI * 2;
+        
+        // Inner point
+        const r1 = layerRadius;
+        positions[idx * 3 + 0] = Math.cos(angle1) * r1;
+        positions[idx * 3 + 1] = Math.sin(angle1) * r1;
+        positions[idx * 3 + 2] = 0;
+        angles[idx] = angle1;
+        radii[idx] = r1;
+        idx++;
+        
+        // Outer point
+        const r2 = layerRadius + 1.2;
+        positions[idx * 3 + 0] = Math.cos(angle1) * r2;
+        positions[idx * 3 + 1] = Math.sin(angle1) * r2;
+        positions[idx * 3 + 2] = 0;
+        angles[idx] = angle1;
+        radii[idx] = r2;
+        idx++;
+        
+        // Line indices
+        indices[lineIdx++] = (i * 2);
+        indices[lineIdx++] = (i * 2 + 1);
+      }
+      
+      geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geo.setAttribute('angle', new THREE.BufferAttribute(angles, 1));
+      geo.setAttribute('radius', new THREE.BufferAttribute(radii, 1));
+      geo.setIndex(new THREE.BufferAttribute(indices, 1));
+      
+      const mat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: { value: 0 },
+          uLayer: { value: layer },
+          uRotationSpeed: { value: layerRotationSpeed * layerRotationDir },
+          uLayerRadius: { value: layerRadius }
+        },
+        vertexShader: `
+          attribute float angle;
+          attribute float radius;
+          
+          uniform float uTime;
+          uniform float uLayer;
+          uniform float uRotationSpeed;
+          uniform float uLayerRadius;
+          
+          varying float vLayer;
+          varying float vAngle;
+          varying float vRadius;
+          
+          void main() {
+            vLayer = uLayer;
+            vAngle = angle;
+            vRadius = radius;
+            
+            // Rotate the layer
+            float rotAngle = angle + uTime * uRotationSpeed;
+            
+            // Add subtle 3D wobble
+            float wobble = sin(uTime * 0.5 + uLayer * 0.7) * 0.1;
+            float z = wobble * (1.0 - abs(cos(rotAngle * 2.0)));
+            
+            vec3 pos = vec3(
+              cos(rotAngle) * radius,
+              sin(rotAngle) * radius,
+              z
+            );
+            
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+          }
+        `,
+        fragmentShader: `
+          uniform float uTime;
+          
+          varying float vLayer;
+          varying float vAngle;
+          varying float vRadius;
+          
+          vec3 hsv2rgb(vec3 c) {
+            vec4 K = vec4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+            vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+          }
+          
+          void main() {
+            // Color based on layer and angle
+            float hue = (vLayer / 8.0) + vAngle / 6.28318 + uTime * 0.1;
+            float sat = 0.8 + sin(vAngle * 3.0 + uTime) * 0.2;
+            float val = 0.9 + sin(vAngle * 5.0 + uTime * 2.0) * 0.1;
+            
+            vec3 color = hsv2rgb(vec3(fract(hue), sat, val));
+            
+            // Add radial gradient
+            float radialFade = 1.0 - abs(vRadius - 2.0 - vLayer * 1.5) / 1.2;
+            radialFade = smoothstep(0.0, 1.0, radialFade);
+            
+            // Add pulsing
+            float pulse = sin(uTime * 2.0 + vLayer * 0.5) * 0.3 + 0.7;
+            
+            color *= radialFade * pulse;
+            
+            gl_FragColor = vec4(color, radialFade * 0.8);
+          }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide
+      });
+      
+      const mesh = new THREE.LineSegments(geo, mat);
+      scene.add(mesh);
+      
+      LAYERS.push({ mesh, material: mat, rotationSpeed: layerRotationSpeed * layerRotationDir });
+    }
+
+    // Add central point
+    const centerGeo = new THREE.BufferGeometry();
+    const centerPositions = new Float32Array([0, 0, 0]);
+    centerGeo.setAttribute('position', new THREE.BufferAttribute(centerPositions, 3));
+    
+    const centerMat = new THREE.ShaderMaterial({
+      uniforms: { uTime: { value: 0 } },
+      vertexShader: `
+        void main() {
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          gl_PointSize = 20.0;
+        }
+      `,
+      fragmentShader: `
+        uniform float uTime;
+        
+        void main() {
+          float d = length(gl_PointCoord - 0.5);
+          float a = 1.0 - smoothstep(0.0, 0.5, d);
+          vec3 color = vec3(1.0, 0.8, 0.6);
+          color += sin(uTime * 3.0) * 0.3;
+          gl_FragColor = vec4(color, a * 0.9);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    const centerPoint = new THREE.Points(centerGeo, centerMat);
+    scene.add(centerPoint);
+
+    // Animation
+    function animate(time) {
+      const t = time * 0.001;
+      
+      LAYERS.forEach(layer => {
+        layer.material.uniforms.uTime.value = t;
+      });
+      centerMat.uniforms.uTime.value = t;
+      
+      controls.update();
+      composer.render();
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>
