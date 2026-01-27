@@ -293,8 +293,7 @@
     <div class="track-info" id="trackInfo">No track loaded</div>
     <div class="audio-controls">
       <select id="trackSelect">
-        <option value="">Select track...</option>
-        <option value="/tracks/example-track.json">Example Track</option>
+        <option value="">Loading songs...</option>
       </select>
       <button id="btnLoadTrack">Load</button>
       <button id="btnPlayAudio" disabled>Play</button>
@@ -328,6 +327,7 @@
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { AudioSignals } from '/lib/audio-signals.js';
+    import { getSongList, loadSongWithAudio } from '/lib/song-storage.js';
 
     // ===========================================
     // DEFAULT CONFIG - Edit these values directly
@@ -599,7 +599,7 @@
       
       const moon = new THREE.Mesh(moonGeo, moonMat);
       // Position in upper right area of sky
-      moon.position.set(35, 55, -60);
+      moon.position.set(22, 50, -60);
       moon.scale.set(18, 18, 1);
       // Face the camera roughly
       moon.lookAt(0, 10, 0);
@@ -2113,78 +2113,68 @@
     const trackInfo = document.getElementById('trackInfo');
     const chkAudioReactive = document.getElementById('chkAudioReactive');
     
+    // Populate song list from IndexedDB (shared with signal editor)
+    async function populateSongList() {
+      try {
+        const songs = await getSongList();
+        trackSelect.innerHTML = songs.length === 0
+          ? '<option value="">No songs - import in Signal Editor</option>'
+          : '<option value="">Select song...</option>' + 
+            songs.map(s => `<option value="${s.id}">${s.name} (${formatTimeAudio(s.duration)})${s.hasAudio ? '' : ' [no audio]'}</option>`).join('');
+      } catch (e) {
+        console.error('Error loading song list:', e);
+        trackSelect.innerHTML = '<option value="">Error loading songs</option>';
+      }
+    }
+    populateSongList();
+    
     btnLoadTrack.addEventListener('click', async () => {
-      const trackUrl = trackSelect.value;
-      if (!trackUrl) return;
+      const songId = trackSelect.value;
+      if (!songId) return;
       
       trackInfo.textContent = 'Loading...';
       
       try {
-        // For the example track, we don't have audio, so we'll simulate playback
-        const response = await fetch(trackUrl);
-        const trackData = await response.json();
+        // Load song directly from IndexedDB (includes audio data!)
+        const { song, audioUrl } = await loadSongWithAudio(songId);
         
-        // Load track data without audio (for demo/testing)
-        audioSignals.trackData = trackData;
-        audioSignals.playing = false;
-        audioSignals.pauseTime = 0;
+        if (!song) {
+          trackInfo.textContent = 'Song not found';
+          return;
+        }
         
-        trackInfo.textContent = `${trackData.name} (${formatTimeAudio(trackData.duration)}) - ${trackData.bpm} BPM`;
+        // Load into audio signals - audioUrl is a blob URL to the stored audio
+        await audioSignals.loadTrackData(song, audioUrl);
+        
+        const hasAudio = !!audioUrl;
+        trackInfo.textContent = `${song.name} (${formatTimeAudio(song.duration)}) - ${song.bpm} BPM${hasAudio ? '' : ' [no audio]'}`;
         btnPlayAudio.disabled = false;
         btnStopAudio.disabled = false;
       } catch (error) {
-        trackInfo.textContent = 'Error loading track';
-        console.error('Error loading track:', error);
+        trackInfo.textContent = 'Error loading song';
+        console.error('Error loading song:', error);
       }
     });
     
-    // Simulated playback for tracks without audio file
-    let simulatedPlayback = null;
-    let simulatedStartTime = 0;
-    
-    btnPlayAudio.addEventListener('click', () => {
+    btnPlayAudio.addEventListener('click', async () => {
       if (!audioSignals.trackData) return;
       
-      if (simulatedPlayback) {
-        // Pause
-        clearInterval(simulatedPlayback);
-        simulatedPlayback = null;
-        audioSignals.pauseTime = (Date.now() - simulatedStartTime) / 1000;
-        audioSignals.playing = false;
+      if (audioSignals.isPlaying()) {
+        audioSignals.pause();
         btnPlayAudio.textContent = 'Play';
       } else {
-        // Play (simulated)
-        simulatedStartTime = Date.now() - (audioSignals.pauseTime || 0) * 1000;
-        audioSignals.playing = true;
+        await audioSignals.play();
         btnPlayAudio.textContent = 'Pause';
         
-        simulatedPlayback = setInterval(() => {
-          const currentTime = (Date.now() - simulatedStartTime) / 1000;
-          if (currentTime >= audioSignals.trackData.duration) {
-            clearInterval(simulatedPlayback);
-            simulatedPlayback = null;
-            audioSignals.playing = false;
-            audioSignals.pauseTime = 0;
-            btnPlayAudio.textContent = 'Play';
-          }
-        }, 100);
-        
-        // Override getCurrentTime for simulated playback
-        audioSignals.getCurrentTime = () => {
-          if (!audioSignals.playing) return audioSignals.pauseTime || 0;
-          return (Date.now() - simulatedStartTime) / 1000;
+        // Set up end callback to reset button
+        audioSignals.onEnd = () => {
+          btnPlayAudio.textContent = 'Play';
         };
       }
     });
     
     btnStopAudio.addEventListener('click', () => {
-      if (simulatedPlayback) {
-        clearInterval(simulatedPlayback);
-        simulatedPlayback = null;
-      }
-      audioSignals.playing = false;
-      audioSignals.pauseTime = 0;
-      audioSignals.resetBeatTracking(0);
+      audioSignals.stop();
       btnPlayAudio.textContent = 'Play';
     });
     

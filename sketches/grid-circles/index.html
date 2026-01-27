@@ -3,12 +3,12 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Grid Circles - Test Version</title>
+  <title>Rippling Grid</title>
   <style>
     * { margin: 0; padding: 0; }
     body { 
       overflow: hidden; 
-      background: #000000; 
+      background: #000008; 
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
     }
     canvas { display: block; }
@@ -80,12 +80,12 @@
   <canvas id="canvas"></canvas>
   
   <div id="debugPanel">
-    <h3>Circle Grid Settings</h3>
+    <h3>Rippling Grid Settings</h3>
     <div class="section">
       <div class="section-title">Grid</div>
       <label class="slider-label">
         <span>Cell Size <span id="cellSizeValue">60</span></span>
-        <input type="range" id="sliderCellSize" min="20" max="120" step="5" value="60">
+        <input type="range" id="sliderCellSize" min="40" max="150" step="5" value="60">
       </label>
     </div>
     <div class="section">
@@ -95,12 +95,31 @@
         <input type="range" id="sliderSpeed" min="20" max="300" value="100">
       </label>
       <label class="slider-label">
-        <span>Wave Delay <span id="waveDelayValue">0.15</span></span>
-        <input type="range" id="sliderWaveDelay" min="0" max="50" step="1" value="15">
+        <span>Wave Delay <span id="waveDelayValue">0.22</span></span>
+        <input type="range" id="sliderWaveDelay" min="0" max="50" step="1" value="22">
       </label>
       <label class="slider-label">
-        <span>Cycle Duration <span id="cycleDurationValue">2.0s</span></span>
-        <input type="range" id="sliderCycleDuration" min="50" max="400" step="10" value="200">
+        <span>Cycle Duration <span id="cycleDurationValue">2.5s</span></span>
+        <input type="range" id="sliderCycleDuration" min="50" max="500" step="10" value="250">
+      </label>
+    </div>
+    <div class="section">
+      <div class="section-title">Visual</div>
+      <label class="slider-label">
+        <span>Bloom Intensity <span id="bloomValue">186%</span></span>
+        <input type="range" id="sliderBloom" min="0" max="300" value="186">
+      </label>
+      <label class="slider-label">
+        <span>Chromatic Aberration <span id="chromaValue">235%</span></span>
+        <input type="range" id="sliderChroma" min="0" max="400" value="235">
+      </label>
+      <label class="slider-label">
+        <span>Color Shift <span id="colorShiftValue">0°</span></span>
+        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
+      </label>
+      <label class="slider-label">
+        <span>Zoom Blur <span id="zoomBlurValue">89%</span></span>
+        <input type="range" id="sliderZoomBlur" min="0" max="100" value="89">
       </label>
     </div>
   </div>
@@ -110,14 +129,22 @@
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     
+    // Offscreen canvas for zoom blur effect
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+    
     // ===========================================
     // CONFIG
     // ===========================================
     const CONFIG = {
-      cellSize: 50,
-      speed: 1.2,
-      waveDelay: 0.18,        // delay factor per unit distance from center
-      cycleDuration: 2.5      // seconds for one full grow/shrink cycle
+      cellSize: 30,
+      speed: 1.0,
+      waveDelay: 0.22,
+      cycleDuration: 2.5,
+      bloomIntensity: 1.86,
+      chromaticAberration: 2.35,
+      colorShift: 0,
+      zoomBlur: 0.89
     };
     
     let width, height, cols, rows, centerCol, centerRow, maxDist;
@@ -127,16 +154,15 @@
       height = window.innerHeight;
       canvas.width = width;
       canvas.height = height;
+      offCanvas.width = width;
+      offCanvas.height = height;
       
-      // Calculate grid dimensions (no gap between cells)
       cols = Math.ceil(width / CONFIG.cellSize) + 2;
       rows = Math.ceil(height / CONFIG.cellSize) + 2;
       
-      // Center of the grid
       centerCol = (cols - 1) / 2;
       centerRow = (rows - 1) / 2;
       
-      // Maximum distance from center (for normalization)
       maxDist = Math.sqrt(centerCol * centerCol + centerRow * centerRow);
     }
     
@@ -146,31 +172,88 @@
     // ===========================================
     // EASING FUNCTIONS
     // ===========================================
-    function easeInOutCubic(t) {
-      return t < 0.5
-        ? 4 * t * t * t
-        : 1 - Math.pow(-2 * t + 2, 3) / 2;
+    function easeInOutSine(t) {
+      return -(Math.cos(Math.PI * t) - 1) / 2;
     }
     
-    function easeOutQuad(t) {
-      return 1 - (1 - t) * (1 - t);
+    // Simple hash for consistent randomness per cell
+    function hash(x, y) {
+      let h = x * 374761393 + y * 668265263;
+      h = (h ^ (h >> 13)) * 1274126177;
+      return (h ^ (h >> 16)) / 4294967296 + 0.5;
     }
     
     // ===========================================
-    // RENDER
+    // COLOR UTILITIES
     // ===========================================
-    function render(time) {
-      const t = time * 0.001 * CONFIG.speed;
+    function hslToRgb(h, s, l) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+    
+    // Get color based on position and time
+    function getColor(distFromCenter, normalizedDist, time, channel = 'all') {
+      // Base hue cycles through cyan -> violet -> magenta
+      const baseHue = 0.55 + CONFIG.colorShift / 360; // Start at cyan (0.55)
       
-      // Clear background (black)
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, width, height);
+      // Hue shifts based on distance from center and time
+      const hueShift = normalizedDist * 0.15 + Math.sin(time * 0.3) * 0.05;
+      let hue = (baseHue + hueShift) % 1;
+      
+      // Chromatic aberration - shift hue for different channels
+      const chromaOffset = normalizedDist * 0.08 * CONFIG.chromaticAberration;
+      if (channel === 'r') hue = (hue + chromaOffset) % 1;
+      if (channel === 'b') hue = (hue - chromaOffset + 1) % 1;
+      
+      const saturation = 0.8 + normalizedDist * 0.2;
+      const lightness = 0.5 + (1 - normalizedDist) * 0.2;
+      
+      return hslToRgb(hue, saturation, lightness);
+    }
+    
+    
+    // ===========================================
+    // RENDER SCENE (to a context)
+    // ===========================================
+    function renderScene(targetCtx, t) {
+      // Dark background with subtle gradient
+      const bgGradient = targetCtx.createRadialGradient(
+        width / 2, height / 2, 0,
+        width / 2, height / 2, Math.max(width, height) * 0.7
+      );
+      bgGradient.addColorStop(0, '#0a0a12');
+      bgGradient.addColorStop(1, '#000004');
+      targetCtx.fillStyle = bgGradient;
+      targetCtx.fillRect(0, 0, width, height);
       
       // Calculate offset to center the grid
       const gridWidth = cols * CONFIG.cellSize;
       const gridHeight = rows * CONFIG.cellSize;
       const offsetX = (width - gridWidth) / 2;
       const offsetY = (height - gridHeight) / 2;
+      
+      // Enable additive blending for glow effect
+      targetCtx.globalCompositeOperation = 'lighter';
+      
+      // Temporarily swap ctx for renderStrokedCell
+      const originalCtx = ctx;
       
       // Draw each cell
       for (let row = 0; row < rows; row++) {
@@ -179,58 +262,183 @@
           const dx = col - centerCol;
           const dy = row - centerRow;
           const dist = Math.sqrt(dx * dx + dy * dy);
+          const normalizedDist = dist / maxDist;
           
-          // Time offset based on distance (ripple effect)
-          const timeOffset = dist * CONFIG.waveDelay;
-          const localTime = t - timeOffset;
-          
-          // Calculate animation progress (0 to 1 to 0)
-          const cycleProgress = ((localTime % CONFIG.cycleDuration) + CONFIG.cycleDuration) % CONFIG.cycleDuration;
-          const normalizedProgress = cycleProgress / CONFIG.cycleDuration;
-          
-          // Grow from 0 to 1 in first half, shrink from 1 to 0 in second half
-          let animScale;
-          if (normalizedProgress < 0.5) {
-            animScale = easeInOutCubic(normalizedProgress * 2);
-          } else {
-            animScale = easeInOutCubic((1 - normalizedProgress) * 2);
-          }
+          // Continuous phase based on time and distance (ripple effect)
+          const phase = t / CONFIG.cycleDuration - dist * CONFIG.waveDelay;
           
           // Calculate position
-          // Use Math.floor for pixel-perfect positioning to avoid anti-aliasing gaps
-          const x = Math.floor(offsetX + col * CONFIG.cellSize);
-          const y = Math.floor(offsetY + row * CONFIG.cellSize);
-          // Add 1px overlap to prevent anti-aliasing gaps between squares
-          const size = CONFIG.cellSize + 1;
+          const x = offsetX + col * CONFIG.cellSize;
+          const y = offsetY + row * CONFIG.cellSize;
           
-          // Draw cell background (white square)
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(x, y, size, size);
+          // Render the circle cell
+          renderStrokedCellTo(targetCtx, x, y, CONFIG.cellSize, phase, dist, normalizedDist, t);
+        }
+      }
+      
+      // Reset composite operation
+      targetCtx.globalCompositeOperation = 'source-over';
+    }
+    
+    // Modified version that takes a context parameter
+    function renderStrokedCellTo(targetCtx, x, y, size, phase, distFromCenter, normalizedDist, time) {
+      const centerX = x + size / 2;
+      const centerY = y + size / 2;
+      
+      const maxRadius = size * 0.48;
+      const chromaOffset = normalizedDist * 6 * CONFIG.chromaticAberration;
+      
+      // Calculate wave value for fill/stroke decision
+      const mainWaveValue = Math.sin(phase * Math.PI * 2);
+      const normalizedMainWave = mainWaveValue * 0.5 + 0.5; // 0 to 1
+      
+      // Fill amount based on wave - fill when up, stroke when down
+      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5); // Only fill on positive part of wave
+      
+      const ringCount = 3;
+      
+      for (let ring = 0; ring < ringCount; ring++) {
+        const ringPhase = phase - ring * 0.15;
+        const waveValue = Math.sin(ringPhase * Math.PI * 2);
+        const radius = maxRadius * (0.3 + (waveValue * 0.5 + 0.5) * 0.7);
+        // Alpha goes much darker on downswing - from nearly invisible to bright
+        const normalizedWave = waveValue * 0.5 + 0.5; // 0 to 1
+        const alpha = Math.pow(normalizedWave, 2) * 0.95 + 0.05; // 0.05 to 1.0, with power curve for darker lows
+        const baseWidth = 0.5 + (1 - ring / ringCount) * 0.5;
+        const lineWidth = baseWidth * (0.6 + alpha * 0.4);
+        
+        const channels = ['r', 'g', 'b'];
+        const offsets = [
+          { x: -chromaOffset, y: chromaOffset * 0.5 },
+          { x: 0, y: 0 },
+          { x: chromaOffset, y: -chromaOffset * 0.5 }
+        ];
+        
+        channels.forEach((channel, i) => {
+          const color = getColor(distFromCenter, normalizedDist, time + ring * 0.1, channel);
+          const offset = offsets[i];
           
-          // Draw circle clipped to square (black circle)
-          if (animScale > 0.001) {
-            ctx.save();
+          // Always draw stroke first (visible when wave is down)
+          if (fillAmount < 0.9) {
+            // Outer glow
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
+            targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.1 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
+            targetCtx.lineWidth = lineWidth * 6;
+            targetCtx.stroke();
             
-            // Create clipping region (the square)
-            ctx.beginPath();
-            ctx.rect(x, y, size, size);
-            ctx.clip();
+            // Mid glow
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
+            targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.25 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
+            targetCtx.lineWidth = lineWidth * 3;
+            targetCtx.stroke();
             
-            // Calculate circle properties
-            const centerX = x + CONFIG.cellSize / 2;
-            const centerY = y + CONFIG.cellSize / 2;
-            // Max radius is slightly larger than half diagonal so circle fills square
-            const maxRadius = CONFIG.cellSize * 0.75;
-            const radius = maxRadius * animScale;
-            
-            // Draw the black circle
-            ctx.beginPath();
-            ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
-            ctx.fillStyle = '#000000';
-            ctx.fill();
-            
-            ctx.restore();
+            // Core stroke
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
+            targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * (1 - fillAmount)})`;
+            targetCtx.lineWidth = lineWidth;
+            targetCtx.stroke();
           }
+          
+          // Draw fill when wave is up
+          if (fillAmount > 0.1) {
+            // Outer glow
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.2, 0, Math.PI * 2);
+            targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.08 * CONFIG.bloomIntensity * fillAmount})`;
+            targetCtx.fill();
+            
+            // Mid glow
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.1, 0, Math.PI * 2);
+            targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.15 * CONFIG.bloomIntensity * fillAmount})`;
+            targetCtx.fill();
+            
+            // Core fill
+            targetCtx.beginPath();
+            targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
+            targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.5 * fillAmount})`;
+            targetCtx.fill();
+          }
+        });
+      }
+    }
+    
+    // ===========================================
+    // ZOOM BLUR EFFECT
+    // ===========================================
+    function applyZoomBlur(sourceCanvas, targetCtx, intensity) {
+      const cx = width / 2;
+      const cy = height / 2;
+      
+      // Number of blur passes
+      const passes = 12;
+      
+      // Clear target with background
+      targetCtx.fillStyle = '#000004';
+      targetCtx.fillRect(0, 0, width, height);
+      
+      // Draw multiple scaled copies from center
+      for (let i = passes - 1; i >= 0; i--) {
+        const t = i / passes;
+        const scale = 1 + t * intensity * 0.15;
+        const alpha = (1 - t * 0.7) / passes * 2;
+        
+        targetCtx.save();
+        targetCtx.globalAlpha = alpha;
+        targetCtx.globalCompositeOperation = 'lighter';
+        
+        // Scale from center
+        targetCtx.translate(cx, cy);
+        targetCtx.scale(scale, scale);
+        targetCtx.translate(-cx, -cy);
+        
+        targetCtx.drawImage(sourceCanvas, 0, 0);
+        targetCtx.restore();
+      }
+      
+      // Draw the sharp original on top
+      targetCtx.globalAlpha = 1;
+      targetCtx.globalCompositeOperation = 'source-over';
+      targetCtx.drawImage(sourceCanvas, 0, 0);
+    }
+    
+    // ===========================================
+    // MAIN RENDER LOOP
+    // ===========================================
+    function render(time) {
+      const t = time * 0.001 * CONFIG.speed;
+      
+      if (CONFIG.zoomBlur > 0.01) {
+        // Render scene to offscreen canvas
+        renderScene(offCtx, t);
+        
+        // Apply zoom blur from offscreen to main canvas
+        applyZoomBlur(offCanvas, ctx, CONFIG.zoomBlur);
+      } else {
+        // No zoom blur - render directly
+        renderScene(ctx, t);
+      }
+      
+      // Add subtle vignette
+      const vignette = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.3,
+        width / 2, height / 2, Math.max(width, height) * 0.8
+      );
+      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, width, height);
+      
+      // Add film grain
+      if (Math.random() > 0.5) {
+        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.015})`;
+        for (let i = 0; i < 50; i++) {
+          const gx = Math.random() * width;
+          const gy = Math.random() * height;
+          ctx.fillRect(gx, gy, 1, 1);
         }
       }
       
@@ -306,6 +514,12 @@
     const waveDelayValue = document.getElementById('waveDelayValue');
     const sliderCycleDuration = document.getElementById('sliderCycleDuration');
     const cycleDurationValue = document.getElementById('cycleDurationValue');
+    const sliderBloom = document.getElementById('sliderBloom');
+    const bloomValue = document.getElementById('bloomValue');
+    const sliderChroma = document.getElementById('sliderChroma');
+    const chromaValue = document.getElementById('chromaValue');
+    const sliderColorShift = document.getElementById('sliderColorShift');
+    const colorShiftValue = document.getElementById('colorShiftValue');
     
     sliderCellSize.addEventListener('input', () => {
       CONFIG.cellSize = parseInt(sliderCellSize.value);
@@ -326,6 +540,29 @@
     sliderCycleDuration.addEventListener('input', () => {
       CONFIG.cycleDuration = sliderCycleDuration.value / 100;
       cycleDurationValue.textContent = CONFIG.cycleDuration.toFixed(1) + 's';
+    });
+    
+    sliderBloom.addEventListener('input', () => {
+      CONFIG.bloomIntensity = sliderBloom.value / 100;
+      bloomValue.textContent = sliderBloom.value + '%';
+    });
+    
+    sliderChroma.addEventListener('input', () => {
+      CONFIG.chromaticAberration = sliderChroma.value / 100;
+      chromaValue.textContent = sliderChroma.value + '%';
+    });
+    
+    sliderColorShift.addEventListener('input', () => {
+      CONFIG.colorShift = parseInt(sliderColorShift.value);
+      colorShiftValue.textContent = CONFIG.colorShift + '°';
+    });
+    
+    const sliderZoomBlur = document.getElementById('sliderZoomBlur');
+    const zoomBlurValue = document.getElementById('zoomBlurValue');
+    
+    sliderZoomBlur.addEventListener('input', () => {
+      CONFIG.zoomBlur = sliderZoomBlur.value / 100;
+      zoomBlurValue.textContent = sliderZoomBlur.value + '%';
     });
   </script>
 </body>
