@@ -8,117 +8,9 @@
     * { margin: 0; padding: 0; }
     body { overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
     canvas { display: block; }
-    
-    #debugPanel {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid rgba(255, 100, 150, 0.3);
-      border-radius: 8px;
-      padding: 16px;
-      color: #fff;
-      min-width: 200px;
-      display: none;
-      z-index: 1000;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-    }
-    #debugPanel.visible { display: block; }
-    #debugPanel.dragging { user-select: none; }
-    #debugPanel h3 {
-      margin: -16px -16px 12px -16px;
-      padding: 12px 16px;
-      font-size: 14px;
-      color: rgba(255, 100, 150, 0.9);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: grab;
-      background: rgba(255, 100, 150, 0.1);
-      border-radius: 8px 8px 0 0;
-      border-bottom: 1px solid rgba(255, 100, 150, 0.2);
-    }
-    #debugPanel h3:active { cursor: grabbing; }
-    #debugPanel .section {
-      margin-bottom: 16px;
-    }
-    #debugPanel .section-title {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-    }
-    #debugPanel .slider-label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 6px 0;
-      font-size: 13px;
-    }
-    #debugPanel .slider-label span {
-      display: flex;
-      justify-content: space-between;
-    }
-    #debugPanel .slider-label input[type="range"] {
-      width: 100%;
-      cursor: pointer;
-    }
-    .hint {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      color: rgba(255, 255, 255, 0.3);
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
-  <div id="debugPanel">
-    <h3>Vortex Controls</h3>
-    <div class="section">
-      <div class="section-title">Torus Shape</div>
-      <label class="slider-label">
-        <span>Major Radius <span id="majorRadiusValue">4.0</span></span>
-        <input type="range" id="sliderMajorRadius" min="2" max="8" step="0.1" value="4">
-      </label>
-      <label class="slider-label">
-        <span>Minor Radius <span id="minorRadiusValue">1.5</span></span>
-        <input type="range" id="sliderMinorRadius" min="0.5" max="3" step="0.1" value="1.5">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Motion</div>
-      <label class="slider-label">
-        <span>Flow Speed <span id="flowSpeedValue">100%</span></span>
-        <input type="range" id="sliderFlowSpeed" min="10" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Rotation Speed <span id="rotationSpeedValue">100%</span></span>
-        <input type="range" id="sliderRotationSpeed" min="0" max="300" value="100">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Visual</div>
-      <label class="slider-label">
-        <span>Bloom Intensity <span id="bloomValue">80%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="200" value="80">
-      </label>
-      <label class="slider-label">
-        <span>Trail Length <span id="trailLengthValue">100%</span></span>
-        <input type="range" id="sliderTrailLength" min="20" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Brightness <span id="brightnessValue">100%</span></span>
-        <input type="range" id="sliderBrightness" min="20" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Aberration <span id="aberrationValue">3.0</span></span>
-        <input type="range" id="sliderAberration" min="0" max="15" step="0.5" value="3">
-      </label>
-    </div>
-  </div>
-  <div class="hint" style="display:none;">Press D for controls</div>
-  
   <script type="importmap">
     {
       "imports": {
@@ -133,20 +25,20 @@
     import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
     import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
     import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
 
     // ===========================================
     // CONFIG
     // ===========================================
-    const CONFIG = {
-      majorRadius: 4.0,      // R - distance from torus center to tube center
-      minorRadius: 1.5,      // r - radius of the tube
-      particleCount: 3000,
-      trailLength: 24,       // number of points in each trail
-      flowSpeed: 1.0,
-      rotationSpeed: 1.0,
-      bloom: 0.8,
-      colorShift: 0,
-      brightness: 1.0
+    const DEFAULT_CONFIG = {
+      majorRadius: 4.0,
+      minorRadius: 1.5,
+      flowSpeed: 100,
+      rotationSpeed: 100,
+      bloom: 80,
+      trailLength: 100,
+      brightness: 100,
+      aberration: 3.0
     };
 
     // Setup
@@ -170,7 +62,7 @@
 
     const bloomPass = new UnrealBloomPass(
       new THREE.Vector2(window.innerWidth, window.innerHeight),
-      CONFIG.bloom, 0.4, 0.2
+      DEFAULT_CONFIG.bloom / 100, 0.4, 0.2
     );
     composer.addPass(bloomPass);
 
@@ -186,8 +78,8 @@
     // PARTICLE TRAIL SYSTEM WITH CHROMATIC ABERRATION
     // ===========================================
     
-    const PARTICLES = CONFIG.particleCount;
-    const TRAIL_LENGTH = CONFIG.trailLength;
+    const PARTICLES = 3000;
+    const TRAIL_LENGTH = 24;
     const TRAIL_SEGMENTS = TRAIL_LENGTH - 1;
     const CHANNELS = 3; // R, G, B
     const TOTAL_VERTICES = PARTICLES * TRAIL_SEGMENTS * 2 * CHANNELS;
@@ -199,33 +91,26 @@
     // Per-vertex attributes
     const particleIds = new Float32Array(TOTAL_VERTICES);
     const trailIndices = new Float32Array(TOTAL_VERTICES);
-    const uCoords = new Float32Array(TOTAL_VERTICES);      // position around major circle
-    const vCoords = new Float32Array(TOTAL_VERTICES);      // position around minor circle (tube)
-    const uSpeeds = new Float32Array(TOTAL_VERTICES);      // speed around major circle
-    const vSpeeds = new Float32Array(TOTAL_VERTICES);      // speed around minor circle
-    const phases = new Float32Array(TOTAL_VERTICES);       // random phase offset
-    const colorSeeds = new Float32Array(TOTAL_VERTICES);   // for color variation
-    const channels = new Float32Array(TOTAL_VERTICES);     // 0=R, 1=G, 2=B
+    const uCoords = new Float32Array(TOTAL_VERTICES);
+    const vCoords = new Float32Array(TOTAL_VERTICES);
+    const uSpeeds = new Float32Array(TOTAL_VERTICES);
+    const vSpeeds = new Float32Array(TOTAL_VERTICES);
+    const phases = new Float32Array(TOTAL_VERTICES);
+    const colorSeeds = new Float32Array(TOTAL_VERTICES);
+    const channels = new Float32Array(TOTAL_VERTICES);
 
     let vertexIdx = 0;
 
     for (let p = 0; p < PARTICLES; p++) {
-      // Random starting position on torus surface
       const u = Math.random() * Math.PI * 2;
       const v = Math.random() * Math.PI * 2;
-      
-      // Speeds - particles flow around the torus
       const uSpeed = 0.3 + Math.random() * 0.4;
       const vSpeed = (Math.random() - 0.5) * 0.8;
-      
       const phase = Math.random() * Math.PI * 2;
       const colorSeed = Math.random();
       
-      // Create 3 copies of each trail (one per color channel)
       for (let channel = 0; channel < CHANNELS; channel++) {
-        // Create line segments for this particle's trail
         for (let seg = 0; seg < TRAIL_SEGMENTS; seg++) {
-          // Start vertex of segment
           particleIds[vertexIdx] = p;
           trailIndices[vertexIdx] = seg;
           uCoords[vertexIdx] = u;
@@ -237,7 +122,6 @@
           channels[vertexIdx] = channel;
           vertexIdx++;
           
-          // End vertex of segment
           particleIds[vertexIdx] = p;
           trailIndices[vertexIdx] = seg + 1;
           uCoords[vertexIdx] = u;
@@ -265,13 +149,13 @@
     const trailMaterial = new THREE.ShaderMaterial({
       uniforms: {
         uTime: { value: 0 },
-        uMajorRadius: { value: CONFIG.majorRadius },
-        uMinorRadius: { value: CONFIG.minorRadius },
+        uMajorRadius: { value: DEFAULT_CONFIG.majorRadius },
+        uMinorRadius: { value: DEFAULT_CONFIG.minorRadius },
         uTrailSegments: { value: TRAIL_SEGMENTS },
-        uFlowSpeed: { value: CONFIG.flowSpeed },
-        uBrightness: { value: CONFIG.brightness },
-        uTrailScale: { value: 1.0 },
-        uAberration: { value: 0.03 }  // Chromatic aberration amount
+        uFlowSpeed: { value: DEFAULT_CONFIG.flowSpeed / 100 },
+        uBrightness: { value: DEFAULT_CONFIG.brightness / 100 },
+        uTrailScale: { value: DEFAULT_CONFIG.trailLength / 100 },
+        uAberration: { value: DEFAULT_CONFIG.aberration / 100 }
       },
       vertexShader: `
         attribute float particleId;
@@ -300,7 +184,6 @@
         const float PI = 3.14159265359;
         const float TWO_PI = 6.28318530718;
         
-        // Torus surface position
         vec3 torusPosition(float u, float v, float R, float r) {
           float cu = cos(u);
           float su = sin(u);
@@ -318,36 +201,27 @@
           vChannel = channel;
           
           float time = uTime * uFlowSpeed;
-          
-          // Trail offset - each point is behind in time
           float trailOffset = trailIndex * 0.08 * uTrailScale;
           float t = time - trailOffset;
           
-          // Chromatic aberration offset along U (around the torus)
-          // R=-1, G=0, B=+1
           float aberrationOffset = (channel - 1.0) * uAberration;
           
-          // Current position on torus (using mod for wrapping)
           float currentU = mod(uCoord + t * uSpeed + aberrationOffset, TWO_PI);
           float currentV = mod(vCoord + t * vSpeed, TWO_PI);
           
           vec3 pos = torusPosition(currentU, currentV, uMajorRadius, uMinorRadius);
           
-          // Compute adjacent trail positions to detect wraps by DISTANCE
           float nextT = time - (trailIndex + 1.0) * 0.08 * uTrailScale;
           float nextU = mod(uCoord + nextT * uSpeed + aberrationOffset, TWO_PI);
           float nextV = mod(vCoord + nextT * vSpeed, TWO_PI);
           vec3 nextPos = torusPosition(nextU, nextV, uMajorRadius, uMinorRadius);
           
-          // If distance to next trail point is too large, this is a wrap
           float dist = length(pos - nextPos);
           vWrap = dist > 1.0 ? 1.0 : 0.0;
           
-          // Trail fade - head is bright, tail fades out
           vTrailFade = 1.0 - (trailIndex / (uTrailSegments + 1.0));
           vTrailFade = pow(max(vTrailFade, 0.0), 0.6);
           
-          // Alpha based on trail position
           vAlpha = vTrailFade * 0.8;
           
           gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
@@ -363,23 +237,18 @@
         varying float vWrap;
         
         void main() {
-          // Hide segments that wrap around
           if (vWrap > 0.5) discard;
           if (vAlpha < 0.01) discard;
           
-          // Output only the color channel for this vertex
-          // channel 0 = Red, channel 1 = Green, channel 2 = Blue
           vec3 color = vec3(0.0);
-          
-          // Base intensity with trail fade
           float intensity = (0.7 + vTrailFade * 0.5) * uBrightness;
           
           if (vChannel < 0.5) {
-            color = vec3(intensity, 0.0, 0.0);  // Red
+            color = vec3(intensity, 0.0, 0.0);
           } else if (vChannel < 1.5) {
-            color = vec3(0.0, intensity, 0.0);  // Green
+            color = vec3(0.0, intensity, 0.0);
           } else {
-            color = vec3(0.0, 0.0, intensity);  // Blue
+            color = vec3(0.0, 0.0, intensity);
           }
           
           gl_FragColor = vec4(color, vAlpha);
@@ -395,22 +264,106 @@
     scene.add(trailMesh);
 
     // ===========================================
-    // ANIMATION
+    // DEBUG PANEL (using unified component)
     // ===========================================
     
-    let rotationSpeedMult = CONFIG.rotationSpeed;
+    const panel = new DebugPanel({
+      title: 'Vortex',
+      storageKey: 'vortexSettings',
+      schema: {
+        majorRadius: { 
+          type: 'number', label: 'Major Radius', 
+          min: 2, max: 8, step: 0.1, default: DEFAULT_CONFIG.majorRadius,
+          group: 'Torus Shape'
+        },
+        minorRadius: { 
+          type: 'number', label: 'Minor Radius', 
+          min: 0.5, max: 3, step: 0.1, default: DEFAULT_CONFIG.minorRadius,
+          group: 'Torus Shape'
+        },
+        flowSpeed: { 
+          type: 'number', label: 'Flow Speed', 
+          min: 10, max: 300, default: DEFAULT_CONFIG.flowSpeed, unit: '%',
+          group: 'Motion'
+        },
+        rotationSpeed: { 
+          type: 'number', label: 'Rotation Speed', 
+          min: 0, max: 300, default: DEFAULT_CONFIG.rotationSpeed, unit: '%',
+          group: 'Motion'
+        },
+        bloom: { 
+          type: 'number', label: 'Bloom Intensity', 
+          min: 0, max: 200, default: DEFAULT_CONFIG.bloom, unit: '%',
+          group: 'Visual'
+        },
+        trailLength: { 
+          type: 'number', label: 'Trail Length', 
+          min: 20, max: 200, default: DEFAULT_CONFIG.trailLength, unit: '%',
+          group: 'Visual'
+        },
+        brightness: { 
+          type: 'number', label: 'Brightness', 
+          min: 20, max: 200, default: DEFAULT_CONFIG.brightness, unit: '%',
+          group: 'Visual'
+        },
+        aberration: { 
+          type: 'number', label: 'Aberration', 
+          min: 0, max: 15, step: 0.5, default: DEFAULT_CONFIG.aberration,
+          group: 'Visual'
+        }
+      },
+      getConfig: () => panel.getValues(),
+      onChange: (name, value) => {
+        // Update uniforms/state when controls change
+        switch (name) {
+          case 'majorRadius':
+            trailMaterial.uniforms.uMajorRadius.value = value;
+            break;
+          case 'minorRadius':
+            trailMaterial.uniforms.uMinorRadius.value = value;
+            break;
+          case 'flowSpeed':
+            trailMaterial.uniforms.uFlowSpeed.value = value / 100;
+            break;
+          case 'bloom':
+            bloomPass.strength = value / 100;
+            break;
+          case 'trailLength':
+            trailMaterial.uniforms.uTrailScale.value = value / 100;
+            break;
+          case 'brightness':
+            trailMaterial.uniforms.uBrightness.value = value / 100;
+            break;
+          case 'aberration':
+            trailMaterial.uniforms.uAberration.value = value / 100;
+            break;
+        }
+      }
+    });
+
+    // Show hint (auto-hidden in iframe)
+    createHint('Press D for controls');
+
+    // ===========================================
+    // ANIMATION
+    // ===========================================
 
     function animate(time) {
       const t = time * 0.001;
       
       trailMaterial.uniforms.uTime.value = t;
       
-      // Slow rotation of the whole scene
+      // Get rotation speed from panel (respects defaults in iframe mode)
+      const rotationSpeedMult = panel.get('rotationSpeed', t) / 100;
       trailMesh.rotation.y = t * 0.1 * rotationSpeedMult;
       trailMesh.rotation.x = Math.sin(t * 0.05) * 0.1 * rotationSpeedMult;
       
       controls.update();
       composer.render();
+      
+      // Update bound control UI
+      panel.update(t);
+      
       requestAnimationFrame(animate);
     }
     
@@ -425,126 +378,6 @@
       camera.updateProjectionMatrix();
       renderer.setSize(window.innerWidth, window.innerHeight);
       composer.setSize(window.innerWidth, window.innerHeight);
-    });
-
-    // ===========================================
-    // DEBUG PANEL
-    // ===========================================
-    
-    const debugPanel = document.getElementById('debugPanel');
-    
-    // Sliders
-    const sliderMajorRadius = document.getElementById('sliderMajorRadius');
-    const majorRadiusValue = document.getElementById('majorRadiusValue');
-    const sliderMinorRadius = document.getElementById('sliderMinorRadius');
-    const minorRadiusValue = document.getElementById('minorRadiusValue');
-    const sliderFlowSpeed = document.getElementById('sliderFlowSpeed');
-    const flowSpeedValue = document.getElementById('flowSpeedValue');
-    const sliderRotationSpeed = document.getElementById('sliderRotationSpeed');
-    const rotationSpeedValue = document.getElementById('rotationSpeedValue');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderTrailLength = document.getElementById('sliderTrailLength');
-    const trailLengthValue = document.getElementById('trailLengthValue');
-    const sliderBrightness = document.getElementById('sliderBrightness');
-    const brightnessValue = document.getElementById('brightnessValue');
-    const sliderAberration = document.getElementById('sliderAberration');
-    const aberrationValue = document.getElementById('aberrationValue');
-    
-    // Detect if we're in an iframe (grid overview) and hide debug UI
-    const isInIframe = window.self !== window.top;
-    if (isInIframe) {
-      document.querySelector('.hint')?.remove();
-    }
-
-    // Toggle debug panel (disabled in iframe)
-    window.addEventListener('keydown', (e) => {
-      if (isInIframe) return;
-      if (e.key === 'd' || e.key === 'D') {
-        debugPanel.classList.toggle('visible');
-      }
-    });
-    
-    // Make panel draggable
-    const panelHeader = debugPanel.querySelector('h3');
-    let isDragging = false;
-    let dragStartX, dragStartY, panelStartX, panelStartY;
-    
-    panelHeader.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      debugPanel.classList.add('dragging');
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = debugPanel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      e.preventDefault();
-    });
-    
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      let newX = panelStartX + dx;
-      let newY = panelStartY + dy;
-      
-      const rect = debugPanel.getBoundingClientRect();
-      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
-      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
-      
-      debugPanel.style.left = newX + 'px';
-      debugPanel.style.top = newY + 'px';
-      debugPanel.style.right = 'auto';
-    });
-    
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        debugPanel.classList.remove('dragging');
-      }
-    });
-    
-    // Slider handlers
-    sliderMajorRadius.addEventListener('input', () => {
-      const val = parseFloat(sliderMajorRadius.value);
-      trailMaterial.uniforms.uMajorRadius.value = val;
-      majorRadiusValue.textContent = val.toFixed(1);
-    });
-    
-    sliderMinorRadius.addEventListener('input', () => {
-      const val = parseFloat(sliderMinorRadius.value);
-      trailMaterial.uniforms.uMinorRadius.value = val;
-      minorRadiusValue.textContent = val.toFixed(1);
-    });
-    
-    sliderFlowSpeed.addEventListener('input', () => {
-      trailMaterial.uniforms.uFlowSpeed.value = sliderFlowSpeed.value / 100;
-      flowSpeedValue.textContent = sliderFlowSpeed.value + '%';
-    });
-    
-    sliderRotationSpeed.addEventListener('input', () => {
-      rotationSpeedMult = sliderRotationSpeed.value / 100;
-      rotationSpeedValue.textContent = sliderRotationSpeed.value + '%';
-    });
-    
-    sliderBloom.addEventListener('input', () => {
-      bloomPass.strength = sliderBloom.value / 100;
-      bloomValue.textContent = sliderBloom.value + '%';
-    });
-    
-    sliderTrailLength.addEventListener('input', () => {
-      trailMaterial.uniforms.uTrailScale.value = sliderTrailLength.value / 100;
-      trailLengthValue.textContent = sliderTrailLength.value + '%';
-    });
-    
-    sliderBrightness.addEventListener('input', () => {
-      trailMaterial.uniforms.uBrightness.value = sliderBrightness.value / 100;
-      brightnessValue.textContent = sliderBrightness.value + '%';
-    });
-    
-    sliderAberration.addEventListener('input', () => {
-      trailMaterial.uniforms.uAberration.value = sliderAberration.value / 100;
-      aberrationValue.textContent = parseFloat(sliderAberration.value).toFixed(1);
     });
   </script>
 </body>

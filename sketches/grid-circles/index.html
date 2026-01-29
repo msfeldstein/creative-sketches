@@ -12,120 +12,14 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
     }
     canvas { display: block; }
-    
-    #debugPanel {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid rgba(100, 200, 255, 0.3);
-      border-radius: 8px;
-      padding: 16px;
-      color: #fff;
-      min-width: 200px;
-      display: none;
-      z-index: 1000;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-    }
-    #debugPanel.visible { display: block; }
-    #debugPanel.dragging { user-select: none; }
-    #debugPanel h3 {
-      margin: -16px -16px 12px -16px;
-      padding: 12px 16px;
-      font-size: 14px;
-      color: rgba(100, 200, 255, 0.9);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: grab;
-      background: rgba(100, 200, 255, 0.1);
-      border-radius: 8px 8px 0 0;
-      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
-    }
-    #debugPanel h3:active { cursor: grabbing; }
-    #debugPanel .section {
-      margin-bottom: 16px;
-    }
-    #debugPanel .section-title {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-    }
-    #debugPanel .slider-label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 6px 0;
-      font-size: 13px;
-    }
-    #debugPanel .slider-label span {
-      display: flex;
-      justify-content: space-between;
-    }
-    #debugPanel .slider-label input[type="range"] {
-      width: 100%;
-      cursor: pointer;
-    }
-    .hint {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      color: rgba(255, 255, 255, 0.3);
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
   
-  <div id="debugPanel">
-    <h3>Rippling Grid Settings</h3>
-    <div class="section">
-      <div class="section-title">Grid</div>
-      <label class="slider-label">
-        <span>Cell Size <span id="cellSizeValue">60</span></span>
-        <input type="range" id="sliderCellSize" min="40" max="150" step="5" value="60">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Animation</div>
-      <label class="slider-label">
-        <span>Speed <span id="speedValue">100%</span></span>
-        <input type="range" id="sliderSpeed" min="20" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Wave Delay <span id="waveDelayValue">0.22</span></span>
-        <input type="range" id="sliderWaveDelay" min="0" max="50" step="1" value="22">
-      </label>
-      <label class="slider-label">
-        <span>Cycle Duration <span id="cycleDurationValue">2.5s</span></span>
-        <input type="range" id="sliderCycleDuration" min="50" max="500" step="10" value="250">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Visual</div>
-      <label class="slider-label">
-        <span>Bloom Intensity <span id="bloomValue">186%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="300" value="186">
-      </label>
-      <label class="slider-label">
-        <span>Chromatic Aberration <span id="chromaValue">235%</span></span>
-        <input type="range" id="sliderChroma" min="0" max="400" value="235">
-      </label>
-      <label class="slider-label">
-        <span>Color Shift <span id="colorShiftValue">0°</span></span>
-        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
-      </label>
-      <label class="slider-label">
-        <span>Zoom Blur <span id="zoomBlurValue">89%</span></span>
-        <input type="range" id="sliderZoomBlur" min="0" max="100" value="89">
-      </label>
-    </div>
-  </div>
-  <div class="hint" style="display:none;">Press D to toggle controls panel</div>
-  
-  <script>
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     
@@ -136,15 +30,27 @@
     // ===========================================
     // CONFIG
     // ===========================================
-    const CONFIG = {
-      cellSize: 30,
-      speed: 1.0,
-      waveDelay: 0.22,
-      cycleDuration: 2.5,
-      bloomIntensity: 1.86,
-      chromaticAberration: 2.35,
+    const DEFAULT_CONFIG = {
+      cellSize: 60,
+      speed: 100,
+      waveDelay: 22,
+      cycleDuration: 250,
+      bloom: 186,
+      chroma: 235,
       colorShift: 0,
-      zoomBlur: 0.89
+      zoomBlur: 89
+    };
+    
+    // Runtime config (will be updated from panel)
+    const CONFIG = {
+      cellSize: DEFAULT_CONFIG.cellSize,
+      speed: DEFAULT_CONFIG.speed / 100,
+      waveDelay: DEFAULT_CONFIG.waveDelay / 100,
+      cycleDuration: DEFAULT_CONFIG.cycleDuration / 100,
+      bloomIntensity: DEFAULT_CONFIG.bloom / 100,
+      chromaticAberration: DEFAULT_CONFIG.chroma / 100,
+      colorShift: DEFAULT_CONFIG.colorShift,
+      zoomBlur: DEFAULT_CONFIG.zoomBlur / 100
     };
     
     let width, height, cols, rows, centerCol, centerRow, maxDist;
@@ -170,13 +76,12 @@
     window.addEventListener('resize', resize);
     
     // ===========================================
-    // EASING FUNCTIONS
+    // EASING & UTILITIES
     // ===========================================
     function easeInOutSine(t) {
       return -(Math.cos(Math.PI * t) - 1) / 2;
     }
     
-    // Simple hash for consistent randomness per cell
     function hash(x, y) {
       let h = x * 374761393 + y * 668265263;
       h = (h ^ (h >> 13)) * 1274126177;
@@ -208,16 +113,11 @@
       return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
     }
     
-    // Get color based on position and time
     function getColor(distFromCenter, normalizedDist, time, channel = 'all') {
-      // Base hue cycles through cyan -> violet -> magenta
-      const baseHue = 0.55 + CONFIG.colorShift / 360; // Start at cyan (0.55)
-      
-      // Hue shifts based on distance from center and time
+      const baseHue = 0.55 + CONFIG.colorShift / 360;
       const hueShift = normalizedDist * 0.15 + Math.sin(time * 0.3) * 0.05;
       let hue = (baseHue + hueShift) % 1;
       
-      // Chromatic aberration - shift hue for different channels
       const chromaOffset = normalizedDist * 0.08 * CONFIG.chromaticAberration;
       if (channel === 'r') hue = (hue + chromaOffset) % 1;
       if (channel === 'b') hue = (hue - chromaOffset + 1) % 1;
@@ -228,12 +128,10 @@
       return hslToRgb(hue, saturation, lightness);
     }
     
-    
     // ===========================================
-    // RENDER SCENE (to a context)
+    // RENDER SCENE
     // ===========================================
     function renderScene(targetCtx, t) {
-      // Dark background with subtle gradient
       const bgGradient = targetCtx.createRadialGradient(
         width / 2, height / 2, 0,
         width / 2, height / 2, Math.max(width, height) * 0.7
@@ -243,44 +141,32 @@
       targetCtx.fillStyle = bgGradient;
       targetCtx.fillRect(0, 0, width, height);
       
-      // Calculate offset to center the grid
       const gridWidth = cols * CONFIG.cellSize;
       const gridHeight = rows * CONFIG.cellSize;
       const offsetX = (width - gridWidth) / 2;
       const offsetY = (height - gridHeight) / 2;
       
-      // Enable additive blending for glow effect
       targetCtx.globalCompositeOperation = 'lighter';
       
-      // Temporarily swap ctx for renderStrokedCell
-      const originalCtx = ctx;
-      
-      // Draw each cell
       for (let row = 0; row < rows; row++) {
         for (let col = 0; col < cols; col++) {
-          // Distance from center of grid
           const dx = col - centerCol;
           const dy = row - centerRow;
           const dist = Math.sqrt(dx * dx + dy * dy);
           const normalizedDist = dist / maxDist;
           
-          // Continuous phase based on time and distance (ripple effect)
           const phase = t / CONFIG.cycleDuration - dist * CONFIG.waveDelay;
           
-          // Calculate position
           const x = offsetX + col * CONFIG.cellSize;
           const y = offsetY + row * CONFIG.cellSize;
           
-          // Render the circle cell
           renderStrokedCellTo(targetCtx, x, y, CONFIG.cellSize, phase, dist, normalizedDist, t);
         }
       }
       
-      // Reset composite operation
       targetCtx.globalCompositeOperation = 'source-over';
     }
     
-    // Modified version that takes a context parameter
     function renderStrokedCellTo(targetCtx, x, y, size, phase, distFromCenter, normalizedDist, time) {
       const centerX = x + size / 2;
       const centerY = y + size / 2;
@@ -288,12 +174,9 @@
       const maxRadius = size * 0.48;
       const chromaOffset = normalizedDist * 6 * CONFIG.chromaticAberration;
       
-      // Calculate wave value for fill/stroke decision
       const mainWaveValue = Math.sin(phase * Math.PI * 2);
-      const normalizedMainWave = mainWaveValue * 0.5 + 0.5; // 0 to 1
-      
-      // Fill amount based on wave - fill when up, stroke when down
-      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5); // Only fill on positive part of wave
+      const normalizedMainWave = mainWaveValue * 0.5 + 0.5;
+      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5);
       
       const ringCount = 3;
       
@@ -301,9 +184,8 @@
         const ringPhase = phase - ring * 0.15;
         const waveValue = Math.sin(ringPhase * Math.PI * 2);
         const radius = maxRadius * (0.3 + (waveValue * 0.5 + 0.5) * 0.7);
-        // Alpha goes much darker on downswing - from nearly invisible to bright
-        const normalizedWave = waveValue * 0.5 + 0.5; // 0 to 1
-        const alpha = Math.pow(normalizedWave, 2) * 0.95 + 0.05; // 0.05 to 1.0, with power curve for darker lows
+        const normalizedWave = waveValue * 0.5 + 0.5;
+        const alpha = Math.pow(normalizedWave, 2) * 0.95 + 0.05;
         const baseWidth = 0.5 + (1 - ring / ringCount) * 0.5;
         const lineWidth = baseWidth * (0.6 + alpha * 0.4);
         
@@ -318,23 +200,19 @@
           const color = getColor(distFromCenter, normalizedDist, time + ring * 0.1, channel);
           const offset = offsets[i];
           
-          // Always draw stroke first (visible when wave is down)
           if (fillAmount < 0.9) {
-            // Outer glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.1 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
             targetCtx.lineWidth = lineWidth * 6;
             targetCtx.stroke();
             
-            // Mid glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.25 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
             targetCtx.lineWidth = lineWidth * 3;
             targetCtx.stroke();
             
-            // Core stroke
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * (1 - fillAmount)})`;
@@ -342,21 +220,17 @@
             targetCtx.stroke();
           }
           
-          // Draw fill when wave is up
           if (fillAmount > 0.1) {
-            // Outer glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.2, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.08 * CONFIG.bloomIntensity * fillAmount})`;
             targetCtx.fill();
             
-            // Mid glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.1, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.15 * CONFIG.bloomIntensity * fillAmount})`;
             targetCtx.fill();
             
-            // Core fill
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.5 * fillAmount})`;
@@ -372,15 +246,11 @@
     function applyZoomBlur(sourceCanvas, targetCtx, intensity) {
       const cx = width / 2;
       const cy = height / 2;
-      
-      // Number of blur passes
       const passes = 12;
       
-      // Clear target with background
       targetCtx.fillStyle = '#000004';
       targetCtx.fillRect(0, 0, width, height);
       
-      // Draw multiple scaled copies from center
       for (let i = passes - 1; i >= 0; i--) {
         const t = i / passes;
         const scale = 1 + t * intensity * 0.15;
@@ -389,21 +259,99 @@
         targetCtx.save();
         targetCtx.globalAlpha = alpha;
         targetCtx.globalCompositeOperation = 'lighter';
-        
-        // Scale from center
         targetCtx.translate(cx, cy);
         targetCtx.scale(scale, scale);
         targetCtx.translate(-cx, -cy);
-        
         targetCtx.drawImage(sourceCanvas, 0, 0);
         targetCtx.restore();
       }
       
-      // Draw the sharp original on top
       targetCtx.globalAlpha = 1;
       targetCtx.globalCompositeOperation = 'source-over';
       targetCtx.drawImage(sourceCanvas, 0, 0);
     }
+    
+    // ===========================================
+    // DEBUG PANEL
+    // ===========================================
+    const panel = new DebugPanel({
+      title: 'Rippling Grid',
+      storageKey: 'gridCirclesSettings',
+      schema: {
+        cellSize: {
+          type: 'number', label: 'Cell Size',
+          min: 40, max: 150, step: 5, default: DEFAULT_CONFIG.cellSize,
+          group: 'Grid'
+        },
+        speed: {
+          type: 'number', label: 'Speed',
+          min: 20, max: 300, default: DEFAULT_CONFIG.speed, unit: '%',
+          group: 'Animation'
+        },
+        waveDelay: {
+          type: 'number', label: 'Wave Delay',
+          min: 0, max: 50, default: DEFAULT_CONFIG.waveDelay,
+          group: 'Animation'
+        },
+        cycleDuration: {
+          type: 'number', label: 'Cycle Duration',
+          min: 50, max: 500, step: 10, default: DEFAULT_CONFIG.cycleDuration,
+          group: 'Animation'
+        },
+        bloom: {
+          type: 'number', label: 'Bloom Intensity',
+          min: 0, max: 300, default: DEFAULT_CONFIG.bloom, unit: '%',
+          group: 'Visual'
+        },
+        chroma: {
+          type: 'number', label: 'Chromatic Aberration',
+          min: 0, max: 400, default: DEFAULT_CONFIG.chroma, unit: '%',
+          group: 'Visual'
+        },
+        colorShift: {
+          type: 'number', label: 'Color Shift',
+          min: 0, max: 360, default: DEFAULT_CONFIG.colorShift, unit: '°',
+          group: 'Visual'
+        },
+        zoomBlur: {
+          type: 'number', label: 'Zoom Blur',
+          min: 0, max: 100, default: DEFAULT_CONFIG.zoomBlur, unit: '%',
+          group: 'Visual'
+        }
+      },
+      getConfig: () => panel.getValues(),
+      onChange: (name, value) => {
+        switch (name) {
+          case 'cellSize':
+            CONFIG.cellSize = value;
+            resize();
+            break;
+          case 'speed':
+            CONFIG.speed = value / 100;
+            break;
+          case 'waveDelay':
+            CONFIG.waveDelay = value / 100;
+            break;
+          case 'cycleDuration':
+            CONFIG.cycleDuration = value / 100;
+            break;
+          case 'bloom':
+            CONFIG.bloomIntensity = value / 100;
+            break;
+          case 'chroma':
+            CONFIG.chromaticAberration = value / 100;
+            break;
+          case 'colorShift':
+            CONFIG.colorShift = value;
+            break;
+          case 'zoomBlur':
+            CONFIG.zoomBlur = value / 100;
+            break;
+        }
+      }
+    });
+
+    createHint('Press D for controls');
     
     // ===========================================
     // MAIN RENDER LOOP
@@ -412,17 +360,13 @@
       const t = time * 0.001 * CONFIG.speed;
       
       if (CONFIG.zoomBlur > 0.01) {
-        // Render scene to offscreen canvas
         renderScene(offCtx, t);
-        
-        // Apply zoom blur from offscreen to main canvas
         applyZoomBlur(offCanvas, ctx, CONFIG.zoomBlur);
       } else {
-        // No zoom blur - render directly
         renderScene(ctx, t);
       }
       
-      // Add subtle vignette
+      // Vignette
       const vignette = ctx.createRadialGradient(
         width / 2, height / 2, Math.min(width, height) * 0.3,
         width / 2, height / 2, Math.max(width, height) * 0.8
@@ -432,7 +376,7 @@
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, width, height);
       
-      // Add film grain
+      // Film grain
       if (Math.random() > 0.5) {
         ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.015})`;
         for (let i = 0; i < 50; i++) {
@@ -442,128 +386,11 @@
         }
       }
       
+      panel.update(t);
       requestAnimationFrame(render);
     }
     
     requestAnimationFrame(render);
-    
-    // ===========================================
-    // DEBUG PANEL
-    // ===========================================
-    const debugPanel = document.getElementById('debugPanel');
-    
-    // Detect if we're in an iframe (grid overview) and hide debug UI
-    const isInIframe = window.self !== window.top;
-    if (isInIframe) {
-      document.querySelector('.hint')?.remove();
-    }
-
-    // Toggle debug panel (disabled in iframe)
-    window.addEventListener('keydown', (e) => {
-      if (isInIframe) return;
-      if (e.key === 'd' || e.key === 'D') {
-        debugPanel.classList.toggle('visible');
-      }
-    });
-    
-    // Make panel draggable
-    const panelHeader = debugPanel.querySelector('h3');
-    let isDragging = false;
-    let dragStartX, dragStartY, panelStartX, panelStartY;
-    
-    panelHeader.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      debugPanel.classList.add('dragging');
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = debugPanel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      e.preventDefault();
-    });
-    
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      let newX = panelStartX + dx;
-      let newY = panelStartY + dy;
-      
-      const rect = debugPanel.getBoundingClientRect();
-      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
-      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
-      
-      debugPanel.style.left = newX + 'px';
-      debugPanel.style.top = newY + 'px';
-      debugPanel.style.right = 'auto';
-    });
-    
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        debugPanel.classList.remove('dragging');
-      }
-    });
-    
-    // Slider handlers
-    const sliderCellSize = document.getElementById('sliderCellSize');
-    const cellSizeValue = document.getElementById('cellSizeValue');
-    const sliderSpeed = document.getElementById('sliderSpeed');
-    const speedValue = document.getElementById('speedValue');
-    const sliderWaveDelay = document.getElementById('sliderWaveDelay');
-    const waveDelayValue = document.getElementById('waveDelayValue');
-    const sliderCycleDuration = document.getElementById('sliderCycleDuration');
-    const cycleDurationValue = document.getElementById('cycleDurationValue');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderChroma = document.getElementById('sliderChroma');
-    const chromaValue = document.getElementById('chromaValue');
-    const sliderColorShift = document.getElementById('sliderColorShift');
-    const colorShiftValue = document.getElementById('colorShiftValue');
-    
-    sliderCellSize.addEventListener('input', () => {
-      CONFIG.cellSize = parseInt(sliderCellSize.value);
-      cellSizeValue.textContent = CONFIG.cellSize;
-      resize();
-    });
-    
-    sliderSpeed.addEventListener('input', () => {
-      CONFIG.speed = sliderSpeed.value / 100;
-      speedValue.textContent = sliderSpeed.value + '%';
-    });
-    
-    sliderWaveDelay.addEventListener('input', () => {
-      CONFIG.waveDelay = sliderWaveDelay.value / 100;
-      waveDelayValue.textContent = CONFIG.waveDelay.toFixed(2);
-    });
-    
-    sliderCycleDuration.addEventListener('input', () => {
-      CONFIG.cycleDuration = sliderCycleDuration.value / 100;
-      cycleDurationValue.textContent = CONFIG.cycleDuration.toFixed(1) + 's';
-    });
-    
-    sliderBloom.addEventListener('input', () => {
-      CONFIG.bloomIntensity = sliderBloom.value / 100;
-      bloomValue.textContent = sliderBloom.value + '%';
-    });
-    
-    sliderChroma.addEventListener('input', () => {
-      CONFIG.chromaticAberration = sliderChroma.value / 100;
-      chromaValue.textContent = sliderChroma.value + '%';
-    });
-    
-    sliderColorShift.addEventListener('input', () => {
-      CONFIG.colorShift = parseInt(sliderColorShift.value);
-      colorShiftValue.textContent = CONFIG.colorShift + '°';
-    });
-    
-    const sliderZoomBlur = document.getElementById('sliderZoomBlur');
-    const zoomBlurValue = document.getElementById('zoomBlurValue');
-    
-    sliderZoomBlur.addEventListener('input', () => {
-      CONFIG.zoomBlur = sliderZoomBlur.value / 100;
-      zoomBlurValue.textContent = sliderZoomBlur.value + '%';
-    });
   </script>
 </body>
 </html>

@@ -2572,7 +2572,14 @@
       }
     }
 
+    // Detect if we're in an iframe (grid overview) and hide debug UI
+    const isInIframe = window.self !== window.top;
+    if (isInIframe) {
+      document.querySelector('.hint')?.remove();
+    }
+
     window.addEventListener('keydown', (e) => {
+      if (isInIframe) return;
       if (e.key === 'd' || e.key === 'D') debugPanel.classList.toggle('visible');
     });
     
