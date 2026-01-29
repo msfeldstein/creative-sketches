@@ -31,6 +31,10 @@ function getSketchEntries() {
 }
 
 export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+  },
   root: '.',
   publicDir: 'public',
   build: {
