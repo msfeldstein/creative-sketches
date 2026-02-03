@@ -1,0 +1,1149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Twisted Towers</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow: hidden; background: #000; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { SSAOPass } from 'three/addons/postprocessing/SSAOPass.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
+    // ===========================================
+    // CONFIG
+    // ===========================================
+    const DEFAULT_CONFIG = {
+      twistSpeed: 25,
+      twistAmount: 18,
+      flashChance: 10,
+      flashSpeed: 50,
+      bloom: 80,
+      aberration: 150,
+      aberrationStyle: 'cyan-red',
+      grain: 8,
+      showTowers: true,
+      towerOpacity: 100,
+      towerColor: '#666666',
+      flashColor: '#ffffff',
+      // Particle/trail settings
+      trailSpread: 80,
+      trailRadius: 38,
+      trailBrightness: 80,
+      trailFalloff: 120,
+      // Grid settings (require reload)
+      gridSize: 25,
+      gridSpacing: 20,
+      towerHeight: 80,
+      bottomSize: 100,  // 0-100%, size of bottom square
+      topSize: 0,       // 0-100%, size of top square (0 = point)
+      trailCount: 400   // trails per tower
+    };
+
+    // Load grid settings from localStorage (these require reload to change)
+    const loadGridSetting = (key, defaultVal) => {
+      try {
+        const stored = localStorage.getItem('twistedTowersSettings_Grid');
+        if (stored) {
+          const data = JSON.parse(stored);
+          if (data.values && data.values[key] !== undefined) {
+            return data.values[key];
+          }
+        }
+      } catch (e) {}
+      return defaultVal;
+    };
+
+    const GRID_SIZE = loadGridSetting('gridSize', DEFAULT_CONFIG.gridSize);
+    const SPACING = loadGridSetting('gridSpacing', DEFAULT_CONFIG.gridSpacing) / 10;
+    const TOWER_WIDTH = 0.7;
+    const TOWER_HEIGHT = loadGridSetting('towerHeight', DEFAULT_CONFIG.towerHeight);
+    const BOTTOM_SIZE = loadGridSetting('bottomSize', DEFAULT_CONFIG.bottomSize) / 100;
+    const TOP_SIZE = loadGridSetting('topSize', DEFAULT_CONFIG.topSize) / 100;
+    const SEGMENTS_Y = 48;
+    let TWIST_SPEED = DEFAULT_CONFIG.twistSpeed / 100;
+    let TWIST_AMOUNT = DEFAULT_CONFIG.twistAmount / 100;
+    let TOWER_COLOR = new THREE.Color(DEFAULT_CONFIG.towerColor);
+    let FLASH_COLOR = new THREE.Color(DEFAULT_CONFIG.flashColor);
+    
+    // Trail settings
+    let TRAIL_SPREAD = DEFAULT_CONFIG.trailSpread / 10;
+    let TRAIL_RADIUS = DEFAULT_CONFIG.trailRadius / 100;
+    let TRAIL_BRIGHTNESS = DEFAULT_CONFIG.trailBrightness / 100;
+    let TRAIL_FALLOFF = DEFAULT_CONFIG.trailFalloff / 10;
+
+    // Setup
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x111111);
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 50, 0);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.0;
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    document.body.appendChild(renderer.domElement);
+
+    // ===========================================
+    // ENVIRONMENT MAP FOR GI
+    // ===========================================
+    
+    // Create a gradient environment map for realistic lighting (grayscale)
+    function createGradientEnvironment() {
+      const canvas = document.createElement('canvas');
+      canvas.width = 512;
+      canvas.height = 512;
+      const ctx = canvas.getContext('2d');
+      
+      // Create gradient from sky to ground - grayscale
+      const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+      gradient.addColorStop(0, '#666666');    // bright sky
+      gradient.addColorStop(0.4, '#444444');  // horizon
+      gradient.addColorStop(0.5, '#333333');  // mid
+      gradient.addColorStop(0.6, '#222222');  // ground reflection
+      gradient.addColorStop(1, '#111111');    // dark ground
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, 512, 512);
+      
+      const texture = new THREE.CanvasTexture(canvas);
+      texture.mapping = THREE.EquirectangularReflectionMapping;
+      return texture;
+    }
+    
+    const envMap = createGradientEnvironment();
+    scene.environment = envMap;
+
+    // ===========================================
+    // LIGHTING
+    // ===========================================
+    
+    // Key light - bright white from upper right
+    const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    keyLight.position.set(15, 30, 20);
+    keyLight.castShadow = true;
+    keyLight.shadow.mapSize.width = 2048;
+    keyLight.shadow.mapSize.height = 2048;
+    keyLight.shadow.camera.near = 1;
+    keyLight.shadow.camera.far = 100;
+    keyLight.shadow.camera.left = -60;
+    keyLight.shadow.camera.right = 60;
+    keyLight.shadow.camera.top = 50;
+    keyLight.shadow.camera.bottom = -20;
+    keyLight.shadow.bias = -0.001;
+    keyLight.shadow.normalBias = 0.02;
+    scene.add(keyLight);
+    
+    // Fill light - softer from left
+    const fillLight = new THREE.DirectionalLight(0xcccccc, 0.6);
+    fillLight.position.set(-15, 15, -5);
+    scene.add(fillLight);
+    
+    // Rim/back light
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    rimLight.position.set(0, 10, -20);
+    scene.add(rimLight);
+    
+    // Bounce light from below (simulates ground bounce)
+    const bounceLight = new THREE.DirectionalLight(0x888888, 0.2);
+    bounceLight.position.set(0, -10, 0);
+    scene.add(bounceLight);
+
+    // Orbit controls
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.target.set(0, 0, 0);
+    controls.minDistance = 10;
+    controls.maxDistance = 200;
+
+    // Load camera position from localStorage
+    const loadCameraState = () => {
+      try {
+        const saved = localStorage.getItem('twistedTowersCamera');
+        if (saved) {
+          const state = JSON.parse(saved);
+          camera.position.set(state.position.x, state.position.y, state.position.z);
+          controls.target.set(state.target.x, state.target.y, state.target.z);
+          controls.update();
+        }
+      } catch (e) {}
+    };
+    loadCameraState();
+
+    // Save camera position on change
+    const saveCameraState = () => {
+      try {
+        const state = {
+          position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          target: { x: controls.target.x, y: controls.target.y, z: controls.target.z }
+        };
+        localStorage.setItem('twistedTowersCamera', JSON.stringify(state));
+      } catch (e) {}
+    };
+    controls.addEventListener('change', saveCameraState);
+
+    // ===========================================
+    // CREATE TOWERS WITH CPU-BASED TWIST
+    // ===========================================
+    
+    // Store original positions for each tower
+    const towerData = [];
+    const towers = new THREE.Group();
+    
+    // Create box geometry with many vertical segments for smooth twisting
+    const boxGeo = new THREE.BoxGeometry(TOWER_WIDTH, TOWER_HEIGHT, TOWER_WIDTH, 1, SEGMENTS_Y, 1);
+    
+    // Offset grid so it's centered
+    const offset = (GRID_SIZE - 1) * SPACING / 2;
+    
+    // Tower colors (will be updated by debug panel)
+    
+    for (let i = 0; i < GRID_SIZE; i++) {
+      for (let j = 0; j < GRID_SIZE; j++) {
+        const geo = boxGeo.clone();
+        
+        // Get position attribute
+        const posAttr = geo.getAttribute('position');
+        const x = i * SPACING - offset;
+        const z = j * SPACING - offset;
+        
+        // Store original local positions (before grid offset)
+        const originalPositions = new Float32Array(posAttr.array.length);
+        
+        for (let k = 0; k < posAttr.count; k++) {
+          // Get original box position and shift up
+          const localX = posAttr.getX(k);
+          const localY = posAttr.getY(k) + TOWER_HEIGHT / 2;
+          const localZ = posAttr.getZ(k);
+          
+          // Taper from bottom size to top size
+          const heightNorm = localY / TOWER_HEIGHT; // 0 at bottom, 1 at top
+          const taper = BOTTOM_SIZE + (TOP_SIZE - BOTTOM_SIZE) * heightNorm;
+          const taperedX = localX * taper;
+          const taperedZ = localZ * taper;
+          
+          // Store tapered local positions
+          originalPositions[k * 3] = taperedX;
+          originalPositions[k * 3 + 1] = localY;
+          originalPositions[k * 3 + 2] = taperedZ;
+          
+          // Set initial position with grid offset
+          posAttr.setX(k, taperedX + x);
+          posAttr.setY(k, localY);
+          posAttr.setZ(k, taperedZ + z);
+        }
+        posAttr.needsUpdate = true;
+        geo.computeVertexNormals();
+        
+        // Use the tower color (can be adjusted via debug panel)
+        const baseColor = TOWER_COLOR.clone();
+        
+        // Create material with custom shader for traveling flash
+        const material = new THREE.MeshStandardMaterial({
+          color: baseColor,
+          metalness: 0.0,
+          roughness: 0.6,
+          envMapIntensity: 0.5,
+          emissive: FLASH_COLOR.clone(),
+          emissiveIntensity: 1.0
+        });
+        material._baseColor = baseColor.clone(); // Store original color
+        
+        // Custom uniforms for flash effect
+        const flashUniforms = {
+          flashHeight: { value: -10 }, // Below tower = no flash
+          flashWidth: { value: 8.0 }   // Width of the flash band
+        };
+        
+        // Inject custom shader code
+        material.onBeforeCompile = (shader) => {
+          shader.uniforms.flashHeight = flashUniforms.flashHeight;
+          shader.uniforms.flashWidth = flashUniforms.flashWidth;
+          
+          // Add uniforms declaration
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <common>',
+            `#include <common>
+            uniform float flashHeight;
+            uniform float flashWidth;
+            varying float vWorldY;`
+          );
+          
+          // Add varying to vertex shader
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <common>',
+            `#include <common>
+            varying float vWorldY;`
+          );
+          
+          shader.vertexShader = shader.vertexShader.replace(
+            '#include <begin_vertex>',
+            `#include <begin_vertex>
+            vWorldY = (modelMatrix * vec4(position, 1.0)).y;`
+          );
+          
+          // Modify emissive based on flash height
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <emissivemap_fragment>',
+            `#include <emissivemap_fragment>
+            float flashDist = abs(vWorldY - flashHeight);
+            float flashFactor = 1.0 - smoothstep(0.0, flashWidth, flashDist);
+            totalEmissiveRadiance *= flashFactor;`
+          );
+        };
+        
+        const mesh = new THREE.Mesh(geo, material);
+        mesh.castShadow = true;
+        mesh.receiveShadow = true;
+        towers.add(mesh);
+        
+        towerData.push({
+          mesh,
+          material,
+          flashUniforms,
+          geometry: geo,
+          originalPositions,
+          gridX: x,
+          gridZ: z,
+          flashHeight: -10, // Start below tower
+          isFlashing: false,
+          lastFlashCheck: 0
+        });
+      }
+    }
+    
+    scene.add(towers);
+
+    // ===========================================
+    // GROUND PLANE
+    // ===========================================
+    
+    // ===========================================
+    // PARTICLE TRAIL SYSTEM (GPU)
+    // ===========================================
+    
+    const TRAILS_PER_TOWER = loadGridSetting('trailCount', DEFAULT_CONFIG.trailCount);
+    const TRAIL_LENGTH = 40; // segments per trail (longer trails)
+    const TOTAL_TRAILS = GRID_SIZE * GRID_SIZE * TRAILS_PER_TOWER;
+    const TOTAL_VERTICES = TOTAL_TRAILS * TRAIL_LENGTH * 2; // 2 vertices per segment
+    
+    // Create data texture to store tower flash states (updated each frame)
+    const flashDataSize = Math.ceil(Math.sqrt(GRID_SIZE * GRID_SIZE));
+    const flashData = new Float32Array(flashDataSize * flashDataSize * 4);
+    const flashDataTexture = new THREE.DataTexture(
+      flashData, flashDataSize, flashDataSize, 
+      THREE.RGBAFormat, THREE.FloatType
+    );
+    flashDataTexture.needsUpdate = true;
+    
+    // Create trail geometry as line segments
+    const trailGeo = new THREE.BufferGeometry();
+    const trailPositions = new Float32Array(TOTAL_VERTICES * 3);
+    const trailTowerIndices = new Float32Array(TOTAL_VERTICES);
+    const trailSeeds = new Float32Array(TOTAL_VERTICES * 3);
+    const trailIndices = new Float32Array(TOTAL_VERTICES); // position in trail (0 to TRAIL_LENGTH)
+    
+    let vIdx = 0;
+    for (let towerIdx = 0; towerIdx < GRID_SIZE * GRID_SIZE; towerIdx++) {
+      const data = towerData[towerIdx];
+      for (let t = 0; t < TRAILS_PER_TOWER; t++) {
+        // Random seed for this trail
+        const seedX = Math.random() * 100;
+        const seedY = Math.random() * 100;
+        const seedZ = Math.random() * 100;
+        
+        // Create line segments for this trail
+        for (let seg = 0; seg < TRAIL_LENGTH - 1; seg++) {
+          // Start vertex of segment
+          trailPositions[vIdx * 3] = data.gridX;
+          trailPositions[vIdx * 3 + 1] = Math.random() * TOWER_HEIGHT;
+          trailPositions[vIdx * 3 + 2] = data.gridZ;
+          trailTowerIndices[vIdx] = towerIdx;
+          trailSeeds[vIdx * 3] = seedX;
+          trailSeeds[vIdx * 3 + 1] = seedY;
+          trailSeeds[vIdx * 3 + 2] = seedZ;
+          trailIndices[vIdx] = seg;
+          vIdx++;
+          
+          // End vertex of segment
+          trailPositions[vIdx * 3] = data.gridX;
+          trailPositions[vIdx * 3 + 1] = Math.random() * TOWER_HEIGHT;
+          trailPositions[vIdx * 3 + 2] = data.gridZ;
+          trailTowerIndices[vIdx] = towerIdx;
+          trailSeeds[vIdx * 3] = seedX;
+          trailSeeds[vIdx * 3 + 1] = seedY;
+          trailSeeds[vIdx * 3 + 2] = seedZ;
+          trailIndices[vIdx] = seg + 1;
+          vIdx++;
+        }
+      }
+    }
+    
+    trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPositions, 3));
+    trailGeo.setAttribute('towerIndex', new THREE.BufferAttribute(trailTowerIndices, 1));
+    trailGeo.setAttribute('seed', new THREE.BufferAttribute(trailSeeds, 3));
+    trailGeo.setAttribute('trailIndex', new THREE.BufferAttribute(trailIndices, 1));
+    
+    const trailMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uTime: { value: 0 },
+        uFlashData: { value: flashDataTexture },
+        uFlashDataSize: { value: flashDataSize },
+        uTwistAmount: { value: TWIST_AMOUNT },
+        uTwistFactor: { value: 0 },
+        uFlashColor: { value: FLASH_COLOR },
+        uTrailLength: { value: TRAIL_LENGTH },
+        uTrailSpread: { value: TRAIL_SPREAD },
+        uTrailRadius: { value: TRAIL_RADIUS },
+        uTrailBrightness: { value: TRAIL_BRIGHTNESS },
+        uTrailFalloff: { value: TRAIL_FALLOFF },
+        uTowerHeight: { value: TOWER_HEIGHT }
+      },
+      vertexShader: `
+        attribute float towerIndex;
+        attribute vec3 seed;
+        attribute float trailIndex;
+        
+        uniform float uTime;
+        uniform sampler2D uFlashData;
+        uniform float uFlashDataSize;
+        uniform float uTwistAmount;
+        uniform float uTwistFactor;
+        uniform float uTrailLength;
+        uniform float uTrailSpread;
+        uniform float uTrailRadius;
+        uniform float uTrailBrightness;
+        uniform float uTrailFalloff;
+        uniform float uTowerHeight;
+        
+        varying float vAlpha;
+        
+        // Simplex noise functions
+        vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 mod289(vec4 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
+        vec4 permute(vec4 x) { return mod289(((x*34.0)+1.0)*x); }
+        vec4 taylorInvSqrt(vec4 r) { return 1.79284291400159 - 0.85373472095314 * r; }
+        
+        float snoise(vec3 v) {
+          const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+          const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+          vec3 i  = floor(v + dot(v, C.yyy));
+          vec3 x0 = v - i + dot(i, C.xxx);
+          vec3 g = step(x0.yzx, x0.xyz);
+          vec3 l = 1.0 - g;
+          vec3 i1 = min(g.xyz, l.zxy);
+          vec3 i2 = max(g.xyz, l.zxy);
+          vec3 x1 = x0 - i1 + C.xxx;
+          vec3 x2 = x0 - i2 + C.yyy;
+          vec3 x3 = x0 - D.yyy;
+          i = mod289(i);
+          vec4 p = permute(permute(permute(
+            i.z + vec4(0.0, i1.z, i2.z, 1.0))
+            + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+            + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+          float n_ = 0.142857142857;
+          vec3 ns = n_ * D.wyz - D.xzx;
+          vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+          vec4 x_ = floor(j * ns.z);
+          vec4 y_ = floor(j - 7.0 * x_);
+          vec4 x = x_ *ns.x + ns.yyyy;
+          vec4 y = y_ *ns.x + ns.yyyy;
+          vec4 h = 1.0 - abs(x) - abs(y);
+          vec4 b0 = vec4(x.xy, y.xy);
+          vec4 b1 = vec4(x.zw, y.zw);
+          vec4 s0 = floor(b0)*2.0 + 1.0;
+          vec4 s1 = floor(b1)*2.0 + 1.0;
+          vec4 sh = -step(h, vec4(0.0));
+          vec4 a0 = b0.xzyw + s0.xzyw*sh.xxyy;
+          vec4 a1 = b1.xzyw + s1.xzyw*sh.zzww;
+          vec3 p0 = vec3(a0.xy, h.x);
+          vec3 p1 = vec3(a0.zw, h.y);
+          vec3 p2 = vec3(a1.xy, h.z);
+          vec3 p3 = vec3(a1.zw, h.w);
+          vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2,p2), dot(p3,p3)));
+          p0 *= norm.x; p1 *= norm.y; p2 *= norm.z; p3 *= norm.w;
+          vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+          m = m * m;
+          return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+        }
+        
+        vec3 getTrailPosition(float timeOffset, vec3 towerPos, float flashHeight) {
+          // Each trail has its own fixed angle around the tower
+          float baseAngle = seed.x * 6.28;
+          
+          // Small time scatter to spread particles around the flash
+          // Keep values small so particles stay close to the actual flash
+          float timeScatter = (seed.y - 0.5) * 4.0;  // ±2 units max
+          float particleTimeOffset = (seed.z - 0.5) * 3.0;  // ±1.5 units
+          
+          // Y position: follows flash closely with small scatter
+          // timeOffset creates the trail behind (0 = head, higher = tail)
+          float trailY = flashHeight + timeScatter + particleTimeOffset - timeOffset * 0.3;
+          
+          // Each particle follows its own unique noise path
+          // Use lower frequencies for smoother movement
+          vec3 noiseOffset = seed * 50.0;
+          vec3 noiseInput = noiseOffset + vec3(trailY * 0.05, uTime * 0.15, 0.0);
+          
+          float radialNoise = snoise(noiseInput) * 0.08;
+          float tangentNoise = snoise(noiseInput + vec3(50.0, 0.0, 0.0)) * 0.1;
+          
+          // Vary base radius per particle
+          float radiusVar = 0.85 + seed.z * 0.3;  // 0.85 to 1.15
+          float radius = uTrailRadius * radiusVar + radialNoise;
+          
+          // Spiral with noise-driven variation
+          float spiralAngle = baseAngle + trailY * 0.1 + tangentNoise;
+          
+          vec3 pos;
+          pos.x = towerPos.x + cos(spiralAngle) * radius;
+          pos.y = trailY;
+          pos.z = towerPos.z + sin(spiralAngle) * radius;
+          
+          return pos;
+        }
+        
+        void main() {
+          // Get tower flash data from texture
+          float tIdx = towerIndex;
+          float texX = mod(tIdx, uFlashDataSize) / uFlashDataSize;
+          float texY = floor(tIdx / uFlashDataSize) / uFlashDataSize;
+          vec4 flashInfo = texture2D(uFlashData, vec2(texX + 0.5/uFlashDataSize, texY + 0.5/uFlashDataSize));
+          
+          float towerX = flashInfo.r;
+          float towerZ = flashInfo.g;
+          float flashHeight = flashInfo.b;
+          float isFlashing = flashInfo.a;
+          
+          vAlpha = 0.0;
+          
+          if (isFlashing > 0.5) {
+            vec3 towerPos = vec3(towerX, 0.0, towerZ);
+            vec3 pos = getTrailPosition(trailIndex, towerPos, flashHeight);
+            
+            // Keep trails visible while they're on the tower and near the flash
+            float onTower = step(0.0, pos.y) * step(pos.y, uTowerHeight);
+            float distFromFlash = abs(pos.y - flashHeight);
+            float nearFlash = 1.0 - smoothstep(0.0, uTrailFalloff, distFromFlash);
+            
+            // Fade along trail length (head bright, tail fades)
+            float trailFade = 1.0 - (trailIndex / uTrailLength);
+            trailFade = pow(trailFade, 0.6);
+            
+            vAlpha = onTower * nearFlash * trailFade * uTrailBrightness;
+            
+            if (vAlpha > 0.01) {
+              // Apply twist to match tower positions
+              float heightNorm = pos.y / uTowerHeight;
+              float twistAngle = heightNorm * uTwistAmount * uTowerHeight * uTwistFactor;
+              float cosA = cos(twistAngle);
+              float sinA = sin(twistAngle);
+              float twistedX = pos.x * cosA - pos.z * sinA;
+              float twistedZ = pos.x * sinA + pos.z * cosA;
+              pos.x = twistedX;
+              pos.z = twistedZ;
+              
+              gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
+            } else {
+              gl_Position = vec4(0.0, 0.0, -1000.0, 1.0);
+            }
+          } else {
+            gl_Position = vec4(0.0, 0.0, -1000.0, 1.0);
+          }
+        }
+      `,
+      fragmentShader: `
+        uniform vec3 uFlashColor;
+        varying float vAlpha;
+        
+        void main() {
+          if (vAlpha < 0.01) discard;
+          gl_FragColor = vec4(uFlashColor, vAlpha);
+        }
+      `,
+      transparent: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false
+    });
+    
+    const trails = new THREE.LineSegments(trailGeo, trailMaterial);
+    trails.frustumCulled = false;
+    scene.add(trails);
+    
+    // Function to update flash data texture
+    function updateFlashDataTexture() {
+      for (let i = 0; i < towerData.length; i++) {
+        const data = towerData[i];
+        // Apply twist to get current tower position
+        const heightNorm = data.flashHeight / TOWER_HEIGHT;
+        const twistFactor = TWIST_SPEED > 0 ? trailMaterial.uniforms.uTwistFactor.value : 1.0;
+        const angle = heightNorm * TWIST_AMOUNT * TOWER_HEIGHT * twistFactor;
+        const cosA = Math.cos(angle);
+        const sinA = Math.sin(angle);
+        const twistedX = data.gridX * cosA - data.gridZ * sinA;
+        const twistedZ = data.gridX * sinA + data.gridZ * cosA;
+        
+        flashData[i * 4] = twistedX;     // tower X (twisted)
+        flashData[i * 4 + 1] = twistedZ; // tower Z (twisted)
+        flashData[i * 4 + 2] = data.flashHeight; // flash height
+        flashData[i * 4 + 3] = data.isFlashing ? 1.0 : 0.0; // is flashing
+      }
+      flashDataTexture.needsUpdate = true;
+    }
+
+    // ===========================================
+    // POST-PROCESSING
+    // ===========================================
+    
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+
+    // SSAO for additional ambient occlusion
+    const ssaoPass = new SSAOPass(scene, camera, window.innerWidth, window.innerHeight);
+    ssaoPass.kernelRadius = 12;
+    ssaoPass.minDistance = 0.003;
+    ssaoPass.maxDistance = 0.08;
+    composer.addPass(ssaoPass);
+
+    // Bloom
+    const bloomPass = new UnrealBloomPass(
+      new THREE.Vector2(window.innerWidth, window.innerHeight),
+      0.8,  // strength
+      0.3,  // radius
+      0.7   // threshold
+    );
+    composer.addPass(bloomPass);
+
+    // Chromatic Aberration with multiple styles
+    const chromaticAberrationShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uIntensity: { value: 0.015 },
+        uMode: { value: 0 }  // 0=RGB, 1=Cyan-Red, 2=Warm-Cool, 3=Prism, 4=Soft Halation
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uIntensity;
+        uniform int uMode;
+        varying vec2 vUv;
+
+        void main() {
+          vec2 center = vec2(0.5);
+          vec2 dir = vUv - center;
+          float dist = length(dir);
+          float aberration = uIntensity * dist;
+
+          vec3 color;
+
+          if (uMode == 0) {
+            // Classic RGB split
+            vec2 offsetR = dir * aberration;
+            vec2 offsetB = -dir * aberration;
+            color.r = texture2D(tDiffuse, vUv + offsetR).r;
+            color.g = texture2D(tDiffuse, vUv).g;
+            color.b = texture2D(tDiffuse, vUv + offsetB).b;
+          }
+          else if (uMode == 1) {
+            // Cyan-Red (complementary, more filmic)
+            vec2 offset = dir * aberration;
+            vec3 inner = texture2D(tDiffuse, vUv - offset).rgb;
+            vec3 outer = texture2D(tDiffuse, vUv + offset).rgb;
+            vec3 base = texture2D(tDiffuse, vUv).rgb;
+            // Red shifts out, cyan (green+blue) shifts in
+            color.r = outer.r;
+            color.g = mix(base.g, inner.g, 0.7);
+            color.b = inner.b;
+          }
+          else if (uMode == 2) {
+            // Warm-Cool (orange/teal, cinematic)
+            vec2 offset = dir * aberration;
+            vec3 warm = texture2D(tDiffuse, vUv + offset).rgb;
+            vec3 cool = texture2D(tDiffuse, vUv - offset).rgb;
+            vec3 base = texture2D(tDiffuse, vUv).rgb;
+            // Warm (red+yellow) shifts out, cool (cyan+blue) shifts in
+            color.r = warm.r;
+            color.g = mix(warm.g * 0.8, cool.g, 0.5);
+            color.b = cool.b;
+          }
+          else if (uMode == 3) {
+            // Prism (rainbow spectrum, like real glass)
+            color = vec3(0.0);
+            const int samples = 7;
+            for (int i = 0; i < samples; i++) {
+              float t = float(i) / float(samples - 1);
+              float offset_mult = (t - 0.5) * 2.0;
+              vec2 offset = dir * aberration * offset_mult;
+              vec3 sample_col = texture2D(tDiffuse, vUv + offset).rgb;
+              // Spectral weights (approximating rainbow)
+              float r_weight = max(0.0, 1.0 - abs(t - 0.0) * 3.0);
+              float g_weight = max(0.0, 1.0 - abs(t - 0.5) * 3.0);
+              float b_weight = max(0.0, 1.0 - abs(t - 1.0) * 3.0);
+              color += sample_col * vec3(r_weight, g_weight, b_weight);
+            }
+            color /= 1.5;
+          }
+          else if (uMode == 4) {
+            // Soft Halation (dreamy film-like bleeding)
+            vec3 base = texture2D(tDiffuse, vUv).rgb;
+            vec3 bleed = vec3(0.0);
+            float angle_step = 6.28318 / 6.0;
+            for (int i = 0; i < 6; i++) {
+              float angle = float(i) * angle_step;
+              vec2 offset = vec2(cos(angle), sin(angle)) * aberration * 0.5;
+              bleed += texture2D(tDiffuse, vUv + offset).rgb;
+            }
+            bleed /= 6.0;
+            // Warm halation (highlights bleed warm)
+            float lum = dot(base, vec3(0.299, 0.587, 0.114));
+            vec3 warm_bleed = bleed * vec3(1.1, 1.0, 0.85);
+            color = mix(base, warm_bleed, lum * 0.4 * dist);
+          }
+          else {
+            color = texture2D(tDiffuse, vUv).rgb;
+          }
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+    
+    const chromaticPass = new ShaderPass(chromaticAberrationShader);
+    composer.addPass(chromaticPass);
+
+    // Film Grain
+    const filmGrainShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 },
+        uIntensity: { value: 0.08 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        uniform float uIntensity;
+        varying vec2 vUv;
+
+        // Hash function for noise
+        float hash(vec2 p) {
+          vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+          p3 += dot(p3, p3.yzx + 33.33);
+          return fract((p3.x + p3.y) * p3.z);
+        }
+
+        void main() {
+          vec4 color = texture2D(tDiffuse, vUv);
+          
+          // Animated grain
+          vec2 grainUv = vUv * vec2(1920.0, 1080.0);
+          float grain = hash(grainUv + fract(uTime * 0.5)) * 2.0 - 1.0;
+          
+          // Apply grain - more visible in midtones, less in pure black/white
+          float luminance = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+          float grainMask = 1.0 - abs(luminance - 0.5) * 2.0;
+          grainMask = grainMask * 0.5 + 0.5;
+          
+          color.rgb += grain * uIntensity * grainMask;
+          
+          gl_FragColor = color;
+        }
+      `
+    };
+
+    const grainPass = new ShaderPass(filmGrainShader);
+    composer.addPass(grainPass);
+
+    composer.addPass(new OutputPass());
+
+    // ===========================================
+    // DEBUG PANEL
+    // ===========================================
+    
+    const resetCamera = () => {
+      camera.position.set(0, 50, 0);
+      controls.target.set(0, 0, 0);
+      controls.update();
+      localStorage.removeItem('twistedTowersCamera');
+    };
+
+    const panel = new DebugPanel({
+      title: 'Twisted Towers',
+      storageKey: 'twistedTowersSettings',
+      getConfig: () => panel.getValues(),
+      afterSections: [
+        {
+          title: 'Camera',
+          content: (container) => {
+            const btn = document.createElement('button');
+            btn.className = 'debug-panel-button';
+            btn.textContent = 'Reset Camera';
+            btn.onclick = resetCamera;
+            container.appendChild(btn);
+          }
+        }
+      ],
+      schema: {
+        twistSpeed: {
+          type: 'number', label: 'Twist Speed',
+          min: 0, max: 100, default: DEFAULT_CONFIG.twistSpeed, unit: '%',
+          group: 'Motion'
+        },
+        twistAmount: {
+          type: 'number', label: 'Twist Amount',
+          min: 0, max: 50, default: DEFAULT_CONFIG.twistAmount, unit: '%',
+          group: 'Motion'
+        },
+        flashChance: {
+          type: 'number', label: 'Flash Chance',
+          min: 0, max: 50, default: DEFAULT_CONFIG.flashChance, unit: '%',
+          group: 'Flash'
+        },
+        flashSpeed: {
+          type: 'number', label: 'Flash Speed',
+          min: 10, max: 150, default: DEFAULT_CONFIG.flashSpeed,
+          group: 'Flash'
+        },
+        bloom: {
+          type: 'number', label: 'Bloom',
+          min: 0, max: 200, default: DEFAULT_CONFIG.bloom, unit: '%',
+          group: 'Visual'
+        },
+        aberration: {
+          type: 'number', label: 'Aberration',
+          min: 0, max: 500, default: DEFAULT_CONFIG.aberration, unit: '%',
+          group: 'Visual'
+        },
+        aberrationStyle: {
+          type: 'select', label: 'Aberration Style',
+          options: [
+            { value: 'rgb', label: 'RGB Split' },
+            { value: 'cyan-red', label: 'Cyan-Red' },
+            { value: 'warm-cool', label: 'Warm-Cool' },
+            { value: 'prism', label: 'Prism' },
+            { value: 'halation', label: 'Soft Halation' }
+          ],
+          default: DEFAULT_CONFIG.aberrationStyle,
+          group: 'Visual'
+        },
+        grain: {
+          type: 'number', label: 'Film Grain',
+          min: 0, max: 30, default: DEFAULT_CONFIG.grain, unit: '%',
+          group: 'Visual'
+        },
+        showTowers: {
+          type: 'boolean', label: 'Show Towers',
+          default: DEFAULT_CONFIG.showTowers,
+          group: 'Visual'
+        },
+        towerOpacity: {
+          type: 'number', label: 'Tower Opacity',
+          min: 0, max: 100, default: DEFAULT_CONFIG.towerOpacity, unit: '%',
+          group: 'Visual'
+        },
+        towerColor: {
+          type: 'color', label: 'Tower Color',
+          default: DEFAULT_CONFIG.towerColor,
+          group: 'Colors'
+        },
+        flashColor: {
+          type: 'color', label: 'Flash Color',
+          default: DEFAULT_CONFIG.flashColor,
+          group: 'Colors'
+        },
+        trailSpread: {
+          type: 'number', label: 'Trail Spread',
+          min: 10, max: 200, default: DEFAULT_CONFIG.trailSpread,
+          group: 'Trails'
+        },
+        trailRadius: {
+          type: 'number', label: 'Trail Radius',
+          min: 10, max: 100, default: DEFAULT_CONFIG.trailRadius,
+          group: 'Trails'
+        },
+        trailBrightness: {
+          type: 'number', label: 'Trail Brightness',
+          min: 10, max: 200, default: DEFAULT_CONFIG.trailBrightness, unit: '%',
+          group: 'Trails'
+        },
+        trailFalloff: {
+          type: 'number', label: 'Trail Falloff',
+          min: 20, max: 300, default: DEFAULT_CONFIG.trailFalloff,
+          group: 'Trails'
+        },
+        gridSize: {
+          type: 'number', label: 'Grid Size ↻',
+          min: 5, max: 50, default: DEFAULT_CONFIG.gridSize,
+          group: 'Grid'
+        },
+        gridSpacing: {
+          type: 'number', label: 'Spacing ↻',
+          min: 10, max: 40, default: DEFAULT_CONFIG.gridSpacing,
+          group: 'Grid'
+        },
+        towerHeight: {
+          type: 'number', label: 'Height ↻',
+          min: 10, max: 200, default: DEFAULT_CONFIG.towerHeight,
+          group: 'Grid'
+        },
+        bottomSize: {
+          type: 'number', label: 'Bottom Size ↻',
+          min: 0, max: 100, default: DEFAULT_CONFIG.bottomSize, unit: '%',
+          group: 'Grid'
+        },
+        topSize: {
+          type: 'number', label: 'Top Size ↻',
+          min: 0, max: 100, default: DEFAULT_CONFIG.topSize, unit: '%',
+          group: 'Grid'
+        },
+        trailCount: {
+          type: 'number', label: 'Trail Count ↻',
+          min: 10, max: 1000, default: DEFAULT_CONFIG.trailCount,
+          group: 'Grid'
+        }
+      },
+      onChange: (name, value) => {
+        switch (name) {
+          case 'twistSpeed':
+            TWIST_SPEED = value / 100;
+            break;
+          case 'twistAmount':
+            TWIST_AMOUNT = value / 100;
+            break;
+          case 'flashChance':
+            FLASH_CHANCE = value / 100;
+            break;
+          case 'flashSpeed':
+            FLASH_SPEED = value;
+            break;
+          case 'bloom':
+            bloomPass.strength = value / 100;
+            break;
+          case 'aberration':
+            chromaticPass.uniforms.uIntensity.value = value / 5000;
+            break;
+          case 'aberrationStyle':
+            const styleMap = { 'rgb': 0, 'cyan-red': 1, 'warm-cool': 2, 'prism': 3, 'halation': 4 };
+            chromaticPass.uniforms.uMode.value = styleMap[value] ?? 1;
+            break;
+          case 'grain':
+            grainPass.uniforms.uIntensity.value = value / 100;
+            break;
+          case 'showTowers':
+            towers.visible = value;
+            break;
+          case 'towerOpacity':
+            // Blend base color toward black (0% = black, 100% = full color)
+            // Emissive flash still shows through
+            const opacity = value / 100;
+            for (const data of towerData) {
+              const base = data.material._baseColor || TOWER_COLOR;
+              data.material.color.setRGB(
+                base.r * opacity,
+                base.g * opacity,
+                base.b * opacity
+              );
+            }
+            break;
+          case 'towerColor':
+            TOWER_COLOR.set(value);
+            // Update all tower materials (store base color for opacity blending)
+            for (const data of towerData) {
+              data.material._baseColor = new THREE.Color(value);
+              data.material.color.set(value);
+            }
+            break;
+          case 'flashColor':
+            FLASH_COLOR.set(value);
+            // Update all tower emissive colors
+            for (const data of towerData) {
+              data.material.emissive.set(value);
+            }
+            break;
+          case 'trailSpread':
+            TRAIL_SPREAD = value / 10;
+            trailMaterial.uniforms.uTrailSpread.value = TRAIL_SPREAD;
+            break;
+          case 'trailRadius':
+            TRAIL_RADIUS = value / 100;
+            trailMaterial.uniforms.uTrailRadius.value = TRAIL_RADIUS;
+            break;
+          case 'trailBrightness':
+            TRAIL_BRIGHTNESS = value / 100;
+            trailMaterial.uniforms.uTrailBrightness.value = TRAIL_BRIGHTNESS;
+            break;
+          case 'trailFalloff':
+            TRAIL_FALLOFF = value / 10;
+            trailMaterial.uniforms.uTrailFalloff.value = TRAIL_FALLOFF;
+            break;
+        }
+      }
+    });
+
+    createHint('Press D for controls');
+
+    // ===========================================
+    // TWIST FUNCTION
+    // ===========================================
+    
+    function applyTwist(twistFactor) {
+      for (const data of towerData) {
+        const posAttr = data.geometry.getAttribute('position');
+        const orig = data.originalPositions;
+        
+        for (let k = 0; k < posAttr.count; k++) {
+          const localX = orig[k * 3];
+          const localY = orig[k * 3 + 1];
+          const localZ = orig[k * 3 + 2];
+          
+          // World position before twist
+          const worldX = localX + data.gridX;
+          const worldZ = localZ + data.gridZ;
+          
+          // Twist the ENTIRE structure - rotate world position around center (0,0)
+          // based on height. Base stays still, top rotates most.
+          const heightNorm = localY / TOWER_HEIGHT;
+          const angle = heightNorm * TWIST_AMOUNT * TOWER_HEIGHT * twistFactor;
+          
+          const cosA = Math.cos(angle);
+          const sinA = Math.sin(angle);
+          
+          // Rotate world position around Y axis (center of grid)
+          const twistedX = worldX * cosA - worldZ * sinA;
+          const twistedZ = worldX * sinA + worldZ * cosA;
+          
+          posAttr.setX(k, twistedX);
+          posAttr.setY(k, localY);
+          posAttr.setZ(k, twistedZ);
+        }
+        
+        posAttr.needsUpdate = true;
+        data.geometry.computeVertexNormals();
+      }
+    }
+
+    // ===========================================
+    // FLASH SYSTEM
+    // ===========================================
+    
+    const FLASH_CHECK_INTERVAL = 0.1; // Check every 100ms
+    let FLASH_CHANCE = DEFAULT_CONFIG.flashChance / 100;
+    let FLASH_SPEED = DEFAULT_CONFIG.flashSpeed;
+    
+    function updateFlashes(t, dt) {
+      for (const data of towerData) {
+        // Check if it's time to potentially trigger a new flash
+        if (t - data.lastFlashCheck > FLASH_CHECK_INTERVAL) {
+          data.lastFlashCheck = t;
+          
+          // Only trigger if not already flashing
+          if (!data.isFlashing && Math.random() < FLASH_CHANCE) {
+            data.isFlashing = true;
+            data.flashHeight = 0; // Start at base
+          }
+        }
+        
+        // Update traveling flash
+        if (data.isFlashing) {
+          data.flashHeight += dt * FLASH_SPEED;
+          data.flashUniforms.flashHeight.value = data.flashHeight;
+          
+          // Flash finished when it goes past the top
+          if (data.flashHeight > TOWER_HEIGHT + 5) {
+            data.isFlashing = false;
+            data.flashHeight = -10;
+            data.flashUniforms.flashHeight.value = -10;
+          }
+        }
+      }
+    }
+
+    // ===========================================
+    // ANIMATION
+    // ===========================================
+    
+    let lastTime = 0;
+
+    function animate(time) {
+      const t = time * 0.001;
+      const dt = lastTime ? t - lastTime : 0.016;
+      lastTime = t;
+      
+      // Oscillate twist back and forth (if speed is 0, stay at full twist)
+      const twistFactor = TWIST_SPEED > 0 ? Math.sin(t * TWIST_SPEED) : 1.0;
+      applyTwist(twistFactor);
+
+      // Update emission flashes
+      updateFlashes(t, dt);
+      
+      // Update trail system
+      trailMaterial.uniforms.uTime.value = t;
+      trailMaterial.uniforms.uTwistAmount.value = TWIST_AMOUNT;
+      trailMaterial.uniforms.uTwistFactor.value = twistFactor;
+      trailMaterial.uniforms.uFlashColor.value = FLASH_COLOR;
+      updateFlashDataTexture();
+
+      // Update grain time for animation
+      grainPass.uniforms.uTime.value = t;
+
+      controls.update();
+      composer.render();
+      panel.update(t);
+
+      requestAnimationFrame(animate);
+    }
+    
+    animate(0);
+
+    // ===========================================
+    // RESIZE
+    // ===========================================
+    
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      composer.setSize(window.innerWidth, window.innerHeight);
+      ssaoPass.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

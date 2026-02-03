@@ -12,120 +12,14 @@
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
     }
     canvas { display: block; }
-    
-    #debugPanel {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid rgba(100, 200, 255, 0.3);
-      border-radius: 8px;
-      padding: 16px;
-      color: #fff;
-      min-width: 200px;
-      display: none;
-      z-index: 1000;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-    }
-    #debugPanel.visible { display: block; }
-    #debugPanel.dragging { user-select: none; }
-    #debugPanel h3 {
-      margin: -16px -16px 12px -16px;
-      padding: 12px 16px;
-      font-size: 14px;
-      color: rgba(100, 200, 255, 0.9);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: grab;
-      background: rgba(100, 200, 255, 0.1);
-      border-radius: 8px 8px 0 0;
-      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
-    }
-    #debugPanel h3:active { cursor: grabbing; }
-    #debugPanel .section {
-      margin-bottom: 16px;
-    }
-    #debugPanel .section-title {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-    }
-    #debugPanel .slider-label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 6px 0;
-      font-size: 13px;
-    }
-    #debugPanel .slider-label span {
-      display: flex;
-      justify-content: space-between;
-    }
-    #debugPanel .slider-label input[type="range"] {
-      width: 100%;
-      cursor: pointer;
-    }
-    .hint {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      color: rgba(255, 255, 255, 0.3);
-      font-size: 12px;
-    }
   </style>
 </head>
 <body>
   <canvas id="canvas"></canvas>
   
-  <div id="debugPanel">
-    <h3>Rippling Grid Settings</h3>
-    <div class="section">
-      <div class="section-title">Grid</div>
-      <label class="slider-label">
-        <span>Cell Size <span id="cellSizeValue">60</span></span>
-        <input type="range" id="sliderCellSize" min="40" max="150" step="5" value="60">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Animation</div>
-      <label class="slider-label">
-        <span>Speed <span id="speedValue">100%</span></span>
-        <input type="range" id="sliderSpeed" min="20" max="300" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Wave Delay <span id="waveDelayValue">0.22</span></span>
-        <input type="range" id="sliderWaveDelay" min="0" max="50" step="1" value="22">
-      </label>
-      <label class="slider-label">
-        <span>Cycle Duration <span id="cycleDurationValue">2.5s</span></span>
-        <input type="range" id="sliderCycleDuration" min="50" max="500" step="10" value="250">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Visual</div>
-      <label class="slider-label">
-        <span>Bloom Intensity <span id="bloomValue">186%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="300" value="186">
-      </label>
-      <label class="slider-label">
-        <span>Chromatic Aberration <span id="chromaValue">235%</span></span>
-        <input type="range" id="sliderChroma" min="0" max="400" value="235">
-      </label>
-      <label class="slider-label">
-        <span>Color Shift <span id="colorShiftValue">0°</span></span>
-        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
-      </label>
-      <label class="slider-label">
-        <span>Zoom Blur <span id="zoomBlurValue">89%</span></span>
-        <input type="range" id="sliderZoomBlur" min="0" max="100" value="89">
-      </label>
-    </div>
-  </div>
-  <div class="hint" style="display:none;">Press D to toggle controls panel</div>
-  
-  <script>
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
     const canvas = document.getElementById('canvas');
     const ctx = canvas.getContext('2d');
     
@@ -136,18 +30,52 @@
     // ===========================================
     // CONFIG
     // ===========================================
+    const DEFAULT_CONFIG = {
+      cellSize: 55,
+      speed: 100,
+      waveDelay: 5,
+      cycleDuration: 320,
+      bloom: 300,
+      chroma: 400,
+      colorShift: 26,
+      zoomBlur: 89,
+      grain: 100,
+      perspective: 250,
+      noiseScale: 15,
+      noiseStrength: 30
+    };
+    
+    // Runtime config (will be updated from panel)
     const CONFIG = {
-      cellSize: 30,
-      speed: 1.0,
-      waveDelay: 0.22,
-      cycleDuration: 2.5,
-      bloomIntensity: 1.86,
-      chromaticAberration: 2.35,
-      colorShift: 0,
-      zoomBlur: 0.89
+      cellSize: DEFAULT_CONFIG.cellSize,
+      speed: DEFAULT_CONFIG.speed / 100,
+      waveDelay: DEFAULT_CONFIG.waveDelay / 100,
+      cycleDuration: DEFAULT_CONFIG.cycleDuration / 100,
+      bloomIntensity: DEFAULT_CONFIG.bloom / 100,
+      chromaticAberration: DEFAULT_CONFIG.chroma / 100,
+      colorShift: DEFAULT_CONFIG.colorShift,
+      zoomBlur: DEFAULT_CONFIG.zoomBlur / 100,
+      grain: DEFAULT_CONFIG.grain / 100,
+      noiseScale: DEFAULT_CONFIG.noiseScale / 100,
+      noiseStrength: DEFAULT_CONFIG.noiseStrength / 100
     };
     
     let width, height, cols, rows, centerCol, centerRow, maxDist;
+    
+    // ===========================================
+    // PAN & TILT STATE
+    // ===========================================
+    const camera = {
+      panX: 0,
+      panY: 0,
+      tiltX: 0,  // rotation around X axis (vertical tilt)
+      tiltY: 0,  // rotation around Y axis (horizontal tilt)
+      perspective: DEFAULT_CONFIG.perspective,
+      isDragging: false,
+      isTilting: false,
+      lastX: 0,
+      lastY: 0
+    };
     
     function resize() {
       width = window.innerWidth;
@@ -170,17 +98,195 @@
     window.addEventListener('resize', resize);
     
     // ===========================================
-    // EASING FUNCTIONS
+    // PAN & TILT CONTROLS
+    // ===========================================
+    canvas.addEventListener('mousedown', (e) => {
+      camera.isDragging = true;
+      camera.isTilting = e.shiftKey || e.button === 2;
+      camera.lastX = e.clientX;
+      camera.lastY = e.clientY;
+      canvas.style.cursor = camera.isTilting ? 'move' : 'grab';
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!camera.isDragging) return;
+      
+      const deltaX = e.clientX - camera.lastX;
+      const deltaY = e.clientY - camera.lastY;
+      
+      if (camera.isTilting) {
+        // Tilt mode: rotate the view
+        camera.tiltY += deltaX * 0.005;
+        camera.tiltX -= deltaY * 0.005;
+        // Clamp tilt to reasonable values
+        camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+        camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+      } else {
+        // Pan mode: move the view
+        camera.panX += deltaX;
+        camera.panY += deltaY;
+      }
+      
+      camera.lastX = e.clientX;
+      camera.lastY = e.clientY;
+    });
+    
+    window.addEventListener('mouseup', () => {
+      camera.isDragging = false;
+      camera.isTilting = false;
+      canvas.style.cursor = 'default';
+    });
+    
+    // Prevent context menu on right-click
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // Touch support
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        camera.isDragging = true;
+        camera.isTilting = false;
+        camera.lastX = e.touches[0].clientX;
+        camera.lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        // Two finger touch for tilt
+        camera.isDragging = true;
+        camera.isTilting = true;
+        camera.lastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        camera.lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      }
+      e.preventDefault();
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (!camera.isDragging) return;
+      
+      let currentX, currentY;
+      if (e.touches.length === 1) {
+        currentX = e.touches[0].clientX;
+        currentY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      } else {
+        return;
+      }
+      
+      const deltaX = currentX - camera.lastX;
+      const deltaY = currentY - camera.lastY;
+      
+      if (camera.isTilting) {
+        camera.tiltY += deltaX * 0.005;
+        camera.tiltX -= deltaY * 0.005;
+        camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+        camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+      } else {
+        camera.panX += deltaX;
+        camera.panY += deltaY;
+      }
+      
+      camera.lastX = currentX;
+      camera.lastY = currentY;
+      e.preventDefault();
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', () => {
+      camera.isDragging = false;
+      camera.isTilting = false;
+    });
+    
+    // Keyboard controls
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      
+      // Reset view with Escape or R
+      if (e.key === 'Escape' || e.key === 'r' || e.key === 'R') {
+        camera.panX = 0;
+        camera.panY = 0;
+        camera.tiltX = 0;
+        camera.tiltY = 0;
+      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+    
+    // Update camera from keyboard in animation loop
+    function updateCameraFromKeyboard() {
+      const panSpeed = 10;
+      const tiltSpeed = 0.02;
+      
+      // Arrow keys for panning
+      if (keys['ArrowLeft']) camera.panX += panSpeed;
+      if (keys['ArrowRight']) camera.panX -= panSpeed;
+      if (keys['ArrowUp']) camera.panY += panSpeed;
+      if (keys['ArrowDown']) camera.panY -= panSpeed;
+      
+      // IJKL for tilting
+      if (keys['j'] || keys['J']) camera.tiltY -= tiltSpeed;
+      if (keys['l'] || keys['L']) camera.tiltY += tiltSpeed;
+      if (keys['i'] || keys['I']) camera.tiltX += tiltSpeed;
+      if (keys['k'] || keys['K']) camera.tiltX -= tiltSpeed;
+      
+      // Clamp tilt
+      camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+      camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+    }
+    
+    // ===========================================
+    // EASING & UTILITIES
     // ===========================================
     function easeInOutSine(t) {
       return -(Math.cos(Math.PI * t) - 1) / 2;
     }
     
-    // Simple hash for consistent randomness per cell
     function hash(x, y) {
       let h = x * 374761393 + y * 668265263;
       h = (h ^ (h >> 13)) * 1274126177;
       return (h ^ (h >> 16)) / 4294967296 + 0.5;
+    }
+    
+    // Simple 2D Perlin noise
+    function fade(t) {
+      return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    
+    function lerp(a, b, t) {
+      return a + t * (b - a);
+    }
+    
+    function grad(hash, x, y) {
+      const h = hash & 3;
+      const u = h < 2 ? x : y;
+      const v = h < 2 ? y : x;
+      return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+    }
+    
+    // Permutation table
+    const perm = new Array(512);
+    for (let i = 0; i < 256; i++) {
+      perm[i] = perm[i + 256] = Math.floor(hash(i, i * 13) * 256);
+    }
+    
+    function perlin(x, y) {
+      const X = Math.floor(x) & 255;
+      const Y = Math.floor(y) & 255;
+      
+      x -= Math.floor(x);
+      y -= Math.floor(y);
+      
+      const u = fade(x);
+      const v = fade(y);
+      
+      const a = perm[X] + Y;
+      const b = perm[X + 1] + Y;
+      
+      return lerp(
+        lerp(grad(perm[a], x, y), grad(perm[b], x - 1, y), u),
+        lerp(grad(perm[a + 1], x, y - 1), grad(perm[b + 1], x - 1, y - 1), u),
+        v
+      );
     }
     
     // ===========================================
@@ -208,16 +314,11 @@
       return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
     }
     
-    // Get color based on position and time
     function getColor(distFromCenter, normalizedDist, time, channel = 'all') {
-      // Base hue cycles through cyan -> violet -> magenta
-      const baseHue = 0.55 + CONFIG.colorShift / 360; // Start at cyan (0.55)
-      
-      // Hue shifts based on distance from center and time
+      const baseHue = 0.55 + CONFIG.colorShift / 360;
       const hueShift = normalizedDist * 0.15 + Math.sin(time * 0.3) * 0.05;
       let hue = (baseHue + hueShift) % 1;
       
-      // Chromatic aberration - shift hue for different channels
       const chromaOffset = normalizedDist * 0.08 * CONFIG.chromaticAberration;
       if (channel === 'r') hue = (hue + chromaOffset) % 1;
       if (channel === 'b') hue = (hue - chromaOffset + 1) % 1;
@@ -228,12 +329,43 @@
       return hslToRgb(hue, saturation, lightness);
     }
     
+    // ===========================================
+    // 3D PROJECTION UTILITIES
+    // ===========================================
+    function project3D(x, y, z = 0) {
+      // Apply tilt rotation
+      const cosX = Math.cos(camera.tiltX);
+      const sinX = Math.sin(camera.tiltX);
+      const cosY = Math.cos(camera.tiltY);
+      const sinY = Math.sin(camera.tiltY);
+      
+      // Rotate around Y axis (horizontal tilt)
+      let x1 = x * cosY - z * sinY;
+      let z1 = x * sinY + z * cosY;
+      
+      // Rotate around X axis (vertical tilt)
+      let y1 = y * cosX - z1 * sinX;
+      let z2 = y * sinX + z1 * cosX;
+      
+      // Prevent division by zero or negative (behind camera)
+      const minZ = -camera.perspective * 0.9;
+      if (z2 < minZ) z2 = minZ;
+      
+      // Apply perspective with clamped scale
+      const scale = Math.min(5, Math.max(0.1, camera.perspective / (camera.perspective + z2)));
+      
+      return {
+        x: x1 * scale + width / 2,
+        y: y1 * scale + height / 2,
+        scale: scale,
+        behindCamera: z2 <= minZ
+      };
+    }
     
     // ===========================================
-    // RENDER SCENE (to a context)
+    // RENDER SCENE
     // ===========================================
     function renderScene(targetCtx, t) {
-      // Dark background with subtle gradient
       const bgGradient = targetCtx.createRadialGradient(
         width / 2, height / 2, 0,
         width / 2, height / 2, Math.max(width, height) * 0.7
@@ -243,57 +375,121 @@
       targetCtx.fillStyle = bgGradient;
       targetCtx.fillRect(0, 0, width, height);
       
-      // Calculate offset to center the grid
-      const gridWidth = cols * CONFIG.cellSize;
-      const gridHeight = rows * CONFIG.cellSize;
-      const offsetX = (width - gridWidth) / 2;
-      const offsetY = (height - gridHeight) / 2;
+      // Calculate visible cell range based on pan offset (infinite grid)
+      const cellSize = CONFIG.cellSize;
+      const padding = 4; // Extra cells beyond visible area
       
-      // Enable additive blending for glow effect
+      // Calculate which cells are potentially visible
+      let startCol = Math.floor((-camera.panX - width / 2) / cellSize) - padding;
+      let endCol = Math.ceil((-camera.panX + width / 2) / cellSize) + padding;
+      let startRow = Math.floor((-camera.panY - height / 2) / cellSize) - padding;
+      let endRow = Math.ceil((-camera.panY + height / 2) / cellSize) + padding;
+      
+      // Cap total cells to prevent freezing from extreme tilts
+      const maxCells = 2500;
+      const totalCols = endCol - startCol;
+      const totalRows = endRow - startRow;
+      if (totalCols * totalRows > maxCells) {
+        const scale = Math.sqrt(maxCells / (totalCols * totalRows));
+        const halfCols = Math.floor(totalCols * scale / 2);
+        const halfRows = Math.floor(totalRows * scale / 2);
+        const centerCol = Math.floor((startCol + endCol) / 2);
+        const centerRow = Math.floor((startRow + endRow) / 2);
+        startCol = centerCol - halfCols;
+        endCol = centerCol + halfCols;
+        startRow = centerRow - halfRows;
+        endRow = centerRow + halfRows;
+      }
+      
+      // Max distance for color normalization (based on visible range)
+      const visibleMaxDist = Math.sqrt(
+        Math.max(Math.abs(startCol), Math.abs(endCol)) ** 2 +
+        Math.max(Math.abs(startRow), Math.abs(endRow)) ** 2
+      );
+      
       targetCtx.globalCompositeOperation = 'lighter';
       
-      // Temporarily swap ctx for renderStrokedCell
-      const originalCtx = ctx;
+      // Collect all cells with their depth for sorting
+      const cells = [];
       
-      // Draw each cell
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          // Distance from center of grid
-          const dx = col - centerCol;
-          const dy = row - centerRow;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          const normalizedDist = dist / maxDist;
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          // Distance from origin (0,0) for wave calculation
+          const dist = Math.sqrt(col * col + row * row);
+          const normalizedDist = Math.min(1, dist / Math.max(visibleMaxDist, 1));
           
-          // Continuous phase based on time and distance (ripple effect)
-          const phase = t / CONFIG.cycleDuration - dist * CONFIG.waveDelay;
+          // Add perlin noise offset for organic variation
+          const noiseOffset = perlin(col * CONFIG.noiseScale, row * CONFIG.noiseScale) * CONFIG.noiseStrength;
           
-          // Calculate position
-          const x = offsetX + col * CONFIG.cellSize;
-          const y = offsetY + row * CONFIG.cellSize;
+          const phase = t / CONFIG.cycleDuration - dist * CONFIG.waveDelay + noiseOffset;
           
-          // Render the circle cell
-          renderStrokedCellTo(targetCtx, x, y, CONFIG.cellSize, phase, dist, normalizedDist, t);
+          // World position of this cell
+          const worldX = col * cellSize;
+          const worldY = row * cellSize;
+          
+          // Screen position with pan
+          const screenX = worldX + camera.panX;
+          const screenY = worldY + camera.panY;
+          
+          // Calculate depth (z) based on wave phase for subtle 3D effect
+          const waveHeight = Math.sin(phase * Math.PI * 2) * 50;
+          
+          // Project to 3D
+          const projected = project3D(screenX, screenY, waveHeight);
+          
+          // Skip cells behind camera or outside view
+          if (projected.behindCamera) continue;
+          
+          const margin = cellSize * 2;
+          if (projected.x < -margin || projected.x > width + margin ||
+              projected.y < -margin || projected.y > height + margin) {
+            continue;
+          }
+          
+          cells.push({
+            x: projected.x - cellSize * projected.scale / 2,
+            y: projected.y - cellSize * projected.scale / 2,
+            size: cellSize * projected.scale,
+            phase,
+            dist,
+            normalizedDist,
+            depth: waveHeight,
+            scale: projected.scale
+          });
         }
       }
       
-      // Reset composite operation
+      // Sort by depth (back to front)
+      cells.sort((a, b) => a.depth - b.depth);
+      
+      // Render cells
+      for (const cell of cells) {
+        renderStrokedCellTo(
+          targetCtx, 
+          cell.x, 
+          cell.y, 
+          cell.size, 
+          cell.phase, 
+          cell.dist, 
+          cell.normalizedDist, 
+          t,
+          cell.scale
+        );
+      }
+      
       targetCtx.globalCompositeOperation = 'source-over';
     }
     
-    // Modified version that takes a context parameter
-    function renderStrokedCellTo(targetCtx, x, y, size, phase, distFromCenter, normalizedDist, time) {
+    function renderStrokedCellTo(targetCtx, x, y, size, phase, distFromCenter, normalizedDist, time, projectionScale = 1) {
       const centerX = x + size / 2;
       const centerY = y + size / 2;
       
       const maxRadius = size * 0.48;
       const chromaOffset = normalizedDist * 6 * CONFIG.chromaticAberration;
       
-      // Calculate wave value for fill/stroke decision
       const mainWaveValue = Math.sin(phase * Math.PI * 2);
-      const normalizedMainWave = mainWaveValue * 0.5 + 0.5; // 0 to 1
-      
-      // Fill amount based on wave - fill when up, stroke when down
-      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5); // Only fill on positive part of wave
+      const normalizedMainWave = mainWaveValue * 0.5 + 0.5;
+      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5);
       
       const ringCount = 3;
       
@@ -301,9 +497,8 @@
         const ringPhase = phase - ring * 0.15;
         const waveValue = Math.sin(ringPhase * Math.PI * 2);
         const radius = maxRadius * (0.3 + (waveValue * 0.5 + 0.5) * 0.7);
-        // Alpha goes much darker on downswing - from nearly invisible to bright
-        const normalizedWave = waveValue * 0.5 + 0.5; // 0 to 1
-        const alpha = Math.pow(normalizedWave, 2) * 0.95 + 0.05; // 0.05 to 1.0, with power curve for darker lows
+        const normalizedWave = waveValue * 0.5 + 0.5;
+        const alpha = Math.pow(normalizedWave, 2) * 0.95 + 0.05;
         const baseWidth = 0.5 + (1 - ring / ringCount) * 0.5;
         const lineWidth = baseWidth * (0.6 + alpha * 0.4);
         
@@ -318,23 +513,19 @@
           const color = getColor(distFromCenter, normalizedDist, time + ring * 0.1, channel);
           const offset = offsets[i];
           
-          // Always draw stroke first (visible when wave is down)
           if (fillAmount < 0.9) {
-            // Outer glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.1 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
             targetCtx.lineWidth = lineWidth * 6;
             targetCtx.stroke();
             
-            // Mid glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.25 * CONFIG.bloomIntensity * (1 - fillAmount)})`;
             targetCtx.lineWidth = lineWidth * 3;
             targetCtx.stroke();
             
-            // Core stroke
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.strokeStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * (1 - fillAmount)})`;
@@ -342,21 +533,17 @@
             targetCtx.stroke();
           }
           
-          // Draw fill when wave is up
           if (fillAmount > 0.1) {
-            // Outer glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.2, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.08 * CONFIG.bloomIntensity * fillAmount})`;
             targetCtx.fill();
             
-            // Mid glow
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius * 1.1, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.15 * CONFIG.bloomIntensity * fillAmount})`;
             targetCtx.fill();
             
-            // Core fill
             targetCtx.beginPath();
             targetCtx.arc(centerX + offset.x, centerY + offset.y, radius, 0, Math.PI * 2);
             targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${alpha * 0.5 * fillAmount})`;
@@ -367,20 +554,76 @@
     }
     
     // ===========================================
+    // GRAIN NOISE EFFECT
+    // ===========================================
+    let noiseCanvas = null;
+    let noiseCtx = null;
+    let noiseImageData = null;
+    
+    function initNoiseCanvas() {
+      // Use a smaller canvas for noise and scale up (more organic look)
+      const noiseScale = 2;
+      noiseCanvas = document.createElement('canvas');
+      noiseCanvas.width = Math.ceil(width / noiseScale);
+      noiseCanvas.height = Math.ceil(height / noiseScale);
+      noiseCtx = noiseCanvas.getContext('2d');
+      noiseImageData = noiseCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
+    }
+    
+    function applyGrain(targetCtx, intensity) {
+      if (intensity < 0.01) return;
+      
+      if (!noiseCanvas || noiseCanvas.width !== Math.ceil(width / 2)) {
+        initNoiseCanvas();
+      }
+      
+      const data = noiseImageData.data;
+      const len = data.length;
+      
+      // Generate noise
+      for (let i = 0; i < len; i += 4) {
+        const noise = (Math.random() - 0.5) * 255 * intensity;
+        data[i] = 128 + noise;     // R
+        data[i + 1] = 128 + noise; // G
+        data[i + 2] = 128 + noise; // B
+        data[i + 3] = Math.abs(noise) * 0.8; // A - based on noise magnitude
+      }
+      
+      noiseCtx.putImageData(noiseImageData, 0, 0);
+      
+      // Draw scaled noise with overlay blend
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = 'overlay';
+      targetCtx.globalAlpha = intensity * 0.7;
+      targetCtx.imageSmoothingEnabled = false;
+      targetCtx.drawImage(noiseCanvas, 0, 0, width, height);
+      targetCtx.restore();
+      
+      // Add some bright specks for film-like quality
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = 'lighter';
+      const speckCount = Math.floor(width * height * 0.00003 * intensity);
+      for (let i = 0; i < speckCount; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const brightness = Math.random() * 0.3 * intensity;
+        targetCtx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+        targetCtx.fillRect(x, y, 1, 1);
+      }
+      targetCtx.restore();
+    }
+    
+    // ===========================================
     // ZOOM BLUR EFFECT
     // ===========================================
     function applyZoomBlur(sourceCanvas, targetCtx, intensity) {
       const cx = width / 2;
       const cy = height / 2;
-      
-      // Number of blur passes
       const passes = 12;
       
-      // Clear target with background
       targetCtx.fillStyle = '#000004';
       targetCtx.fillRect(0, 0, width, height);
       
-      // Draw multiple scaled copies from center
       for (let i = passes - 1; i >= 0; i--) {
         const t = i / passes;
         const scale = 1 + t * intensity * 0.15;
@@ -389,40 +632,161 @@
         targetCtx.save();
         targetCtx.globalAlpha = alpha;
         targetCtx.globalCompositeOperation = 'lighter';
-        
-        // Scale from center
         targetCtx.translate(cx, cy);
         targetCtx.scale(scale, scale);
         targetCtx.translate(-cx, -cy);
-        
         targetCtx.drawImage(sourceCanvas, 0, 0);
         targetCtx.restore();
       }
       
-      // Draw the sharp original on top
       targetCtx.globalAlpha = 1;
       targetCtx.globalCompositeOperation = 'source-over';
       targetCtx.drawImage(sourceCanvas, 0, 0);
     }
     
     // ===========================================
+    // DEBUG PANEL
+    // ===========================================
+    const panel = new DebugPanel({
+      title: 'Rippling Grid',
+      storageKey: 'gridCirclesSettings',
+      schema: {
+        cellSize: {
+          type: 'number', label: 'Cell Size',
+          min: 40, max: 150, step: 5, default: DEFAULT_CONFIG.cellSize,
+          group: 'Grid'
+        },
+        speed: {
+          type: 'number', label: 'Speed',
+          min: 20, max: 300, default: DEFAULT_CONFIG.speed, unit: '%',
+          group: 'Animation'
+        },
+        waveDelay: {
+          type: 'number', label: 'Wave Delay',
+          min: 0, max: 50, default: DEFAULT_CONFIG.waveDelay,
+          group: 'Animation'
+        },
+        cycleDuration: {
+          type: 'number', label: 'Cycle Duration',
+          min: 50, max: 500, step: 10, default: DEFAULT_CONFIG.cycleDuration,
+          group: 'Animation'
+        },
+        noiseScale: {
+          type: 'number', label: 'Noise Scale',
+          min: 0, max: 100, default: DEFAULT_CONFIG.noiseScale, unit: '%',
+          group: 'Animation'
+        },
+        noiseStrength: {
+          type: 'number', label: 'Noise Strength',
+          min: 0, max: 100, default: DEFAULT_CONFIG.noiseStrength, unit: '%',
+          group: 'Animation'
+        },
+        bloom: {
+          type: 'number', label: 'Bloom Intensity',
+          min: 0, max: 300, default: DEFAULT_CONFIG.bloom, unit: '%',
+          group: 'Visual'
+        },
+        chroma: {
+          type: 'number', label: 'Chromatic Aberration',
+          min: 0, max: 400, default: DEFAULT_CONFIG.chroma, unit: '%',
+          group: 'Visual'
+        },
+        colorShift: {
+          type: 'number', label: 'Color Shift',
+          min: 0, max: 360, default: DEFAULT_CONFIG.colorShift, unit: '°',
+          group: 'Visual'
+        },
+        zoomBlur: {
+          type: 'number', label: 'Zoom Blur',
+          min: 0, max: 100, default: DEFAULT_CONFIG.zoomBlur, unit: '%',
+          group: 'Visual'
+        },
+        grain: {
+          type: 'number', label: 'Film Grain',
+          min: 0, max: 100, default: DEFAULT_CONFIG.grain, unit: '%',
+          group: 'Visual'
+        },
+        perspective: {
+          type: 'number', label: 'Perspective',
+          min: 200, max: 3000, step: 50, default: DEFAULT_CONFIG.perspective,
+          group: 'Camera'
+        },
+        resetCamera: {
+          type: 'trigger', label: 'Reset Camera',
+          group: 'Camera'
+        }
+      },
+      getConfig: () => panel.getValues(),
+      onChange: (name, value) => {
+        switch (name) {
+          case 'cellSize':
+            CONFIG.cellSize = value;
+            resize();
+            break;
+          case 'speed':
+            CONFIG.speed = value / 100;
+            break;
+          case 'waveDelay':
+            CONFIG.waveDelay = value / 100;
+            break;
+          case 'cycleDuration':
+            CONFIG.cycleDuration = value / 100;
+            break;
+          case 'noiseScale':
+            CONFIG.noiseScale = value / 100;
+            break;
+          case 'noiseStrength':
+            CONFIG.noiseStrength = value / 100;
+            break;
+          case 'bloom':
+            CONFIG.bloomIntensity = value / 100;
+            break;
+          case 'chroma':
+            CONFIG.chromaticAberration = value / 100;
+            break;
+          case 'colorShift':
+            CONFIG.colorShift = value;
+            break;
+          case 'zoomBlur':
+            CONFIG.zoomBlur = value / 100;
+            break;
+          case 'grain':
+            CONFIG.grain = value / 100;
+            break;
+          case 'perspective':
+            camera.perspective = value;
+            break;
+          case 'resetCamera':
+            camera.panX = 0;
+            camera.panY = 0;
+            camera.tiltX = 0;
+            camera.tiltY = 0;
+            break;
+        }
+      }
+    });
+
+    createHint('D: controls | Drag: pan | Shift+drag: tilt | IJKL: tilt | R: reset');
+    
+    // ===========================================
     // MAIN RENDER LOOP
     // ===========================================
     function render(time) {
+      updateCameraFromKeyboard();
+      
       const t = time * 0.001 * CONFIG.speed;
       
       if (CONFIG.zoomBlur > 0.01) {
-        // Render scene to offscreen canvas
         renderScene(offCtx, t);
-        
-        // Apply zoom blur from offscreen to main canvas
         applyZoomBlur(offCanvas, ctx, CONFIG.zoomBlur);
       } else {
-        // No zoom blur - render directly
         renderScene(ctx, t);
       }
       
-      // Add subtle vignette
+      // Film grain
+      applyGrain(ctx, CONFIG.grain);
+      
+      // Vignette
       const vignette = ctx.createRadialGradient(
         width / 2, height / 2, Math.min(width, height) * 0.3,
         width / 2, height / 2, Math.max(width, height) * 0.8
@@ -432,138 +796,11 @@
       ctx.fillStyle = vignette;
       ctx.fillRect(0, 0, width, height);
       
-      // Add film grain
-      if (Math.random() > 0.5) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${Math.random() * 0.015})`;
-        for (let i = 0; i < 50; i++) {
-          const gx = Math.random() * width;
-          const gy = Math.random() * height;
-          ctx.fillRect(gx, gy, 1, 1);
-        }
-      }
-      
+      panel.update(t);
       requestAnimationFrame(render);
     }
     
     requestAnimationFrame(render);
-    
-    // ===========================================
-    // DEBUG PANEL
-    // ===========================================
-    const debugPanel = document.getElementById('debugPanel');
-    
-    // Detect if we're in an iframe (grid overview) and hide debug UI
-    const isInIframe = window.self !== window.top;
-    if (isInIframe) {
-      document.querySelector('.hint')?.remove();
-    }
-
-    // Toggle debug panel (disabled in iframe)
-    window.addEventListener('keydown', (e) => {
-      if (isInIframe) return;
-      if (e.key === 'd' || e.key === 'D') {
-        debugPanel.classList.toggle('visible');
-      }
-    });
-    
-    // Make panel draggable
-    const panelHeader = debugPanel.querySelector('h3');
-    let isDragging = false;
-    let dragStartX, dragStartY, panelStartX, panelStartY;
-    
-    panelHeader.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      debugPanel.classList.add('dragging');
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = debugPanel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      e.preventDefault();
-    });
-    
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      let newX = panelStartX + dx;
-      let newY = panelStartY + dy;
-      
-      const rect = debugPanel.getBoundingClientRect();
-      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
-      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
-      
-      debugPanel.style.left = newX + 'px';
-      debugPanel.style.top = newY + 'px';
-      debugPanel.style.right = 'auto';
-    });
-    
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        debugPanel.classList.remove('dragging');
-      }
-    });
-    
-    // Slider handlers
-    const sliderCellSize = document.getElementById('sliderCellSize');
-    const cellSizeValue = document.getElementById('cellSizeValue');
-    const sliderSpeed = document.getElementById('sliderSpeed');
-    const speedValue = document.getElementById('speedValue');
-    const sliderWaveDelay = document.getElementById('sliderWaveDelay');
-    const waveDelayValue = document.getElementById('waveDelayValue');
-    const sliderCycleDuration = document.getElementById('sliderCycleDuration');
-    const cycleDurationValue = document.getElementById('cycleDurationValue');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderChroma = document.getElementById('sliderChroma');
-    const chromaValue = document.getElementById('chromaValue');
-    const sliderColorShift = document.getElementById('sliderColorShift');
-    const colorShiftValue = document.getElementById('colorShiftValue');
-    
-    sliderCellSize.addEventListener('input', () => {
-      CONFIG.cellSize = parseInt(sliderCellSize.value);
-      cellSizeValue.textContent = CONFIG.cellSize;
-      resize();
-    });
-    
-    sliderSpeed.addEventListener('input', () => {
-      CONFIG.speed = sliderSpeed.value / 100;
-      speedValue.textContent = sliderSpeed.value + '%';
-    });
-    
-    sliderWaveDelay.addEventListener('input', () => {
-      CONFIG.waveDelay = sliderWaveDelay.value / 100;
-      waveDelayValue.textContent = CONFIG.waveDelay.toFixed(2);
-    });
-    
-    sliderCycleDuration.addEventListener('input', () => {
-      CONFIG.cycleDuration = sliderCycleDuration.value / 100;
-      cycleDurationValue.textContent = CONFIG.cycleDuration.toFixed(1) + 's';
-    });
-    
-    sliderBloom.addEventListener('input', () => {
-      CONFIG.bloomIntensity = sliderBloom.value / 100;
-      bloomValue.textContent = sliderBloom.value + '%';
-    });
-    
-    sliderChroma.addEventListener('input', () => {
-      CONFIG.chromaticAberration = sliderChroma.value / 100;
-      chromaValue.textContent = sliderChroma.value + '%';
-    });
-    
-    sliderColorShift.addEventListener('input', () => {
-      CONFIG.colorShift = parseInt(sliderColorShift.value);
-      colorShiftValue.textContent = CONFIG.colorShift + '°';
-    });
-    
-    const sliderZoomBlur = document.getElementById('sliderZoomBlur');
-    const zoomBlurValue = document.getElementById('zoomBlurValue');
-    
-    sliderZoomBlur.addEventListener('input', () => {
-      CONFIG.zoomBlur = sliderZoomBlur.value / 100;
-      zoomBlurValue.textContent = sliderZoomBlur.value + '%';
-    });
   </script>
 </body>
 </html>

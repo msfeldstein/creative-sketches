@@ -9,105 +9,6 @@
     body { overflow: hidden; background: #000003; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; cursor: crosshair; }
     canvas { display: block; }
     
-    #debugPanel {
-      position: fixed;
-      top: 20px;
-      right: 20px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid rgba(100, 200, 255, 0.3);
-      border-radius: 8px;
-      padding: 16px;
-      color: #fff;
-      min-width: 200px;
-      display: none;
-      z-index: 1000;
-      max-height: calc(100vh - 40px);
-      overflow-y: auto;
-    }
-    #debugPanel.visible { display: block; }
-    #debugPanel.dragging { user-select: none; }
-    #debugPanel h3 {
-      margin: -16px -16px 12px -16px;
-      padding: 12px 16px;
-      font-size: 14px;
-      color: rgba(100, 200, 255, 0.9);
-      text-transform: uppercase;
-      letter-spacing: 1px;
-      cursor: grab;
-      background: rgba(100, 200, 255, 0.1);
-      border-radius: 8px 8px 0 0;
-      border-bottom: 1px solid rgba(100, 200, 255, 0.2);
-    }
-    #debugPanel h3:active { cursor: grabbing; }
-    #debugPanel .section {
-      margin-bottom: 16px;
-    }
-    #debugPanel .section-title {
-      font-size: 11px;
-      color: rgba(255, 255, 255, 0.5);
-      margin-bottom: 8px;
-      text-transform: uppercase;
-    }
-    #debugPanel button {
-      display: block;
-      width: 100%;
-      padding: 8px 12px;
-      margin-bottom: 6px;
-      background: rgba(100, 200, 255, 0.15);
-      border: 1px solid rgba(100, 200, 255, 0.3);
-      border-radius: 4px;
-      color: #fff;
-      font-size: 13px;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-    #debugPanel button:hover {
-      background: rgba(100, 200, 255, 0.3);
-      border-color: rgba(100, 200, 255, 0.5);
-    }
-    #debugPanel button:active {
-      background: rgba(100, 200, 255, 0.4);
-    }
-    #debugPanel button.active {
-      background: rgba(100, 200, 255, 0.4);
-      border-color: rgba(100, 200, 255, 0.7);
-    }
-    #debugPanel .checkbox-label {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 0;
-      font-size: 13px;
-      cursor: pointer;
-    }
-    #debugPanel .checkbox-label input {
-      width: 16px;
-      height: 16px;
-      cursor: pointer;
-    }
-    #debugPanel .slider-label {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 6px 0;
-      font-size: 13px;
-    }
-    #debugPanel .slider-label span {
-      display: flex;
-      justify-content: space-between;
-    }
-    #debugPanel .slider-label input[type="range"] {
-      width: 100%;
-      cursor: pointer;
-    }
-    .hint {
-      position: fixed;
-      bottom: 20px;
-      left: 20px;
-      color: rgba(255, 255, 255, 0.3);
-      font-size: 12px;
-    }
-    
     /* Audio Panel */
     #audioPanel {
       position: fixed;
@@ -210,84 +111,6 @@
   </style>
 </head>
 <body>
-  <div id="debugPanel">
-    <h3>Debug Panel</h3>
-    <div class="section">
-      <button id="btnRegenerate">Regenerate Tree</button>
-    </div>
-    <div class="section">
-      <div class="section-title">Camera Flows</div>
-      <button id="btnTopDownZoom">Top Down Zoom</button>
-      <button id="btnResetCamera">Reset Camera</button>
-    </div>
-    <div class="section">
-      <div class="section-title">Toggle Effects</div>
-      <label class="checkbox-label"><input type="checkbox" id="chkStars" checked> Background Stars</label>
-      <label class="slider-label">
-        <span>Star Density <span id="starDensityValue">25%</span></span>
-        <input type="range" id="sliderStarDensity" min="0" max="100" value="25">
-      </label>
-      <label class="checkbox-label"><input type="checkbox" id="chkRisingParticles" checked> Rising Sparks</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkShootingStars" checked> Shooting Stars</label>
-    </div>
-    <div class="section">
-      <div class="section-title">Visual Controls</div>
-      <label class="slider-label">
-        <span>Tree Rotation <span id="rotationValue">100%</span></span>
-        <input type="range" id="sliderRotation" min="0" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Bloom Intensity <span id="bloomValue">39%</span></span>
-        <input type="range" id="sliderBloom" min="0" max="150" value="39">
-      </label>
-      <label class="slider-label">
-        <span>Particle Speed <span id="speedValue">186%</span></span>
-        <input type="range" id="sliderSpeed" min="10" max="300" value="186">
-      </label>
-      <label class="slider-label">
-        <span>Color Shift <span id="colorShiftValue">0°</span></span>
-        <input type="range" id="sliderColorShift" min="0" max="360" value="0">
-      </label>
-      <label class="slider-label">
-        <span>Trail Brightness <span id="trailBrightnessValue">100%</span></span>
-        <input type="range" id="sliderTrailBrightness" min="10" max="200" value="100">
-      </label>
-      <label class="slider-label">
-        <span>Branch Sway <span id="undulationValue">50%</span></span>
-        <input type="range" id="sliderUndulation" min="0" max="200" value="50">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Glitch Lab</div>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchJitter"> Camera Jitter</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchBloom"> Bloom Spikes</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchWrap"> Ignore Trail Wrap</label>
-      <label class="checkbox-label"><input type="checkbox" id="chkGlitchPath"> Path Jitter</label>
-    </div>
-    <div class="section">
-      <div class="section-title">Moon</div>
-      <label class="slider-label">
-        <span>Phase <span id="moonPhaseValue">New</span></span>
-        <input type="range" id="sliderMoonPhase" min="0" max="100" value="0">
-      </label>
-      <label class="slider-label">
-        <span>Rotation <span id="moonRotationValue">333°</span></span>
-        <input type="range" id="sliderMoonRotation" min="0" max="360" value="333">
-      </label>
-      <label class="slider-label">
-        <span>Occlusion <span id="moonOcclusionValue">44%</span></span>
-        <input type="range" id="sliderMoonOcclusion" min="30" max="60" value="44">
-      </label>
-    </div>
-    <div class="section">
-      <div class="section-title">Dev Tools</div>
-      <button id="btnCopyConfig">Copy Config to Clipboard</button>
-      <button id="btnReload">Reload Page</button>
-      <label class="checkbox-label"><input type="checkbox" id="chkLiveReload"> Live Reload (2s)</label>
-    </div>
-  </div>
-  <div class="hint" style="display:none;">Press D for debug panel • Press A for audio</div>
-  
   <div id="audioPanel">
     <h4>Audio Reactive</h4>
     <div class="track-info" id="trackInfo">No track loaded</div>
@@ -328,6 +151,7 @@
     import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
     import { AudioSignals } from '/lib/audio-signals.js';
     import { getSongList, loadSongWithAudio } from '/lib/song-storage.js';
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
 
     // ===========================================
     // DEFAULT CONFIG - Edit these values directly
@@ -1644,27 +1468,30 @@
         bloomPass.strength = baseBloomStrength + s.energy * 0.4;
         
         // Modulate particle speed with bass
-        treeMat.uniforms.uSpeedMult.value = (sliderSpeed.value / 100) * (1 + s.bass * 0.5);
+        const baseSpeed = panel.get('particleSpeed') / 100;
+        treeMat.uniforms.uSpeedMult.value = baseSpeed * (1 + s.bass * 0.5);
         
         // Modulate color shift with mid frequencies
-        treeMat.uniforms.uColorShift.value = (sliderColorShift.value / 360) + s.mid * 0.1;
+        const baseColorShift = panel.get('colorShift') / 360;
+        treeMat.uniforms.uColorShift.value = baseColorShift + s.mid * 0.1;
         
         // Modulate branch sway with low frequencies
-        treeMat.uniforms.uUndulation.value = (sliderUndulation.value / 100) * (1 + s.sub * 0.8);
+        const baseUndulation = panel.get('undulation') / 100;
+        treeMat.uniforms.uUndulation.value = baseUndulation * (1 + s.sub * 0.8);
         
         // Kick triggers a burst effect (increase brightness temporarily)
+        const baseBrightness = panel.get('trailBrightness') / 100;
         if (s.kick && time - lastKickTime > 100) {
           lastKickTime = time;
           kickBurstActive = true;
-          treeMat.uniforms.uBrightness.value = (sliderTrailBrightness.value / 100) * 2.0;
+          treeMat.uniforms.uBrightness.value = baseBrightness * 2.0;
         }
         
         // Decay kick burst
         if (kickBurstActive) {
           const currentBrightness = treeMat.uniforms.uBrightness.value;
-          const targetBrightness = sliderTrailBrightness.value / 100;
-          treeMat.uniforms.uBrightness.value = Math.max(targetBrightness, currentBrightness * 0.95);
-          if (currentBrightness <= targetBrightness * 1.05) {
+          treeMat.uniforms.uBrightness.value = Math.max(baseBrightness, currentBrightness * 0.95);
+          if (currentBrightness <= baseBrightness * 1.05) {
             kickBurstActive = false;
           }
         }
@@ -1712,393 +1539,121 @@
       composer.setSize(window.innerWidth, window.innerHeight);
     });
 
-    // Debug Panel
-    const debugPanel = document.getElementById('debugPanel');
-    const btnRegenerate = document.getElementById('btnRegenerate');
-    const btnTopDownZoom = document.getElementById('btnTopDownZoom');
-    const btnResetCamera = document.getElementById('btnResetCamera');
-    const chkStars = document.getElementById('chkStars');
-    const chkRisingParticles = document.getElementById('chkRisingParticles');
-    const chkShootingStars = document.getElementById('chkShootingStars');
-    const sliderStarDensity = document.getElementById('sliderStarDensity');
-    const starDensityValue = document.getElementById('starDensityValue');
-    
-    // New slider references
-    const sliderRotation = document.getElementById('sliderRotation');
-    const rotationValue = document.getElementById('rotationValue');
-    const sliderBloom = document.getElementById('sliderBloom');
-    const bloomValue = document.getElementById('bloomValue');
-    const sliderSpeed = document.getElementById('sliderSpeed');
-    const speedValue = document.getElementById('speedValue');
-    const sliderColorShift = document.getElementById('sliderColorShift');
-    const colorShiftValue = document.getElementById('colorShiftValue');
-    const sliderTrailBrightness = document.getElementById('sliderTrailBrightness');
-    const trailBrightnessValue = document.getElementById('trailBrightnessValue');
-    const sliderMoonPhase = document.getElementById('sliderMoonPhase');
-    const moonPhaseValue = document.getElementById('moonPhaseValue');
-    const sliderMoonRotation = document.getElementById('sliderMoonRotation');
-    const moonRotationValue = document.getElementById('moonRotationValue');
-    const sliderMoonOcclusion = document.getElementById('sliderMoonOcclusion');
-    const moonOcclusionValue = document.getElementById('moonOcclusionValue');
-    const sliderUndulation = document.getElementById('sliderUndulation');
-    const undulationValue = document.getElementById('undulationValue');
-    const chkGlitchJitter = document.getElementById('chkGlitchJitter');
-    const chkGlitchBloom = document.getElementById('chkGlitchBloom');
-    const chkGlitchWrap = document.getElementById('chkGlitchWrap');
-    const chkGlitchPath = document.getElementById('chkGlitchPath');
-    
-    // LocalStorage persistence
-    const STORAGE_KEY = 'particleForestSettings';
-    
-    // Get current config in the same format as DEFAULT_CONFIG
-    function getCurrentConfig() {
-      return {
-        starDensity: parseInt(sliderStarDensity.value),
-        treeRotation: parseInt(sliderRotation.value),
-        bloom: parseInt(sliderBloom.value),
-        particleSpeed: parseInt(sliderSpeed.value),
-        colorShift: parseInt(sliderColorShift.value),
-        trailBrightness: parseInt(sliderTrailBrightness.value),
-        undulation: parseInt(sliderUndulation.value),
-        moonPhase: parseInt(sliderMoonPhase.value),
-        moonRotation: parseInt(sliderMoonRotation.value),
-        moonOcclusion: parseInt(sliderMoonOcclusion.value),
-        showStars: chkStars.checked,
-        showRisingSparks: chkRisingParticles.checked,
-        showShootingStars: chkShootingStars.checked,
-        glitchJitter: chkGlitchJitter.checked,
-        glitchBloom: chkGlitchBloom.checked,
-        glitchWrap: chkGlitchWrap.checked,
-        glitchPath: chkGlitchPath.checked
-      };
-    }
-    
-    function saveSettings() {
-      const rect = debugPanel.getBoundingClientRect();
-      const settings = {
-        debugOpen: debugPanel.classList.contains('visible'),
-        panelX: debugPanel.style.left ? rect.left : null,
-        panelY: debugPanel.style.top ? rect.top : null,
-        chkStars: chkStars.checked,
-        chkRisingParticles: chkRisingParticles.checked,
-        chkShootingStars: chkShootingStars.checked,
-        starDensity: sliderStarDensity.value,
-        rotation: sliderRotation.value,
-        bloom: sliderBloom.value,
-        speed: sliderSpeed.value,
-        colorShift: sliderColorShift.value,
-        trailBrightness: sliderTrailBrightness.value,
-        undulation: sliderUndulation.value,
-        moonPhase: sliderMoonPhase.value,
-        moonRotation: sliderMoonRotation.value,
-        moonOcclusion: sliderMoonOcclusion.value,
-        glitchJitter: chkGlitchJitter.checked,
-        glitchBloom: chkGlitchBloom.checked,
-        glitchWrap: chkGlitchWrap.checked,
-        glitchPath: chkGlitchPath.checked
-      };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    }
-    
-    function loadSettings() {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      
-      // Always sync UI with current values (from DEFAULT_CONFIG or localStorage)
-      function applyConfig(config) {
-        // Sliders
-        sliderStarDensity.value = config.starDensity;
-        starDensityValue.textContent = config.starDensity + '%';
-        
-        sliderRotation.value = config.treeRotation;
-        rotationValue.textContent = config.treeRotation + '%';
-        
-        sliderBloom.value = config.bloom;
-        bloomValue.textContent = config.bloom + '%';
-        
-        sliderSpeed.value = config.particleSpeed;
-        speedValue.textContent = config.particleSpeed + '%';
-        
-        sliderColorShift.value = config.colorShift;
-        colorShiftValue.textContent = config.colorShift + '°';
-        
-        sliderTrailBrightness.value = config.trailBrightness;
-        trailBrightnessValue.textContent = config.trailBrightness + '%';
-        
-        sliderUndulation.value = config.undulation;
-        undulationValue.textContent = config.undulation + '%';
-        
-        sliderMoonPhase.value = config.moonPhase;
-        const phasePercent = config.moonPhase;
-        moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
-        
-        sliderMoonRotation.value = config.moonRotation;
-        moonRotationValue.textContent = config.moonRotation + '°';
-        
-        sliderMoonOcclusion.value = config.moonOcclusion;
-        moonOcclusionValue.textContent = config.moonOcclusion + '%';
-        
-        // Checkboxes
-        chkStars.checked = config.showStars;
-        stars.visible = config.showStars;
-        
-        chkRisingParticles.checked = config.showRisingSparks;
-        tipSparks.mesh.visible = config.showRisingSparks;
-        
-        chkShootingStars.checked = config.showShootingStars;
-        shootingStars.mesh.visible = config.showShootingStars;
-        
-        chkGlitchJitter.checked = config.glitchJitter;
-        glitchJitter = config.glitchJitter;
-        
-        chkGlitchBloom.checked = config.glitchBloom;
-        glitchBloom = config.glitchBloom;
-        
-        chkGlitchWrap.checked = config.glitchWrap;
-        glitchWrap = config.glitchWrap;
-        treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
-        
-        chkGlitchPath.checked = config.glitchPath;
-        glitchPath = config.glitchPath;
-        treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+    // ===========================================
+    // DEBUG PANEL (using unified component)
+    // ===========================================
+    const panel = new DebugPanel({
+      title: 'Spirit Tree',
+      storageKey: 'particleForestSettings',
+      schema: {
+        // Toggle Effects
+        showStars: { type: 'boolean', label: 'Background Stars', default: DEFAULT_CONFIG.showStars, group: 'Toggle Effects' },
+        starDensity: { type: 'number', label: 'Star Density', min: 0, max: 100, default: DEFAULT_CONFIG.starDensity, unit: '%', group: 'Toggle Effects' },
+        showRisingSparks: { type: 'boolean', label: 'Rising Sparks', default: DEFAULT_CONFIG.showRisingSparks, group: 'Toggle Effects' },
+        showShootingStars: { type: 'boolean', label: 'Shooting Stars', default: DEFAULT_CONFIG.showShootingStars, group: 'Toggle Effects' },
+        // Visual Controls
+        treeRotation: { type: 'number', label: 'Tree Rotation', min: 0, max: 200, default: DEFAULT_CONFIG.treeRotation, unit: '%', group: 'Visual' },
+        bloom: { type: 'number', label: 'Bloom Intensity', min: 0, max: 150, default: DEFAULT_CONFIG.bloom, unit: '%', group: 'Visual' },
+        particleSpeed: { type: 'number', label: 'Particle Speed', min: 10, max: 300, default: DEFAULT_CONFIG.particleSpeed, unit: '%', group: 'Visual' },
+        colorShift: { type: 'number', label: 'Color Shift', min: 0, max: 360, default: DEFAULT_CONFIG.colorShift, unit: '°', group: 'Visual' },
+        trailBrightness: { type: 'number', label: 'Trail Brightness', min: 10, max: 200, default: DEFAULT_CONFIG.trailBrightness, unit: '%', group: 'Visual' },
+        undulation: { type: 'number', label: 'Branch Sway', min: 0, max: 200, default: DEFAULT_CONFIG.undulation, unit: '%', group: 'Visual' },
+        // Glitch Lab
+        glitchJitter: { type: 'boolean', label: 'Camera Jitter', default: DEFAULT_CONFIG.glitchJitter, group: 'Glitch Lab' },
+        glitchBloom: { type: 'boolean', label: 'Bloom Spikes', default: DEFAULT_CONFIG.glitchBloom, group: 'Glitch Lab' },
+        glitchWrap: { type: 'boolean', label: 'Ignore Trail Wrap', default: DEFAULT_CONFIG.glitchWrap, group: 'Glitch Lab' },
+        glitchPath: { type: 'boolean', label: 'Path Jitter', default: DEFAULT_CONFIG.glitchPath, group: 'Glitch Lab' },
+        // Moon
+        moonPhase: { type: 'number', label: 'Phase', min: 0, max: 100, default: DEFAULT_CONFIG.moonPhase, unit: '%', group: 'Moon' },
+        moonRotation: { type: 'number', label: 'Rotation', min: 0, max: 360, default: DEFAULT_CONFIG.moonRotation, unit: '°', group: 'Moon' },
+        moonOcclusion: { type: 'number', label: 'Occlusion', min: 30, max: 60, default: DEFAULT_CONFIG.moonOcclusion, unit: '%', group: 'Moon' },
+      },
+      sections: [
+        {
+          title: 'Actions',
+          content: (container) => {
+            const btnRegenerate = document.createElement('button');
+            btnRegenerate.className = 'debug-panel-button';
+            btnRegenerate.textContent = 'Regenerate Tree';
+            btnRegenerate.onclick = regenerateTree;
+            container.appendChild(btnRegenerate);
+          }
+        },
+        {
+          title: 'Camera',
+          content: (container) => {
+            const btnTopDown = document.createElement('button');
+            btnTopDown.className = 'debug-panel-button';
+            btnTopDown.textContent = 'Top Down Zoom';
+            btnTopDown.onclick = startTopDownZoom;
+            container.appendChild(btnTopDown);
+            
+            const btnReset = document.createElement('button');
+            btnReset.className = 'debug-panel-button';
+            btnReset.textContent = 'Reset Camera';
+            btnReset.onclick = resetCamera;
+            container.appendChild(btnReset);
+          }
+        }
+      ],
+      getConfig: () => panel.getValues(),
+      onChange: (name, value) => {
+        switch (name) {
+          // Toggle Effects
+          case 'showStars': stars.visible = value; break;
+          case 'starDensity': stars.material.uniforms.uDensity.value = value / 100; break;
+          case 'showRisingSparks': tipSparks.mesh.visible = value; break;
+          case 'showShootingStars': shootingStars.mesh.visible = value; break;
+          // Visual
+          case 'treeRotation': rotationSpeed = (value / 100) * 0.05; break;
+          case 'bloom': baseBloomStrength = value / 100; bloomPass.strength = baseBloomStrength; break;
+          case 'particleSpeed': treeMat.uniforms.uSpeedMult.value = value / 100; break;
+          case 'colorShift': treeMat.uniforms.uColorShift.value = value / 360; break;
+          case 'trailBrightness': treeMat.uniforms.uBrightness.value = value / 100; break;
+          case 'undulation': treeMat.uniforms.uUndulation.value = value / 100; break;
+          // Glitch
+          case 'glitchJitter': glitchJitter = value; break;
+          case 'glitchBloom': glitchBloom = value; if (!value) bloomPass.strength = baseBloomStrength; break;
+          case 'glitchWrap': glitchWrap = value; treeMat.uniforms.uDebugIgnoreWrap.value = value ? 1 : 0; break;
+          case 'glitchPath': glitchPath = value; treeMat.uniforms.uDebugPathJitter.value = value ? 1 : 0; break;
+          // Moon
+          case 'moonPhase': moon.material.uniforms.uPhase.value = value / 100; break;
+          case 'moonRotation': moon.material.uniforms.uRotation.value = (value / 360) * Math.PI * 2; break;
+          case 'moonOcclusion': moon.material.uniforms.uOcclusion.value = value / 100; break;
+        }
       }
-      
-      // Start with DEFAULT_CONFIG
-      applyConfig(DEFAULT_CONFIG);
-      
-      if (!saved) return;
-      
-      try {
-        const settings = JSON.parse(saved);
-        
-        // Debug panel visibility and position
-        if (settings.debugOpen) {
-          debugPanel.classList.add('visible');
-        }
-        if (settings.panelX !== null && settings.panelY !== null) {
-          debugPanel.style.left = settings.panelX + 'px';
-          debugPanel.style.top = settings.panelY + 'px';
-          debugPanel.style.right = 'auto';
-        }
-        
-        // Override with saved settings
-        if (settings.starDensity !== undefined) {
-          sliderStarDensity.value = settings.starDensity;
-          stars.material.uniforms.uDensity.value = settings.starDensity / 100;
-          starDensityValue.textContent = settings.starDensity + '%';
-        }
-        if (settings.rotation !== undefined) {
-          sliderRotation.value = settings.rotation;
-          rotationSpeed = (settings.rotation / 100) * 0.05;
-          rotationValue.textContent = settings.rotation + '%';
-        }
-        if (settings.bloom !== undefined) {
-          sliderBloom.value = settings.bloom;
-          baseBloomStrength = settings.bloom / 100;
-          bloomPass.strength = baseBloomStrength;
-          bloomValue.textContent = settings.bloom + '%';
-        }
-        if (settings.speed !== undefined) {
-          sliderSpeed.value = settings.speed;
-          treeMat.uniforms.uSpeedMult.value = settings.speed / 100;
-          speedValue.textContent = settings.speed + '%';
-        }
-        if (settings.colorShift !== undefined) {
-          sliderColorShift.value = settings.colorShift;
-          treeMat.uniforms.uColorShift.value = settings.colorShift / 360;
-          colorShiftValue.textContent = settings.colorShift + '°';
-        }
-        if (settings.trailBrightness !== undefined) {
-          sliderTrailBrightness.value = settings.trailBrightness;
-          treeMat.uniforms.uBrightness.value = settings.trailBrightness / 100;
-          trailBrightnessValue.textContent = settings.trailBrightness + '%';
-        }
-        if (settings.undulation !== undefined) {
-          sliderUndulation.value = settings.undulation;
-          treeMat.uniforms.uUndulation.value = settings.undulation / 100;
-          undulationValue.textContent = settings.undulation + '%';
-        }
-        if (settings.moonPhase !== undefined) {
-          sliderMoonPhase.value = settings.moonPhase;
-          moon.material.uniforms.uPhase.value = settings.moonPhase / 100;
-          const phasePercent = parseInt(settings.moonPhase);
-          moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
-        }
-        if (settings.moonRotation !== undefined) {
-          sliderMoonRotation.value = settings.moonRotation;
-          moon.material.uniforms.uRotation.value = (settings.moonRotation / 360) * Math.PI * 2;
-          moonRotationValue.textContent = settings.moonRotation + '°';
-        }
-        if (settings.moonOcclusion !== undefined) {
-          sliderMoonOcclusion.value = settings.moonOcclusion;
-          moon.material.uniforms.uOcclusion.value = settings.moonOcclusion / 100;
-          moonOcclusionValue.textContent = settings.moonOcclusion + '%';
-        }
-        if (settings.chkStars !== undefined) {
-          chkStars.checked = settings.chkStars;
-          stars.visible = settings.chkStars;
-        }
-        if (settings.chkRisingParticles !== undefined) {
-          chkRisingParticles.checked = settings.chkRisingParticles;
-          tipSparks.mesh.visible = settings.chkRisingParticles;
-        }
-        if (settings.chkShootingStars !== undefined) {
-          chkShootingStars.checked = settings.chkShootingStars;
-          shootingStars.mesh.visible = settings.chkShootingStars;
-        }
-        if (settings.glitchJitter !== undefined) {
-          chkGlitchJitter.checked = settings.glitchJitter;
-          glitchJitter = settings.glitchJitter;
-        }
-        if (settings.glitchBloom !== undefined) {
-          chkGlitchBloom.checked = settings.glitchBloom;
-          glitchBloom = settings.glitchBloom;
-        }
-        if (settings.glitchWrap !== undefined) {
-          chkGlitchWrap.checked = settings.glitchWrap;
-          glitchWrap = settings.glitchWrap;
-          treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
-        }
-        if (settings.glitchPath !== undefined) {
-          chkGlitchPath.checked = settings.glitchPath;
-          glitchPath = settings.glitchPath;
-          treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
-        }
-      } catch (e) {
-        console.error('Failed to load settings:', e);
-      }
-    }
-    
-    // Load saved settings on startup
-    loadSettings();
-    
-    // Toggle visibility checkboxes
-    chkStars.addEventListener('change', () => {
-      stars.visible = chkStars.checked;
-      saveSettings();
     });
-    
-    // Star density slider
-    sliderStarDensity.addEventListener('input', () => {
-      const density = sliderStarDensity.value / 100;
-      stars.material.uniforms.uDensity.value = density;
-      starDensityValue.textContent = sliderStarDensity.value + '%';
-      saveSettings();
-    });
-    chkRisingParticles.addEventListener('change', () => {
-      tipSparks.mesh.visible = chkRisingParticles.checked;
-      saveSettings();
-    });
-    chkShootingStars.addEventListener('change', () => {
-      shootingStars.mesh.visible = chkShootingStars.checked;
-      saveSettings();
-    });
-    
-    chkGlitchJitter.addEventListener('change', () => {
-      glitchJitter = chkGlitchJitter.checked;
-      saveSettings();
-    });
-    
-    chkGlitchBloom.addEventListener('change', () => {
-      glitchBloom = chkGlitchBloom.checked;
-      if (!glitchBloom) {
-        bloomPass.strength = baseBloomStrength;
-      }
-      saveSettings();
-    });
-    
-    chkGlitchWrap.addEventListener('change', () => {
-      glitchWrap = chkGlitchWrap.checked;
-      treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
-      saveSettings();
-    });
-    
-    chkGlitchPath.addEventListener('change', () => {
-      glitchPath = chkGlitchPath.checked;
-      treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
-      saveSettings();
-    });
-    
-    // Tree rotation speed
-    sliderRotation.addEventListener('input', () => {
-      rotationSpeed = (sliderRotation.value / 100) * 0.05;
-      rotationValue.textContent = sliderRotation.value + '%';
-      saveSettings();
-    });
-    
-    // Bloom intensity
-    sliderBloom.addEventListener('input', () => {
-      baseBloomStrength = sliderBloom.value / 100;
-      bloomPass.strength = baseBloomStrength;
-      bloomValue.textContent = sliderBloom.value + '%';
-      saveSettings();
-    });
-    
-    // Particle speed
-    sliderSpeed.addEventListener('input', () => {
-      treeMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100;
-      speedValue.textContent = sliderSpeed.value + '%';
-      saveSettings();
-    });
-    
-    // Color shift
-    sliderColorShift.addEventListener('input', () => {
-      const degrees = parseInt(sliderColorShift.value);
-      treeMat.uniforms.uColorShift.value = degrees / 360;
-      colorShiftValue.textContent = degrees + '°';
-      saveSettings();
-    });
-    
-    // Trail brightness
-    sliderTrailBrightness.addEventListener('input', () => {
-      treeMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100;
-      trailBrightnessValue.textContent = sliderTrailBrightness.value + '%';
-      saveSettings();
-    });
-    
-    // Branch undulation/sway
-    sliderUndulation.addEventListener('input', () => {
-      treeMat.uniforms.uUndulation.value = sliderUndulation.value / 100;
-      undulationValue.textContent = sliderUndulation.value + '%';
-      saveSettings();
-    });
-    
-    // Moon phase
-    sliderMoonPhase.addEventListener('input', () => {
-      const phase = sliderMoonPhase.value / 100;
-      moon.material.uniforms.uPhase.value = phase;
-      const phasePercent = parseInt(sliderMoonPhase.value);
-      moonPhaseValue.textContent = phasePercent === 0 ? 'New' : phasePercent === 100 ? 'Full' : phasePercent + '%';
-      saveSettings();
-    });
-    
-    // Moon rotation
-    sliderMoonRotation.addEventListener('input', () => {
-      const degrees = parseInt(sliderMoonRotation.value);
-      moon.material.uniforms.uRotation.value = (degrees / 360) * Math.PI * 2;
-      moonRotationValue.textContent = degrees + '°';
-      saveSettings();
-    });
-    
-    // Moon occlusion size
-    sliderMoonOcclusion.addEventListener('input', () => {
-      moon.material.uniforms.uOcclusion.value = sliderMoonOcclusion.value / 100;
-      moonOcclusionValue.textContent = sliderMoonOcclusion.value + '%';
-      saveSettings();
-    });
-    
-    // Detect if we're in an iframe (grid overview) and hide debug UI
-    const isInIframe = window.self !== window.top;
-    if (isInIframe) {
-      document.querySelector('.hint')?.remove();
-    }
 
-    // Toggle debug panel with 'D' key (disabled in iframe)
+    // Apply initial values from panel (handles localStorage restore)
+    const initValues = panel.getValues();
+    stars.visible = initValues.showStars;
+    stars.material.uniforms.uDensity.value = initValues.starDensity / 100;
+    tipSparks.mesh.visible = initValues.showRisingSparks;
+    shootingStars.mesh.visible = initValues.showShootingStars;
+    rotationSpeed = (initValues.treeRotation / 100) * 0.05;
+    baseBloomStrength = initValues.bloom / 100;
+    bloomPass.strength = baseBloomStrength;
+    treeMat.uniforms.uSpeedMult.value = initValues.particleSpeed / 100;
+    treeMat.uniforms.uColorShift.value = initValues.colorShift / 360;
+    treeMat.uniforms.uBrightness.value = initValues.trailBrightness / 100;
+    treeMat.uniforms.uUndulation.value = initValues.undulation / 100;
+    glitchJitter = initValues.glitchJitter;
+    glitchBloom = initValues.glitchBloom;
+    glitchWrap = initValues.glitchWrap;
+    glitchPath = initValues.glitchPath;
+    treeMat.uniforms.uDebugIgnoreWrap.value = glitchWrap ? 1 : 0;
+    treeMat.uniforms.uDebugPathJitter.value = glitchPath ? 1 : 0;
+    moon.material.uniforms.uPhase.value = initValues.moonPhase / 100;
+    moon.material.uniforms.uRotation.value = (initValues.moonRotation / 360) * Math.PI * 2;
+    moon.material.uniforms.uOcclusion.value = initValues.moonOcclusion / 100;
+
+    // Create hint (auto-hidden in iframe)
+    createHint('Press D for debug panel • Press A for audio');
+
+    // Audio panel toggle
+    const isInIframe = window.self !== window.top;
     window.addEventListener('keydown', (e) => {
       if (isInIframe) return;
-      if (e.key === 'd' || e.key === 'D') {
-        debugPanel.classList.toggle('visible');
-        saveSettings();
-      }
       if (e.key === 'a' || e.key === 'A') {
         document.getElementById('audioPanel').classList.toggle('visible');
       }
@@ -2184,10 +1739,10 @@
       // Reset visual parameters when disabled
       if (!audioReactiveEnabled) {
         bloomPass.strength = baseBloomStrength;
-        treeMat.uniforms.uSpeedMult.value = sliderSpeed.value / 100;
-        treeMat.uniforms.uColorShift.value = sliderColorShift.value / 360;
-        treeMat.uniforms.uUndulation.value = sliderUndulation.value / 100;
-        treeMat.uniforms.uBrightness.value = sliderTrailBrightness.value / 100;
+        treeMat.uniforms.uSpeedMult.value = panel.get('particleSpeed') / 100;
+        treeMat.uniforms.uColorShift.value = panel.get('colorShift') / 360;
+        treeMat.uniforms.uUndulation.value = panel.get('undulation') / 100;
+        treeMat.uniforms.uBrightness.value = panel.get('trailBrightness') / 100;
       }
     });
     
@@ -2197,102 +1752,10 @@
       return `${mins}:${secs.toString().padStart(2, '0')}`;
     }
     
-    // Make debug panel draggable
-    const panelHeader = debugPanel.querySelector('h3');
-    let isDragging = false;
-    let dragStartX, dragStartY, panelStartX, panelStartY;
-    
-    panelHeader.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      debugPanel.classList.add('dragging');
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = debugPanel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      e.preventDefault();
-    });
-    
-    window.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const dx = e.clientX - dragStartX;
-      const dy = e.clientY - dragStartY;
-      let newX = panelStartX + dx;
-      let newY = panelStartY + dy;
-      
-      // Keep panel on screen
-      const rect = debugPanel.getBoundingClientRect();
-      newX = Math.max(0, Math.min(window.innerWidth - rect.width, newX));
-      newY = Math.max(0, Math.min(window.innerHeight - rect.height, newY));
-      
-      debugPanel.style.left = newX + 'px';
-      debugPanel.style.top = newY + 'px';
-      debugPanel.style.right = 'auto';
-    });
-    
-    window.addEventListener('mouseup', () => {
-      if (isDragging) {
-        isDragging = false;
-        debugPanel.classList.remove('dragging');
-        saveSettings();
-      }
-    });
-    
-    // Dev tools buttons
-    const btnCopyConfig = document.getElementById('btnCopyConfig');
-    const btnReload = document.getElementById('btnReload');
-    const chkLiveReload = document.getElementById('chkLiveReload');
-    let liveReloadInterval = null;
-    
-    btnCopyConfig.addEventListener('click', async () => {
-      const config = getCurrentConfig();
-      const configStr = `const DEFAULT_CONFIG = ${JSON.stringify(config, null, 2)};`;
-      try {
-        await navigator.clipboard.writeText(configStr);
-        btnCopyConfig.textContent = 'Copied!';
-        setTimeout(() => {
-          btnCopyConfig.textContent = 'Copy Config to Clipboard';
-        }, 1500);
-      } catch (e) {
-        // Fallback: show in console
-        console.log('Copy this to DEFAULT_CONFIG:\n', configStr);
-        btnCopyConfig.textContent = 'Check Console';
-        setTimeout(() => {
-          btnCopyConfig.textContent = 'Copy Config to Clipboard';
-        }, 1500);
-      }
-    });
-    
-    btnReload.addEventListener('click', () => {
-      location.reload();
-    });
-    
-    chkLiveReload.addEventListener('change', () => {
-      if (chkLiveReload.checked) {
-        // Start polling for file changes
-        let lastModified = null;
-        liveReloadInterval = setInterval(async () => {
-          try {
-            const response = await fetch(location.href, { method: 'HEAD' });
-            const modified = response.headers.get('last-modified');
-            if (lastModified && modified !== lastModified) {
-              location.reload();
-            }
-            lastModified = modified;
-          } catch (e) {
-            // Ignore fetch errors
-          }
-        }, 2000);
-      } else {
-        if (liveReloadInterval) {
-          clearInterval(liveReloadInterval);
-          liveReloadInterval = null;
-        }
-      }
-    });
-    
-    // Regenerate tree
-    btnRegenerate.addEventListener('click', () => {
+    // ===========================================
+    // TREE REGENERATION
+    // ===========================================
+    function regenerateTree() {
       // Generate new tree
       const newTree = generateTree();
       const newPaths = newTree.paths;
@@ -2369,10 +1832,12 @@
       newTipTex.needsUpdate = true;
       tipSparks.material.uniforms.uTipTex.value = newTipTex;
       tipSparks.material.uniforms.uNumTips.value = newPaths.length;
-    });
-    
-    // Top Down Zoom camera animation
-    btnTopDownZoom.addEventListener('click', () => {
+    }
+
+    // ===========================================
+    // CAMERA ANIMATIONS
+    // ===========================================
+    function startTopDownZoom() {
       // Stop any existing animation
       if (cameraAnimation) {
         cameraAnimation.active = false;
@@ -2411,12 +1876,9 @@
           }
         }
       };
-      
-      btnTopDownZoom.classList.add('active');
-    });
+    }
     
-    // Reset camera
-    btnResetCamera.addEventListener('click', () => {
+    function resetCamera() {
       if (cameraAnimation) {
         cameraAnimation.active = false;
       }
@@ -2425,9 +1887,7 @@
       camera.position.set(0, 10, 35);
       camera.lookAt(0, 12, 0);
       controls.target.set(0, 10, 0);
-      
-      btnTopDownZoom.classList.remove('active');
-    });
+    }
   </script>
 </body>
 </html>
