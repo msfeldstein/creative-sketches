@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Caleb's Sky</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body { 
+      overflow: hidden; 
+      background: #000008; 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    
+    // Offscreen canvas for zoom blur effect
+    const offCanvas = document.createElement('canvas');
+    const offCtx = offCanvas.getContext('2d');
+    
+    // ===========================================
+    // CONFIG
+    // ===========================================
+    const DEFAULT_CONFIG = {
+      cellSize: 55,
+      itemSize: 38,
+      speed: 100,
+      waveDelay: 5,
+      cycleDuration: 320,
+      bloom: 300,
+      chroma: 400,
+      colorShift: 26,
+      zoomBlur: 89,
+      grain: 100,
+      perspective: 250,
+      noiseScale: 15,
+      noiseStrength: 30
+    };
+    
+    // Runtime config (will be updated from panel)
+    const CONFIG = {
+      cellSize: DEFAULT_CONFIG.cellSize,
+      itemSize: DEFAULT_CONFIG.itemSize / 100,
+      speed: DEFAULT_CONFIG.speed / 100,
+      waveDelay: DEFAULT_CONFIG.waveDelay / 100,
+      cycleDuration: DEFAULT_CONFIG.cycleDuration / 100,
+      bloomIntensity: DEFAULT_CONFIG.bloom / 100,
+      chromaticAberration: DEFAULT_CONFIG.chroma / 100,
+      colorShift: DEFAULT_CONFIG.colorShift,
+      zoomBlur: DEFAULT_CONFIG.zoomBlur / 100,
+      grain: DEFAULT_CONFIG.grain / 100,
+      noiseScale: DEFAULT_CONFIG.noiseScale / 100,
+      noiseStrength: DEFAULT_CONFIG.noiseStrength / 100
+    };
+    
+    let width, height, cols, rows, centerCol, centerRow, maxDist;
+    
+    // ===========================================
+    // PAN & TILT STATE
+    // ===========================================
+    const camera = {
+      panX: 0,
+      panY: 0,
+      tiltX: 0,  // rotation around X axis (vertical tilt)
+      tiltY: 0,  // rotation around Y axis (horizontal tilt)
+      perspective: DEFAULT_CONFIG.perspective,
+      isDragging: false,
+      isTilting: false,
+      lastX: 0,
+      lastY: 0
+    };
+    
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      offCanvas.width = width;
+      offCanvas.height = height;
+      
+      cols = Math.ceil(width / CONFIG.cellSize) + 2;
+      rows = Math.ceil(height / CONFIG.cellSize) + 2;
+      
+      centerCol = (cols - 1) / 2;
+      centerRow = (rows - 1) / 2;
+      
+      maxDist = Math.sqrt(centerCol * centerCol + centerRow * centerRow);
+    }
+    
+    resize();
+    window.addEventListener('resize', resize);
+    
+    // ===========================================
+    // PAN & TILT CONTROLS
+    // ===========================================
+    canvas.addEventListener('mousedown', (e) => {
+      camera.isDragging = true;
+      camera.isTilting = e.shiftKey || e.button === 2;
+      camera.lastX = e.clientX;
+      camera.lastY = e.clientY;
+      canvas.style.cursor = camera.isTilting ? 'move' : 'grab';
+    });
+    
+    window.addEventListener('mousemove', (e) => {
+      if (!camera.isDragging) return;
+      
+      const deltaX = e.clientX - camera.lastX;
+      const deltaY = e.clientY - camera.lastY;
+      
+      if (camera.isTilting) {
+        // Tilt mode: rotate the view
+        camera.tiltY += deltaX * 0.005;
+        camera.tiltX -= deltaY * 0.005;
+        // Clamp tilt to reasonable values
+        camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+        camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+      } else {
+        // Pan mode: move the view
+        camera.panX += deltaX;
+        camera.panY += deltaY;
+      }
+      
+      camera.lastX = e.clientX;
+      camera.lastY = e.clientY;
+    });
+    
+    window.addEventListener('mouseup', () => {
+      camera.isDragging = false;
+      camera.isTilting = false;
+      canvas.style.cursor = 'default';
+    });
+    
+    // Prevent context menu on right-click
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+    
+    // Touch support
+    canvas.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 1) {
+        camera.isDragging = true;
+        camera.isTilting = false;
+        camera.lastX = e.touches[0].clientX;
+        camera.lastY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        // Two finger touch for tilt
+        camera.isDragging = true;
+        camera.isTilting = true;
+        camera.lastX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        camera.lastY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      }
+      e.preventDefault();
+    }, { passive: false });
+    
+    canvas.addEventListener('touchmove', (e) => {
+      if (!camera.isDragging) return;
+      
+      let currentX, currentY;
+      if (e.touches.length === 1) {
+        currentX = e.touches[0].clientX;
+        currentY = e.touches[0].clientY;
+      } else if (e.touches.length === 2) {
+        currentX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+        currentY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+      } else {
+        return;
+      }
+      
+      const deltaX = currentX - camera.lastX;
+      const deltaY = currentY - camera.lastY;
+      
+      if (camera.isTilting) {
+        camera.tiltY += deltaX * 0.005;
+        camera.tiltX -= deltaY * 0.005;
+        camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+        camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+      } else {
+        camera.panX += deltaX;
+        camera.panY += deltaY;
+      }
+      
+      camera.lastX = currentX;
+      camera.lastY = currentY;
+      e.preventDefault();
+    }, { passive: false });
+    
+    canvas.addEventListener('touchend', () => {
+      camera.isDragging = false;
+      camera.isTilting = false;
+    });
+    
+    // Keyboard controls
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      
+      // Reset view with Escape or R
+      if (e.key === 'Escape' || e.key === 'r' || e.key === 'R') {
+        camera.panX = 0;
+        camera.panY = 0;
+        camera.tiltX = 0;
+        camera.tiltY = 0;
+      }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+      keys[e.key] = false;
+    });
+    
+    // Update camera from keyboard in animation loop
+    function updateCameraFromKeyboard() {
+      const panSpeed = 10;
+      const tiltSpeed = 0.02;
+      
+      // Arrow keys for panning
+      if (keys['ArrowLeft']) camera.panX += panSpeed;
+      if (keys['ArrowRight']) camera.panX -= panSpeed;
+      if (keys['ArrowUp']) camera.panY += panSpeed;
+      if (keys['ArrowDown']) camera.panY -= panSpeed;
+      
+      // IJKL for tilting
+      if (keys['j'] || keys['J']) camera.tiltY -= tiltSpeed;
+      if (keys['l'] || keys['L']) camera.tiltY += tiltSpeed;
+      if (keys['i'] || keys['I']) camera.tiltX += tiltSpeed;
+      if (keys['k'] || keys['K']) camera.tiltX -= tiltSpeed;
+      
+      // Clamp tilt
+      camera.tiltX = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltX));
+      camera.tiltY = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, camera.tiltY));
+    }
+    
+    // ===========================================
+    // EASING & UTILITIES
+    // ===========================================
+    function easeInOutSine(t) {
+      return -(Math.cos(Math.PI * t) - 1) / 2;
+    }
+    
+    function hash(x, y) {
+      let h = x * 374761393 + y * 668265263;
+      h = (h ^ (h >> 13)) * 1274126177;
+      return (h ^ (h >> 16)) / 4294967296 + 0.5;
+    }
+    
+    // Simple 2D Perlin noise
+    function fade(t) {
+      return t * t * t * (t * (t * 6 - 15) + 10);
+    }
+    
+    function lerp(a, b, t) {
+      return a + t * (b - a);
+    }
+    
+    function grad(hash, x, y) {
+      const h = hash & 3;
+      const u = h < 2 ? x : y;
+      const v = h < 2 ? y : x;
+      return ((h & 1) ? -u : u) + ((h & 2) ? -v : v);
+    }
+    
+    // Permutation table
+    const perm = new Array(512);
+    for (let i = 0; i < 256; i++) {
+      perm[i] = perm[i + 256] = Math.floor(hash(i, i * 13) * 256);
+    }
+    
+    function perlin(x, y) {
+      const X = Math.floor(x) & 255;
+      const Y = Math.floor(y) & 255;
+      
+      x -= Math.floor(x);
+      y -= Math.floor(y);
+      
+      const u = fade(x);
+      const v = fade(y);
+      
+      const a = perm[X] + Y;
+      const b = perm[X + 1] + Y;
+      
+      return lerp(
+        lerp(grad(perm[a], x, y), grad(perm[b], x - 1, y), u),
+        lerp(grad(perm[a + 1], x, y - 1), grad(perm[b + 1], x - 1, y - 1), u),
+        v
+      );
+    }
+    
+    // ===========================================
+    // COLOR UTILITIES
+    // ===========================================
+    function hslToRgb(h, s, l) {
+      let r, g, b;
+      if (s === 0) {
+        r = g = b = l;
+      } else {
+        const hue2rgb = (p, q, t) => {
+          if (t < 0) t += 1;
+          if (t > 1) t -= 1;
+          if (t < 1/6) return p + (q - p) * 6 * t;
+          if (t < 1/2) return q;
+          if (t < 2/3) return p + (q - p) * (2/3 - t) * 6;
+          return p;
+        };
+        const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        const p = 2 * l - q;
+        r = hue2rgb(p, q, h + 1/3);
+        g = hue2rgb(p, q, h);
+        b = hue2rgb(p, q, h - 1/3);
+      }
+      return [Math.round(r * 255), Math.round(g * 255), Math.round(b * 255)];
+    }
+    
+    function getColor(distFromCenter, normalizedDist, time, channel = 'all') {
+      const baseHue = 0.55 + CONFIG.colorShift / 360;
+      const hueShift = normalizedDist * 0.15 + Math.sin(time * 0.3) * 0.05;
+      let hue = (baseHue + hueShift) % 1;
+      
+      const chromaOffset = normalizedDist * 0.08 * CONFIG.chromaticAberration;
+      if (channel === 'r') hue = (hue + chromaOffset) % 1;
+      if (channel === 'b') hue = (hue - chromaOffset + 1) % 1;
+      
+      const saturation = 0.8 + normalizedDist * 0.2;
+      const lightness = 0.5 + (1 - normalizedDist) * 0.2;
+      
+      return hslToRgb(hue, saturation, lightness);
+    }
+    
+    // ===========================================
+    // 3D PROJECTION UTILITIES
+    // ===========================================
+    function project3D(x, y, z = 0) {
+      // Apply tilt rotation
+      const cosX = Math.cos(camera.tiltX);
+      const sinX = Math.sin(camera.tiltX);
+      const cosY = Math.cos(camera.tiltY);
+      const sinY = Math.sin(camera.tiltY);
+      
+      // Rotate around Y axis (horizontal tilt)
+      let x1 = x * cosY - z * sinY;
+      let z1 = x * sinY + z * cosY;
+      
+      // Rotate around X axis (vertical tilt)
+      let y1 = y * cosX - z1 * sinX;
+      let z2 = y * sinX + z1 * cosX;
+      
+      // Prevent division by zero or negative (behind camera)
+      const minZ = -camera.perspective * 0.9;
+      if (z2 < minZ) z2 = minZ;
+      
+      // Apply perspective with clamped scale
+      const scale = Math.min(5, Math.max(0.1, camera.perspective / (camera.perspective + z2)));
+      
+      return {
+        x: x1 * scale + width / 2,
+        y: y1 * scale + height / 2,
+        scale: scale,
+        behindCamera: z2 <= minZ
+      };
+    }
+    
+    // ===========================================
+    // RENDER SCENE
+    // ===========================================
+    function renderScene(targetCtx, t) {
+      const bgGradient = targetCtx.createRadialGradient(
+        width / 2, height / 2, 0,
+        width / 2, height / 2, Math.max(width, height) * 0.7
+      );
+      bgGradient.addColorStop(0, '#0a0a12');
+      bgGradient.addColorStop(1, '#000004');
+      targetCtx.fillStyle = bgGradient;
+      targetCtx.fillRect(0, 0, width, height);
+      
+      // Calculate visible cell range based on pan offset (infinite grid)
+      const cellSize = CONFIG.cellSize;
+      const padding = 4; // Extra cells beyond visible area
+      
+      // Calculate which cells are potentially visible
+      let startCol = Math.floor((-camera.panX - width / 2) / cellSize) - padding;
+      let endCol = Math.ceil((-camera.panX + width / 2) / cellSize) + padding;
+      let startRow = Math.floor((-camera.panY - height / 2) / cellSize) - padding;
+      let endRow = Math.ceil((-camera.panY + height / 2) / cellSize) + padding;
+      
+      // Cap total cells to prevent freezing from extreme tilts
+      const maxCells = 2500;
+      const totalCols = endCol - startCol;
+      const totalRows = endRow - startRow;
+      if (totalCols * totalRows > maxCells) {
+        const scale = Math.sqrt(maxCells / (totalCols * totalRows));
+        const halfCols = Math.floor(totalCols * scale / 2);
+        const halfRows = Math.floor(totalRows * scale / 2);
+        const centerCol = Math.floor((startCol + endCol) / 2);
+        const centerRow = Math.floor((startRow + endRow) / 2);
+        startCol = centerCol - halfCols;
+        endCol = centerCol + halfCols;
+        startRow = centerRow - halfRows;
+        endRow = centerRow + halfRows;
+      }
+      
+      // Max distance for color normalization (based on visible range)
+      const visibleMaxDist = Math.sqrt(
+        Math.max(Math.abs(startCol), Math.abs(endCol)) ** 2 +
+        Math.max(Math.abs(startRow), Math.abs(endRow)) ** 2
+      );
+      
+      targetCtx.globalCompositeOperation = 'lighter';
+      
+      // Collect all cells with their depth for sorting
+      const cells = [];
+      
+      for (let row = startRow; row <= endRow; row++) {
+        for (let col = startCol; col <= endCol; col++) {
+          // Distance from origin (0,0) for wave calculation
+          const dist = Math.sqrt(col * col + row * row);
+          const normalizedDist = Math.min(1, dist / Math.max(visibleMaxDist, 1));
+          
+          // Add perlin noise offset for organic variation
+          const noiseOffset = perlin(col * CONFIG.noiseScale, row * CONFIG.noiseScale) * CONFIG.noiseStrength;
+          
+          const phase = t / CONFIG.cycleDuration - dist * CONFIG.waveDelay + noiseOffset;
+          
+          // World position of this cell
+          const worldX = col * cellSize;
+          const worldY = row * cellSize;
+          
+          // Screen position with pan
+          const screenX = worldX + camera.panX;
+          const screenY = worldY + camera.panY;
+          
+          // Calculate depth (z) based on wave phase for subtle 3D effect
+          const waveHeight = Math.sin(phase * Math.PI * 2) * 50;
+          
+          // Project to 3D
+          const projected = project3D(screenX, screenY, waveHeight);
+          
+          // Skip cells behind camera or outside view
+          if (projected.behindCamera) continue;
+          
+          const margin = cellSize * 2;
+          if (projected.x < -margin || projected.x > width + margin ||
+              projected.y < -margin || projected.y > height + margin) {
+            continue;
+          }
+          
+          cells.push({
+            x: projected.x - cellSize * projected.scale / 2,
+            y: projected.y - cellSize * projected.scale / 2,
+            size: cellSize * projected.scale,
+            phase,
+            dist,
+            normalizedDist,
+            depth: waveHeight,
+            scale: projected.scale
+          });
+        }
+      }
+      
+      // Sort by depth (back to front)
+      cells.sort((a, b) => a.depth - b.depth);
+      
+      // Render cells
+      for (const cell of cells) {
+        renderStrokedCellTo(
+          targetCtx, 
+          cell.x, 
+          cell.y, 
+          cell.size, 
+          cell.phase, 
+          cell.dist, 
+          cell.normalizedDist, 
+          t,
+          cell.scale
+        );
+      }
+      
+      targetCtx.globalCompositeOperation = 'source-over';
+    }
+    
+    function renderStrokedCellTo(targetCtx, x, y, size, phase, distFromCenter, normalizedDist, time, projectionScale = 1) {
+      const centerX = x + size / 2;
+      const centerY = y + size / 2;
+      
+      const maxRadius = size * CONFIG.itemSize;
+      
+      const chromaOffset = normalizedDist * 6 * CONFIG.chromaticAberration;
+      
+      const mainWaveValue = Math.sin(phase * Math.PI * 2);
+      const normalizedMainWave = mainWaveValue * 0.5 + 0.5;
+      const fillAmount = Math.pow(Math.max(0, mainWaveValue), 1.5);
+      
+      // Crescent direction - point toward center (inward)
+      // For center item, use straight down (shadow from above)
+      const angleToCenter = distFromCenter < 0.5 
+        ? Math.PI / 2  // straight down for center item
+        : Math.atan2(-centerY + height / 2, -centerX + width / 2);
+      
+      const ringCount = 1;
+      
+      for (let ring = 0; ring < ringCount; ring++) {
+        const ringPhase = phase - ring * 0.15;
+        const waveValue = Math.sin(ringPhase * Math.PI * 2);
+        const radius = maxRadius;
+        const normalizedWave = waveValue * 0.5 + 0.5;
+        // Keep crescents bright - alpha is high for both modes
+        const alpha = 0.85;
+        const baseWidth = 0.5 + (1 - ring / ringCount) * 0.5;
+        const lineWidth = baseWidth * (0.6 + alpha * 0.4);
+        
+        const color = getColor(distFromCenter, normalizedDist, time, 'all');
+        const cx = centerX;
+        const cy = centerY;
+        
+        // Below 0.5 = crescent mode, above 0.5 = sun mode
+        const isCrescent = normalizedWave < 0.5;
+        
+        // Crescent amount: 0 = half moon, 1 = razor thin (only when in crescent mode)
+        // Maps 0-0.5 to 1-0 (inverted, so darker = thinner crescent)
+        const crescentAmount = isCrescent ? 1 - (normalizedWave / 0.5) : 0;
+        
+        // Sun amount: 0 = half, 1 = full sun (only when in sun mode)
+        // Maps 0.5-1.0 to 0-1
+        const sunAmount = isCrescent ? 0 : (normalizedWave - 0.5) / 0.5;
+        
+        // Shadow offset: further away = fuller crescent, closer = thinner
+        const shadowOffset = radius * (0.3 + (1 - crescentAmount) * 1.5);
+        // Shadow larger for thinner crescent
+        const shadowRadius = radius * 1.1;
+        
+        // Chromatic glow behind (subtle)
+        if (CONFIG.chromaticAberration > 0.1) {
+          const glowOffset = chromaOffset * 0.5;
+          targetCtx.beginPath();
+          targetCtx.arc(cx - glowOffset, cy, radius * 1.2, 0, Math.PI * 2);
+          targetCtx.fillStyle = `rgba(255, 100, 100, ${alpha * 0.03 * CONFIG.bloomIntensity})`;
+          targetCtx.fill();
+          targetCtx.beginPath();
+          targetCtx.arc(cx + glowOffset, cy, radius * 1.2, 0, Math.PI * 2);
+          targetCtx.fillStyle = `rgba(100, 100, 255, ${alpha * 0.03 * CONFIG.bloomIntensity})`;
+          targetCtx.fill();
+        }
+        
+        // Outer glow
+        targetCtx.beginPath();
+        targetCtx.arc(cx, cy, radius * 1.3, 0, Math.PI * 2);
+        targetCtx.fillStyle = `rgba(${color[0]}, ${color[1]}, ${color[2]}, ${0.12 * CONFIG.bloomIntensity})`;
+        targetCtx.fill();
+        
+        // Fill color - bright for both crescents and suns
+        const brightness = 0.9;
+        const r = Math.min(255, color[0] + (255 - color[0]) * brightness);
+        const g = Math.min(255, color[1] + (255 - color[1]) * brightness);
+        const b = Math.min(255, color[2] + (255 - color[2]) * brightness);
+        
+        // Shadow position
+        const shadowX = cx + Math.cos(angleToCenter) * shadowOffset;
+        const shadowY = cy + Math.sin(angleToCenter) * shadowOffset;
+        
+        // Draw crescent using clipping
+        targetCtx.save();
+        
+        // Clip to the main circle
+        targetCtx.beginPath();
+        targetCtx.arc(cx, cy, radius, 0, Math.PI * 2);
+        targetCtx.clip();
+        
+        // Fill the entire clipped area
+        targetCtx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+        targetCtx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
+        
+        // Draw black shadow circle (only in crescent mode)
+        if (isCrescent) {
+          targetCtx.globalCompositeOperation = 'source-over';
+          targetCtx.beginPath();
+          targetCtx.arc(shadowX, shadowY, shadowRadius, 0, Math.PI * 2);
+          targetCtx.fillStyle = '#000000';
+          targetCtx.fill();
+        }
+        
+        targetCtx.restore();
+        
+        // SUN MODE: Add rays when in sun mode (normalizedWave > 0.5)
+        if (sunAmount > 0) {
+          const rayIntensity = Math.pow(sunAmount, 1.5);
+          const rayCount = 8;
+          const rayLength = radius * (1.0 + rayIntensity * 2.5);
+          const rayWidth = radius * 0.1 * rayIntensity;
+          const rayAlpha = alpha * 0.6 * rayIntensity;
+          
+          for (let ri = 0; ri < rayCount; ri++) {
+            const angle = (ri / rayCount) * Math.PI * 2 + time * 0.15 + phase;
+            const innerRadius = radius * 0.9;
+            const outerRadius = radius + rayLength;
+            
+            const rayGradient = targetCtx.createLinearGradient(
+              cx + Math.cos(angle) * innerRadius,
+              cy + Math.sin(angle) * innerRadius,
+              cx + Math.cos(angle) * outerRadius,
+              cy + Math.sin(angle) * outerRadius
+            );
+            rayGradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, ${rayAlpha})`);
+            rayGradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0)`);
+            
+            targetCtx.beginPath();
+            const perpAngle = angle + Math.PI / 2;
+            
+            targetCtx.moveTo(
+              cx + Math.cos(angle) * innerRadius + Math.cos(perpAngle) * rayWidth,
+              cy + Math.sin(angle) * innerRadius + Math.sin(perpAngle) * rayWidth
+            );
+            targetCtx.lineTo(
+              cx + Math.cos(angle) * outerRadius + Math.cos(perpAngle) * rayWidth * 0.1,
+              cy + Math.sin(angle) * outerRadius + Math.sin(perpAngle) * rayWidth * 0.1
+            );
+            targetCtx.lineTo(
+              cx + Math.cos(angle) * outerRadius - Math.cos(perpAngle) * rayWidth * 0.1,
+              cy + Math.sin(angle) * outerRadius - Math.sin(perpAngle) * rayWidth * 0.1
+            );
+            targetCtx.lineTo(
+              cx + Math.cos(angle) * innerRadius - Math.cos(perpAngle) * rayWidth,
+              cy + Math.sin(angle) * innerRadius - Math.sin(perpAngle) * rayWidth
+            );
+            targetCtx.closePath();
+            
+            targetCtx.fillStyle = rayGradient;
+            targetCtx.fill();
+          }
+        }
+      }
+    }
+    
+    // ===========================================
+    // GRAIN NOISE EFFECT
+    // ===========================================
+    let noiseCanvas = null;
+    let noiseCtx = null;
+    let noiseImageData = null;
+    
+    function initNoiseCanvas() {
+      // Use a smaller canvas for noise and scale up (more organic look)
+      const noiseScale = 2;
+      noiseCanvas = document.createElement('canvas');
+      noiseCanvas.width = Math.ceil(width / noiseScale);
+      noiseCanvas.height = Math.ceil(height / noiseScale);
+      noiseCtx = noiseCanvas.getContext('2d');
+      noiseImageData = noiseCtx.createImageData(noiseCanvas.width, noiseCanvas.height);
+    }
+    
+    function applyGrain(targetCtx, intensity) {
+      if (intensity < 0.01) return;
+      
+      if (!noiseCanvas || noiseCanvas.width !== Math.ceil(width / 2)) {
+        initNoiseCanvas();
+      }
+      
+      const data = noiseImageData.data;
+      const len = data.length;
+      
+      // Generate noise
+      for (let i = 0; i < len; i += 4) {
+        const noise = (Math.random() - 0.5) * 255 * intensity;
+        data[i] = 128 + noise;     // R
+        data[i + 1] = 128 + noise; // G
+        data[i + 2] = 128 + noise; // B
+        data[i + 3] = Math.abs(noise) * 0.8; // A - based on noise magnitude
+      }
+      
+      noiseCtx.putImageData(noiseImageData, 0, 0);
+      
+      // Draw scaled noise with overlay blend
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = 'overlay';
+      targetCtx.globalAlpha = intensity * 0.7;
+      targetCtx.imageSmoothingEnabled = false;
+      targetCtx.drawImage(noiseCanvas, 0, 0, width, height);
+      targetCtx.restore();
+      
+      // Add some bright specks for film-like quality
+      targetCtx.save();
+      targetCtx.globalCompositeOperation = 'lighter';
+      const speckCount = Math.floor(width * height * 0.00003 * intensity);
+      for (let i = 0; i < speckCount; i++) {
+        const x = Math.random() * width;
+        const y = Math.random() * height;
+        const brightness = Math.random() * 0.3 * intensity;
+        targetCtx.fillStyle = `rgba(255, 255, 255, ${brightness})`;
+        targetCtx.fillRect(x, y, 1, 1);
+      }
+      targetCtx.restore();
+    }
+    
+    // ===========================================
+    // ZOOM BLUR EFFECT
+    // ===========================================
+    function applyZoomBlur(sourceCanvas, targetCtx, intensity) {
+      const cx = width / 2;
+      const cy = height / 2;
+      const passes = 12;
+      
+      targetCtx.fillStyle = '#000004';
+      targetCtx.fillRect(0, 0, width, height);
+      
+      for (let i = passes - 1; i >= 0; i--) {
+        const t = i / passes;
+        const scale = 1 + t * intensity * 0.15;
+        const alpha = (1 - t * 0.7) / passes * 2;
+        
+        targetCtx.save();
+        targetCtx.globalAlpha = alpha;
+        targetCtx.globalCompositeOperation = 'lighter';
+        targetCtx.translate(cx, cy);
+        targetCtx.scale(scale, scale);
+        targetCtx.translate(-cx, -cy);
+        targetCtx.drawImage(sourceCanvas, 0, 0);
+        targetCtx.restore();
+      }
+      
+      targetCtx.globalAlpha = 1;
+      targetCtx.globalCompositeOperation = 'source-over';
+      targetCtx.drawImage(sourceCanvas, 0, 0);
+    }
+    
+    // ===========================================
+    // DEBUG PANEL
+    // ===========================================
+    const panel = new DebugPanel({
+      title: "Caleb's Sky",
+      storageKey: 'calebsSkySettings',
+      schema: {
+        cellSize: {
+          type: 'number', label: 'Cell Size',
+          min: 40, max: 150, step: 5, default: DEFAULT_CONFIG.cellSize,
+          group: 'Grid'
+        },
+        itemSize: {
+          type: 'number', label: 'Item Size',
+          min: 10, max: 80, default: DEFAULT_CONFIG.itemSize, unit: '%',
+          group: 'Grid'
+        },
+        speed: {
+          type: 'number', label: 'Speed',
+          min: 20, max: 300, default: DEFAULT_CONFIG.speed, unit: '%',
+          group: 'Animation'
+        },
+        waveDelay: {
+          type: 'number', label: 'Wave Delay',
+          min: 0, max: 50, default: DEFAULT_CONFIG.waveDelay,
+          group: 'Animation'
+        },
+        cycleDuration: {
+          type: 'number', label: 'Cycle Duration',
+          min: 50, max: 500, step: 10, default: DEFAULT_CONFIG.cycleDuration,
+          group: 'Animation'
+        },
+        noiseScale: {
+          type: 'number', label: 'Noise Scale',
+          min: 0, max: 100, default: DEFAULT_CONFIG.noiseScale, unit: '%',
+          group: 'Animation'
+        },
+        noiseStrength: {
+          type: 'number', label: 'Noise Strength',
+          min: 0, max: 100, default: DEFAULT_CONFIG.noiseStrength, unit: '%',
+          group: 'Animation'
+        },
+        bloom: {
+          type: 'number', label: 'Bloom Intensity',
+          min: 0, max: 300, default: DEFAULT_CONFIG.bloom, unit: '%',
+          group: 'Visual'
+        },
+        chroma: {
+          type: 'number', label: 'Chromatic Aberration',
+          min: 0, max: 400, default: DEFAULT_CONFIG.chroma, unit: '%',
+          group: 'Visual'
+        },
+        colorShift: {
+          type: 'number', label: 'Color Shift',
+          min: 0, max: 360, default: DEFAULT_CONFIG.colorShift, unit: '°',
+          group: 'Visual'
+        },
+        zoomBlur: {
+          type: 'number', label: 'Zoom Blur',
+          min: 0, max: 100, default: DEFAULT_CONFIG.zoomBlur, unit: '%',
+          group: 'Visual'
+        },
+        grain: {
+          type: 'number', label: 'Film Grain',
+          min: 0, max: 100, default: DEFAULT_CONFIG.grain, unit: '%',
+          group: 'Visual'
+        },
+        perspective: {
+          type: 'number', label: 'Perspective',
+          min: 200, max: 3000, step: 50, default: DEFAULT_CONFIG.perspective,
+          group: 'Camera'
+        },
+        resetCamera: {
+          type: 'trigger', label: 'Reset Camera',
+          group: 'Camera'
+        }
+      },
+      getConfig: () => panel.getValues(),
+      onChange: (name, value) => {
+        switch (name) {
+          case 'cellSize':
+            CONFIG.cellSize = value;
+            resize();
+            break;
+          case 'itemSize':
+            CONFIG.itemSize = value / 100;
+            break;
+          case 'speed':
+            CONFIG.speed = value / 100;
+            break;
+          case 'waveDelay':
+            CONFIG.waveDelay = value / 100;
+            break;
+          case 'cycleDuration':
+            CONFIG.cycleDuration = value / 100;
+            break;
+          case 'noiseScale':
+            CONFIG.noiseScale = value / 100;
+            break;
+          case 'noiseStrength':
+            CONFIG.noiseStrength = value / 100;
+            break;
+          case 'bloom':
+            CONFIG.bloomIntensity = value / 100;
+            break;
+          case 'chroma':
+            CONFIG.chromaticAberration = value / 100;
+            break;
+          case 'colorShift':
+            CONFIG.colorShift = value;
+            break;
+          case 'zoomBlur':
+            CONFIG.zoomBlur = value / 100;
+            break;
+          case 'grain':
+            CONFIG.grain = value / 100;
+            break;
+          case 'perspective':
+            camera.perspective = value;
+            break;
+          case 'resetCamera':
+            camera.panX = 0;
+            camera.panY = 0;
+            camera.tiltX = 0;
+            camera.tiltY = 0;
+            break;
+        }
+      }
+    });
+
+    createHint('D: controls | Drag: pan | Shift+drag: tilt | IJKL: tilt | R: reset');
+    
+    // ===========================================
+    // MAIN RENDER LOOP
+    // ===========================================
+    function render(time) {
+      updateCameraFromKeyboard();
+      
+      const t = time * 0.001 * CONFIG.speed;
+      
+      if (CONFIG.zoomBlur > 0.01) {
+        renderScene(offCtx, t);
+        applyZoomBlur(offCanvas, ctx, CONFIG.zoomBlur);
+      } else {
+        renderScene(ctx, t);
+      }
+      
+      // Film grain
+      applyGrain(ctx, CONFIG.grain);
+      
+      // Vignette
+      const vignette = ctx.createRadialGradient(
+        width / 2, height / 2, Math.min(width, height) * 0.3,
+        width / 2, height / 2, Math.max(width, height) * 0.8
+      );
+      vignette.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      vignette.addColorStop(1, 'rgba(0, 0, 0, 0.5)');
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, width, height);
+      
+      panel.update(t);
+      requestAnimationFrame(render);
+    }
+    
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

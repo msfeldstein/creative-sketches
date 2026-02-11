@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Flow Field</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      overflow: hidden;
+      background: #0a0a0c;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const DEFAULT_CONFIG = {
+      particleCount: 80,
+      speed: 100,
+      scale: 80,
+      strokeWidth: 8,
+      hueShift: 220,
+      fade: 95,
+    };
+
+    const CONFIG = {
+      particleCount: DEFAULT_CONFIG.particleCount,
+      speed: DEFAULT_CONFIG.speed / 100,
+      scale: DEFAULT_CONFIG.scale / 100,
+      strokeWidth: DEFAULT_CONFIG.strokeWidth / 100,
+      hueShift: DEFAULT_CONFIG.hueShift,
+      fade: DEFAULT_CONFIG.fade / 100,
+    };
+
+    let width, height;
+    const particles = [];
+    let time = 0;
+
+    // Simple 2D noise approximation (value noise)
+    function noise2(x, y) {
+      const xi = Math.floor(x) & 255;
+      const yi = Math.floor(y) & 255;
+      const xf = x - Math.floor(x);
+      const yf = y - Math.floor(y);
+      const u = xf * xf * (3 - 2 * xf);
+      const v = yf * yf * (3 - 2 * yf);
+
+      const hash = (i, j) => {
+        const p = [151, 160, 137, 91, 90, 15, 131, 13, 201, 95, 96, 53, 194, 233, 7, 225];
+        return p[(i + j * 16) % 16] / 255;
+      };
+
+      const n00 = hash(xi, yi);
+      const n10 = hash(xi + 1, yi);
+      const n01 = hash(xi, yi + 1);
+      const n11 = hash(xi + 1, yi + 1);
+
+      const nx0 = n00 * (1 - u) + n10 * u;
+      const nx1 = n01 * (1 - u) + n11 * u;
+      return nx0 * (1 - v) + nx1 * v;
+    }
+
+    function flowAngle(x, y) {
+      const s = 0.003 * CONFIG.scale;
+      const n = noise2(x * s, y * s) * 6.28;
+      const t = time * 0.0001;
+      return n + noise2(x * s * 0.5 + t * 100, y * 0.5 * s) * 0.5;
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      initParticles();
+    }
+
+    function initParticles() {
+      particles.length = 0;
+      const n = Math.max(1, Math.round(CONFIG.particleCount));
+      for (let i = 0; i < n; i++) {
+        particles.push({
+          x: Math.random() * width,
+          y: Math.random() * height,
+          vx: 0,
+          vy: 0,
+          trail: [],
+          maxTrail: 40,
+        });
+      }
+    }
+
+    function draw() {
+      time = performance.now();
+      const values = panel.getValues(time);
+      if (values) {
+        CONFIG.particleCount = values.particleCount ?? CONFIG.particleCount;
+        CONFIG.speed = (values.speed ?? DEFAULT_CONFIG.speed) / 100;
+        CONFIG.scale = (values.scale ?? DEFAULT_CONFIG.scale) / 100;
+        CONFIG.strokeWidth = (values.strokeWidth ?? DEFAULT_CONFIG.strokeWidth) / 100;
+        CONFIG.hueShift = values.hueShift ?? DEFAULT_CONFIG.hueShift;
+        CONFIG.fade = (values.fade ?? DEFAULT_CONFIG.fade) / 100;
+      }
+
+      if (particles.length !== Math.round(CONFIG.particleCount)) {
+        initParticles();
+      }
+
+      ctx.fillStyle = `rgba(10, 10, 12, ${1 - CONFIG.fade})`;
+      ctx.fillRect(0, 0, width, height);
+
+      const step = 2;
+      const speed = 1.5 * CONFIG.speed;
+
+      for (const p of particles) {
+        const angle = flowAngle(p.x, p.y);
+        p.vx = Math.cos(angle) * step * speed;
+        p.vy = Math.sin(angle) * step * speed;
+        p.x += p.vx;
+        p.y += p.vy;
+
+        if (p.x < 0 || p.x > width) p.x = (p.x + width) % width;
+        if (p.y < 0 || p.y > height) p.y = (p.y + height) % height;
+
+        p.trail.push({ x: p.x, y: p.y });
+        if (p.trail.length > p.maxTrail) p.trail.shift();
+
+        if (p.trail.length >= 2) {
+          const hue = (CONFIG.hueShift + (p.x / width) * 60) % 360;
+          ctx.strokeStyle = `hsla(${hue}, 75%, 65%, 0.6)`;
+          ctx.lineWidth = 1 + CONFIG.strokeWidth * 4;
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(p.trail[0].x, p.trail[0].y);
+          for (let i = 1; i < p.trail.length; i++) {
+            ctx.lineTo(p.trail[i].x, p.trail[i].y);
+          }
+          ctx.stroke();
+        }
+      }
+
+      panel.update(time);
+      requestAnimationFrame(draw);
+    }
+
+    const panel = new DebugPanel({
+      title: 'Flow Field',
+      storageKey: 'flowFieldSettings',
+      schema: {
+        particleCount: { type: 'number', label: 'Particles', min: 10, max: 200, default: DEFAULT_CONFIG.particleCount, group: 'Simulation' },
+        speed: { type: 'number', label: 'Speed', min: 10, max: 200, default: DEFAULT_CONFIG.speed, group: 'Simulation' },
+        scale: { type: 'number', label: 'Scale', min: 20, max: 200, default: DEFAULT_CONFIG.scale, group: 'Visual' },
+        strokeWidth: { type: 'number', label: 'Stroke', min: 0, max: 30, default: DEFAULT_CONFIG.strokeWidth, group: 'Visual' },
+        hueShift: { type: 'number', label: 'Hue', min: 0, max: 360, default: DEFAULT_CONFIG.hueShift, group: 'Visual' },
+        fade: { type: 'number', label: 'Trail fade', min: 80, max: 100, default: DEFAULT_CONFIG.fade, group: 'Visual' },
+      },
+      onChange: () => {},
+    });
+
+    createHint('D: toggle panel');
+    resize();
+    window.addEventListener('resize', resize);
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>

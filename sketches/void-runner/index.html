@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Void Runner</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      overflow: hidden;
+      background: #0a0a0c;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    canvas { display: block; cursor: none; }
+    .ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 1rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      color: rgba(255,255,255,0.5);
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+    }
+    .ui strong { color: #ff6b35; }
+    .overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10,10,12,0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      color: #e8e8e8;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+    .overlay.visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .overlay h2 {
+      font-size: 1.5rem;
+      font-weight: 300;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+    .overlay .score { font-size: 2rem; color: #ff6b35; }
+    .overlay p {
+      font-size: 0.7rem;
+      letter-spacing: 0.15em;
+      color: rgba(255,255,255,0.5);
+    }
+  </style>
+</head>
+<body>
+  <div class="ui">
+    <span>Score: <strong id="scoreEl">0</strong></span>
+    <span>← → or A D to move</span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div class="overlay" id="overlay">
+    <h2>Void Runner</h2>
+    <p>Dodge the blocks. Don’t stop.</p>
+    <p>Press any key or tap to start</p>
+  </div>
+  <div class="overlay visible" id="startOverlay">
+    <h2>Void Runner</h2>
+    <p>Dodge the blocks. Don’t stop.</p>
+    <p>Press any key or tap to start</p>
+  </div>
+  <div class="overlay" id="gameOverOverlay">
+    <h2>Game Over</h2>
+    <p class="score" id="finalScore">0</p>
+    <p>Press R or tap to restart</p>
+  </div>
+
+  <script type="module">
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    let width, height;
+    let player = { x: 0, y: 0, w: 24, h: 32, vx: 0, speed: 8 };
+    let obstacles = [];
+    let score = 0;
+    let spawnAccum = 0;
+    let running = false;
+    let gameOver = false;
+    let lastTime = 0;
+    const spawnRate = 1.2;
+    const obstacleSpeed = 4;
+    const obstacleMinW = 40;
+    const obstacleMaxW = 120;
+    const obstacleH = 24;
+
+    const scoreEl = document.getElementById('scoreEl');
+    const startOverlay = document.getElementById('startOverlay');
+    const gameOverOverlay = document.getElementById('gameOverOverlay');
+    const finalScoreEl = document.getElementById('finalScore');
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      if (running) {
+        player.x = Math.min(player.x, width - player.w);
+        player.x = Math.max(0, player.x);
+      } else {
+        player.x = (width - player.w) / 2;
+        player.y = height - player.h - 60;
+      }
+    }
+
+    function startGame() {
+      startOverlay.classList.remove('visible');
+      obstacles = [];
+      score = 0;
+      spawnAccum = 0;
+      running = true;
+      gameOver = false;
+      player.x = (width - player.w) / 2;
+      player.y = height - player.h - 60;
+      player.vx = 0;
+      scoreEl.textContent = '0';
+    }
+
+    function endGame() {
+      running = false;
+      gameOver = true;
+      finalScoreEl.textContent = score;
+      gameOverOverlay.classList.add('visible');
+    }
+
+    function spawnObstacle() {
+      const w = obstacleMinW + Math.random() * (obstacleMaxW - obstacleMinW);
+      obstacles.push({
+        x: Math.random() * (width - w),
+        y: -obstacleH,
+        w,
+        h: obstacleH,
+        vy: obstacleSpeed + score * 0.02,
+      });
+    }
+
+    function hit(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x &&
+             a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    const keys = {};
+    window.addEventListener('keydown', (e) => {
+      keys[e.key] = true;
+      if (e.key === 'r' || e.key === 'R') {
+        if (gameOver) {
+          gameOverOverlay.classList.remove('visible');
+          startGame();
+        }
+      }
+      if (!running && !gameOver) {
+        startGame();
+      }
+    });
+    window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+    canvas.addEventListener('click', () => {
+      if (gameOver) {
+        gameOverOverlay.classList.remove('visible');
+        startGame();
+      } else if (!running) {
+        startGame();
+      }
+    });
+
+    function update(dt) {
+      if (!running || gameOver) return;
+
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) player.vx = -player.speed;
+      else if (keys['ArrowRight'] || keys['d'] || keys['D']) player.vx = player.speed;
+      else player.vx = 0;
+
+      player.x += player.vx * (dt / 16);
+      player.x = Math.max(0, Math.min(width - player.w, player.x));
+
+      spawnAccum += (spawnRate + score * 0.002) * (dt / 1000);
+      while (spawnAccum >= 1) {
+        spawnObstacle();
+        spawnAccum -= 1;
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--) {
+        const o = obstacles[i];
+        o.y += o.vy * (dt / 16);
+        if (o.y > height) {
+          obstacles.splice(i, 1);
+          score += 1;
+          continue;
+        }
+        if (hit(player, o)) {
+          endGame();
+          return;
+        }
+      }
+
+      scoreEl.textContent = score;
+    }
+
+    function draw() {
+      ctx.fillStyle = '#0a0a0c';
+      ctx.fillRect(0, 0, width, height);
+
+      if (!running && !gameOver) return;
+
+      ctx.fillStyle = '#ff6b35';
+      ctx.beginPath();
+      const px = player.x + player.w / 2;
+      const py = player.y + player.h;
+      ctx.moveTo(px, py);
+      ctx.lineTo(px - player.w / 2, py - player.h);
+      ctx.lineTo(px + player.w / 2, py - player.h);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,107,53,0.6)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = 'rgba(255,255,255,0.12)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 1;
+      for (const o of obstacles) {
+        ctx.fillRect(o.x, o.y, o.w, o.h);
+        ctx.strokeRect(o.x, o.y, o.w, o.h);
+      }
+    }
+
+    function loop(now) {
+      const dt = now - lastTime;
+      lastTime = now;
+      update(dt);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    resize();
+    window.addEventListener('resize', resize);
+    player.x = (width - player.w) / 2;
+    player.y = height - player.h - 60;
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

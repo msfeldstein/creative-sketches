@@ -6,7 +6,7 @@
   <title>Twisted Towers</title>
   <style>
     * { margin: 0; padding: 0; }
-    body { overflow: hidden; background: #000; }
+    body { overflow: hidden; background: #000003; }
     canvas { display: block; }
   </style>
 </head>
@@ -38,14 +38,14 @@
       twistAmount: 18,
       flashChance: 10,
       flashSpeed: 50,
-      bloom: 80,
-      aberration: 150,
+      bloom: 200,
+      aberration: 500,
       aberrationStyle: 'cyan-red',
       grain: 8,
       showTowers: true,
       towerOpacity: 100,
-      towerColor: '#666666',
-      flashColor: '#ffffff',
+      towerColor: '#1a2a4a',
+      flashColor: '#00eaff',
       // Particle/trail settings
       trailSpread: 80,
       trailRadius: 38,
@@ -94,7 +94,7 @@
 
     // Setup
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x111111);
+    scene.background = new THREE.Color(0x000008);
     
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.set(0, 50, 0);
@@ -113,20 +113,20 @@
     // ENVIRONMENT MAP FOR GI
     // ===========================================
     
-    // Create a gradient environment map for realistic lighting (grayscale)
+    // Create a gradient environment map for realistic lighting (cool blue tones)
     function createGradientEnvironment() {
       const canvas = document.createElement('canvas');
       canvas.width = 512;
       canvas.height = 512;
       const ctx = canvas.getContext('2d');
       
-      // Create gradient from sky to ground - grayscale
+      // Create gradient from sky to ground - cool blue/violet tones
       const gradient = ctx.createLinearGradient(0, 0, 0, 512);
-      gradient.addColorStop(0, '#666666');    // bright sky
-      gradient.addColorStop(0.4, '#444444');  // horizon
-      gradient.addColorStop(0.5, '#333333');  // mid
-      gradient.addColorStop(0.6, '#222222');  // ground reflection
-      gradient.addColorStop(1, '#111111');    // dark ground
+      gradient.addColorStop(0, '#2a3555');    // blue-tinted sky
+      gradient.addColorStop(0.4, '#1a2244');  // horizon
+      gradient.addColorStop(0.5, '#141833');  // mid
+      gradient.addColorStop(0.6, '#0e1222');  // ground reflection
+      gradient.addColorStop(1, '#060810');    // dark ground
       
       ctx.fillStyle = gradient;
       ctx.fillRect(0, 0, 512, 512);
@@ -143,8 +143,8 @@
     // LIGHTING
     // ===========================================
     
-    // Key light - bright white from upper right
-    const keyLight = new THREE.DirectionalLight(0xffffff, 2.5);
+    // Key light - cool blue-white from upper right
+    const keyLight = new THREE.DirectionalLight(0x8899cc, 2.5);
     keyLight.position.set(15, 30, 20);
     keyLight.castShadow = true;
     keyLight.shadow.mapSize.width = 2048;
@@ -159,18 +159,18 @@
     keyLight.shadow.normalBias = 0.02;
     scene.add(keyLight);
     
-    // Fill light - softer from left
-    const fillLight = new THREE.DirectionalLight(0xcccccc, 0.6);
+    // Fill light - subtle violet from left
+    const fillLight = new THREE.DirectionalLight(0x6644aa, 0.6);
     fillLight.position.set(-15, 15, -5);
     scene.add(fillLight);
     
-    // Rim/back light
-    const rimLight = new THREE.DirectionalLight(0xffffff, 0.4);
+    // Rim/back light - cyan tint
+    const rimLight = new THREE.DirectionalLight(0x44aacc, 0.4);
     rimLight.position.set(0, 10, -20);
     scene.add(rimLight);
     
-    // Bounce light from below (simulates ground bounce)
-    const bounceLight = new THREE.DirectionalLight(0x888888, 0.2);
+    // Bounce light from below (deep blue)
+    const bounceLight = new THREE.DirectionalLight(0x223366, 0.2);
     bounceLight.position.set(0, -10, 0);
     scene.add(bounceLight);
 
@@ -743,6 +743,45 @@
     const chromaticPass = new ShaderPass(chromaticAberrationShader);
     composer.addPass(chromaticPass);
 
+    // Color grade - cool blue/violet tint to match other sketches
+    const colorGradeShader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        uTime: { value: 0 }
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: `
+        uniform sampler2D tDiffuse;
+        uniform float uTime;
+        varying vec2 vUv;
+
+        void main() {
+          vec3 color = texture2D(tDiffuse, vUv).rgb;
+          
+          // Cool color grade - shift toward blue/violet
+          color *= vec3(0.90, 0.95, 1.15);
+          
+          // Subtle vignette
+          vec2 center = vUv - 0.5;
+          float dist = length(center);
+          float vignette = 1.0 - dot(center * 1.3, center * 1.3);
+          vignette = pow(max(vignette, 0.0), 1.5);
+          color *= vignette;
+
+          gl_FragColor = vec4(color, 1.0);
+        }
+      `
+    };
+    
+    const colorGradePass = new ShaderPass(colorGradeShader);
+    composer.addPass(colorGradePass);
+
     // Film Grain
     const filmGrainShader = {
       uniforms: {
@@ -1121,7 +1160,8 @@
       trailMaterial.uniforms.uFlashColor.value = FLASH_COLOR;
       updateFlashDataTexture();
 
-      // Update grain time for animation
+      // Update post-processing time
+      colorGradePass.uniforms.uTime.value = t;
       grainPass.uniforms.uTime.value = t;
 
       controls.update();

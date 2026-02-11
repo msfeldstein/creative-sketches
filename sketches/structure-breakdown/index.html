@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Structure Shader Breakdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #000;
+      font-family: 'Space Grotesk', -apple-system, sans-serif;
+    }
+    canvas {
+      display: block;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    #controls {
+      position: fixed;
+      top: 40px;
+      left: 40px;
+      bottom: 40px;
+      width: 340px;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      pointer-events: none;
+    }
+
+    #controls > * {
+      pointer-events: auto;
+    }
+
+    .header {
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 11px;
+      font-weight: 300;
+      color: rgba(255, 255, 255, 0.4);
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+    }
+
+    .title-main {
+      font-size: 28px;
+      font-weight: 300;
+      color: #fff;
+      letter-spacing: -0.02em;
+    }
+
+    .steps {
+      flex: 1;
+      overflow-y: auto;
+      mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+      -webkit-mask-image: linear-gradient(to bottom, black 90%, transparent 100%);
+      padding-right: 8px;
+    }
+
+    .steps::-webkit-scrollbar {
+      width: 2px;
+    }
+
+    .steps::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .steps::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 1px;
+    }
+
+    .step {
+      position: relative;
+      padding: 16px 0 16px 32px;
+      cursor: pointer;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step::before {
+      content: '';
+      position: absolute;
+      left: 8px;
+      top: 24px;
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.15);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step::after {
+      content: '';
+      position: absolute;
+      left: 10px;
+      top: 36px;
+      width: 2px;
+      height: calc(100% - 36px);
+      background: linear-gradient(to bottom, rgba(255,255,255,0.08), transparent);
+    }
+
+    .step:last-child::after {
+      display: none;
+    }
+
+    .step:hover::before {
+      background: rgba(255, 255, 255, 0.3);
+      transform: scale(1.3);
+    }
+
+    .step.active::before {
+      background: #5cc8ff;
+      box-shadow: 0 0 20px rgba(92, 200, 255, 0.6), 0 0 40px rgba(92, 200, 255, 0.3);
+      transform: scale(1.5);
+    }
+
+    .step-number {
+      font-size: 10px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.25);
+      letter-spacing: 0.1em;
+      margin-bottom: 4px;
+      transition: color 0.3s ease;
+    }
+
+    .step.active .step-number {
+      color: rgba(92, 200, 255, 0.9);
+    }
+
+    .step-title {
+      font-size: 15px;
+      font-weight: 400;
+      color: rgba(255, 255, 255, 0.5);
+      margin-bottom: 6px;
+      transition: color 0.3s ease;
+    }
+
+    .step.active .step-title {
+      color: #fff;
+    }
+
+    .step-desc {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.25);
+      line-height: 1.6;
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step.active .step-desc {
+      max-height: 110px;
+      opacity: 1;
+      margin-bottom: 10px;
+    }
+
+    .step-code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 11px;
+      color: rgba(160, 220, 255, 0.45);
+      max-height: 0;
+      overflow: hidden;
+      opacity: 0;
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .step.active .step-code {
+      max-height: 60px;
+      opacity: 1;
+      color: rgba(160, 220, 255, 0.85);
+    }
+
+    .nav-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-top: 24px;
+      padding-top: 20px;
+    }
+
+    .nav-btn {
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      background: transparent;
+      color: rgba(255, 255, 255, 0.4);
+      font-size: 16px;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      border-color: rgba(255, 255, 255, 0.3);
+      color: #fff;
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.2;
+      cursor: not-allowed;
+    }
+
+    .progress-track {
+      flex: 1;
+      height: 2px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #5cc8ff, #8bd8ff);
+      border-radius: 1px;
+      transition: width 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .keyboard-hint {
+      margin-top: 16px;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.2);
+      letter-spacing: 0.05em;
+    }
+
+    .keyboard-hint kbd {
+      display: inline-block;
+      padding: 2px 6px;
+      background: rgba(255, 255, 255, 0.05);
+      border-radius: 3px;
+      margin: 0 2px;
+    }
+
+    #controls::before {
+      content: '';
+      position: absolute;
+      top: -50px;
+      left: -50px;
+      right: -50px;
+      bottom: -50px;
+      background: radial-gradient(ellipse at center, rgba(0,0,0,0.7) 0%, transparent 70%);
+      pointer-events: none;
+      z-index: -1;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="controls">
+    <div class="header">
+      <h1>Shader Breakdown</h1>
+      <div class="title-main">Structure</div>
+    </div>
+
+    <div class="steps">
+      <div class="step" data-step="0">
+        <div class="step-number">01</div>
+        <div class="step-title">Ray Direction</div>
+        <div class="step-desc">Quantize the pixel coordinates and build a normalized ray that points into the scene.</div>
+        <div class="step-code">dir = normalize(round(FC)*2.-r.xyy)</div>
+      </div>
+
+      <div class="step" data-step="1">
+        <div class="step-number">02</div>
+        <div class="step-title">Ground Plane</div>
+        <div class="step-desc">Start with a simple distance to the Y plane. This is the base for the SDF stack.</div>
+        <div class="step-code">d = (p-8.).y</div>
+      </div>
+
+      <div class="step" data-step="2">
+        <div class="step-number">03</div>
+        <div class="step-title">Modular Fold</div>
+        <div class="step-desc">Fold space into repeating cells. This creates the blocky lattice the shader is built from.</div>
+        <div class="step-code">q = i*.8 - abs(mod(q, i+i) - i)</div>
+      </div>
+
+      <div class="step" data-step="3">
+        <div class="step-number">04</div>
+        <div class="step-title">Rotate &amp; Shrink</div>
+        <div class="step-desc">Rotate the XZ slice and shrink it. The skewed matrix pushes everything into a dense structure.</div>
+        <div class="step-code">q.xz *= .1 * mat2(8,6,-6,8)</div>
+      </div>
+
+      <div class="step" data-step="4">
+        <div class="step-number">05</div>
+        <div class="step-title">Scale Cascade</div>
+        <div class="step-desc">Iterate the fold/rotate step with decreasing scale to build fractal density.</div>
+        <div class="step-code">for(i=1e2;i&gt;.4;i*=.3) ...</div>
+      </div>
+
+      <div class="step" data-step="5">
+        <div class="step-number">06</div>
+        <div class="step-title">Ray March</div>
+        <div class="step-desc">March along the ray with the signed distance until the structure emerges.</div>
+        <div class="step-code">p += dir * d</div>
+      </div>
+
+      <div class="step" data-step="6">
+        <div class="step-number">07</div>
+        <div class="step-title">Edge Lines</div>
+        <div class="step-desc">Quantize depth to strips, then use fwidth to draw crisp edge lines.</div>
+        <div class="step-code">fwidth(ceil(p.z/.1))</div>
+      </div>
+
+      <div class="step" data-step="7">
+        <div class="step-number">08</div>
+        <div class="step-title">Blue Tint</div>
+        <div class="step-desc">Shift the final color to a cool blue palette while keeping the line work sharp.</div>
+        <div class="step-code">vec3(1,1.2,1.4) - lines</div>
+      </div>
+    </div>
+
+    <div class="nav-row">
+      <button class="nav-btn" id="prevBtn">←</button>
+      <div class="progress-track">
+        <div class="progress-fill" id="progressFill"></div>
+      </div>
+      <button class="nav-btn" id="nextBtn">→</button>
+    </div>
+
+    <div class="keyboard-hint">
+      <kbd>←</kbd> <kbd>→</kbd> arrow keys to navigate
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const gl = canvas.getContext('webgl2');
+
+    if (!gl) {
+      alert('WebGL2 not supported');
+    }
+
+    let currentStep = 0;
+    let displayStep = 0;
+    const totalSteps = 8;
+    const transitionDuration = 1.0;
+
+    const vertexShaderSource = `#version 300 es
+    in vec4 a_position;
+    void main() {
+      gl_Position = a_position;
+    }`;
+
+    const fragmentShaderSource = `#version 300 es
+    precision highp float;
+    uniform vec2 r;
+    uniform float t;
+    uniform float step;
+    out vec4 o;
+
+    float mapScene(vec3 p, float foldAmt, float rotAmt, float iterAmount, float scaleStart) {
+      vec3 q = p - 8.0;
+      float d = q.y;
+      float scale = scaleStart;
+
+      for (int j = 0; j < 7; j++) {
+        float iterWeight = clamp(iterAmount - float(j), 0.0, 1.0);
+
+        vec2 rotated = (mat2(8.0, 6.0, -6.0, 8.0) * q.xz) * 0.1;
+        q.xz = mix(q.xz, rotated, rotAmt);
+
+        vec3 folded = scale * 0.8 - abs(mod(q, scale + scale) - scale);
+        q = mix(q, folded, foldAmt);
+
+        float dm = min(min(q.x, q.y), q.z);
+        d = mix(d, max(d, dm), iterWeight);
+
+        scale *= 0.3;
+      }
+
+      return d;
+    }
+
+    void main() {
+      vec2 FC = gl_FragCoord.xy;
+      vec3 FC3 = vec3(FC, 1.0);
+      vec3 dir = round(FC3) * 2.0 - vec3(r.x, r.y, r.y);
+      dir.xy *= 1.35;
+      dir = normalize(dir);
+
+      float ss = step;
+      float introMix = clamp(ss, 0.0, 1.0);
+      float foldAmt = clamp(ss - 1.0, 0.0, 1.0);
+      float rotAmt = clamp(ss - 2.0, 0.0, 1.0);
+      float cascadeAmt = clamp(ss - 3.0, 0.0, 1.0);
+      float marchMix = clamp(ss - 4.0, 0.0, 1.0);
+      float lineMix = clamp(ss - 5.0, 0.0, 1.0);
+      float colorMix = clamp(ss - 6.0, 0.0, 1.0);
+
+      float iterAmount = ss < 2.0 ? 0.0 : (ss < 4.0 ? 1.0 : 1.0 + 5.0 * cascadeAmt);
+
+      vec2 uv = (FC * 2.0 - r) / r.y;
+      vec3 previewP = vec3(uv.x * 6.0, 8.0 + uv.y * 6.0, 0.0);
+      float previewScale = mix(40.0, 8.0, clamp(ss - 1.0, 0.0, 1.0));
+      float previewD = mapScene(previewP, foldAmt, rotAmt, iterAmount, previewScale);
+      float previewShade = exp(-abs(previewD) * 0.18);
+      vec3 previewColor = vec3(0.08) + previewShade * vec3(0.85);
+
+      vec3 p = vec3(0.0);
+      float marchSteps = mix(0.0, 100.0, marchMix);
+      for (int i = 0; i < 100; i++) {
+        float w = clamp(marchSteps - float(i), 0.0, 1.0);
+        float dist = mapScene(p, foldAmt, rotAmt, iterAmount, 100.0);
+        p += dir * dist * w;
+      }
+
+      float fog = exp(-abs(p.z) * 0.02);
+      float heightFade = clamp(1.0 - abs(p.y - 8.0) * 0.08, 0.0, 1.0);
+      vec3 marchColor = vec3(0.08) + fog * heightFade * vec3(0.8);
+      
+      float lines = fwidth(ceil(p.z / 0.1));
+      vec3 lineBase = mix(marchColor, vec3(0.9), 0.55);
+      vec3 lineInk = vec3(0.1);
+      vec3 lineColor = mix(lineBase, lineInk, clamp(lines * 3.0, 0.0, 1.0));
+      vec3 blueTint = vec3(0.9, 1.1, 1.25);
+      lineColor = mix(lineColor, lineColor * blueTint, colorMix);
+
+      vec3 combined = mix(previewColor, marchColor, marchMix);
+      combined = mix(combined, lineColor, lineMix);
+      vec3 dirColor = dir * 0.5 + 0.5;
+      vec3 finalColor = mix(dirColor, combined, introMix);
+
+      o = vec4(finalColor, 1.0);
+    }`;
+
+    function createShader(gl, type, source) {
+      const shader = gl.createShader(type);
+      gl.shaderSource(shader, source);
+      gl.compileShader(shader);
+      if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+        console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+        gl.deleteShader(shader);
+        return null;
+      }
+      return shader;
+    }
+
+    function createProgram(gl, vertexShader, fragmentShader) {
+      const program = gl.createProgram();
+      gl.attachShader(program, vertexShader);
+      gl.attachShader(program, fragmentShader);
+      gl.linkProgram(program);
+      if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+        console.error('Program link error:', gl.getProgramInfoLog(program));
+        return null;
+      }
+      return program;
+    }
+
+    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const fragmentShader = createShader(gl, gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const program = createProgram(gl, vertexShader, fragmentShader);
+
+    const uniforms = {
+      resolution: gl.getUniformLocation(program, 'r'),
+      time: gl.getUniformLocation(program, 't'),
+      step: gl.getUniformLocation(program, 'step')
+    };
+
+    const positionBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1,
+       1, -1,
+      -1,  1,
+      -1,  1,
+       1, -1,
+       1,  1,
+    ]), gl.STATIC_DRAW);
+
+    const positionAttributeLocation = gl.getAttribLocation(program, 'a_position');
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+
+    resize();
+    window.addEventListener('resize', resize);
+
+    function updateStepUI() {
+      document.querySelectorAll('.step').forEach((el, i) => {
+        el.classList.toggle('active', i === currentStep);
+      });
+
+      document.getElementById('prevBtn').disabled = currentStep === 0;
+      document.getElementById('nextBtn').disabled = currentStep === totalSteps - 1;
+
+      const progress = ((currentStep + 1) / totalSteps) * 100;
+      document.getElementById('progressFill').style.width = progress + '%';
+
+      const activeStep = document.querySelector('.step.active');
+      if (activeStep) {
+        activeStep.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    }
+
+    function goToStep(step) {
+      currentStep = Math.max(0, Math.min(totalSteps - 1, step));
+      updateStepUI();
+    }
+
+    document.querySelectorAll('.step').forEach((el, i) => {
+      el.addEventListener('click', () => goToStep(i));
+    });
+
+    document.getElementById('prevBtn').addEventListener('click', () => goToStep(currentStep - 1));
+    document.getElementById('nextBtn').addEventListener('click', () => goToStep(currentStep + 1));
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft') goToStep(currentStep - 1);
+      if (e.key === 'ArrowRight') goToStep(currentStep + 1);
+    });
+
+    updateStepUI();
+
+    let lastTime = 0;
+    function render(time) {
+      const t = time * 0.001;
+      const deltaTime = lastTime ? (time - lastTime) * 0.001 : 0;
+      lastTime = time;
+
+      const stepDiff = currentStep - displayStep;
+      if (Math.abs(stepDiff) > 0.001) {
+        const speed = 1.0 / transitionDuration;
+        const maxMove = Math.abs(stepDiff);
+        const move = Math.min(deltaTime * speed * Math.max(1, Math.abs(stepDiff)), maxMove);
+        displayStep += Math.sign(stepDiff) * move;
+      } else {
+        displayStep = currentStep;
+      }
+
+      gl.useProgram(program);
+      gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
+      gl.uniform1f(uniforms.time, t);
+      gl.uniform1f(uniforms.step, displayStep);
+
+      gl.enableVertexAttribArray(positionAttributeLocation);
+      gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+      gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+      requestAnimationFrame(render);
+    }
+
+    requestAnimationFrame(render);
+  </script>
+</body>
+</html>

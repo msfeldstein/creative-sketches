@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Silicon Jungle Breakdown</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      background: #000;
+      color: #fff;
+      font-family: "Space Grotesk", -apple-system, sans-serif;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+
+    #stage {
+      width: min(78vh, 78vw);
+      aspect-ratio: 1 / 1;
+      max-width: 560px;
+      max-height: 560px;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      box-shadow: 0 12px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    #stage canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+    }
+
+    #controls {
+      position: fixed;
+      top: 24px;
+      left: 24px;
+      width: min(360px, calc(100vw - 48px));
+      max-height: calc(100vh - 48px);
+      overflow: auto;
+      background: rgba(8, 8, 8, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      padding: 16px;
+      z-index: 20;
+    }
+
+    .eyebrow {
+      font-size: 10px;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.42);
+      margin-bottom: 6px;
+    }
+
+    .title {
+      font-size: 24px;
+      font-weight: 300;
+      margin-bottom: 4px;
+    }
+
+    .subtitle {
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.62);
+      margin-bottom: 14px;
+      line-height: 1.5;
+    }
+
+    .steps {
+      display: grid;
+      gap: 8px;
+    }
+
+    .step {
+      border: 1px solid rgba(255, 255, 255, 0.12);
+      border-radius: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    }
+
+    .step:hover {
+      border-color: rgba(140, 210, 255, 0.5);
+      background: rgba(255, 255, 255, 0.03);
+      transform: translateY(-1px);
+    }
+
+    .step.active {
+      border-color: rgba(140, 210, 255, 0.85);
+      background: rgba(140, 210, 255, 0.12);
+    }
+
+    .step-number {
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: rgba(255, 255, 255, 0.4);
+      margin-bottom: 3px;
+    }
+
+    .step-title {
+      font-size: 14px;
+      margin-bottom: 3px;
+      color: rgba(255, 255, 255, 0.95);
+    }
+
+    .step-code {
+      font-size: 11px;
+      color: rgba(170, 220, 255, 0.82);
+      font-family: "SF Mono", "Fira Code", monospace;
+    }
+
+    .controls-row {
+      margin-top: 14px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    button {
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.04);
+      color: #fff;
+      border-radius: 999px;
+      font-size: 12px;
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+
+    button:hover {
+      border-color: rgba(255, 255, 255, 0.45);
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    .speed-wrap {
+      margin-top: 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.72);
+    }
+
+    .speed-wrap input {
+      flex: 1;
+    }
+
+    .hint {
+      margin-top: 10px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.45);
+    }
+  </style>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <aside id="controls">
+    <div class="eyebrow">Formula Breakdown</div>
+    <div class="title">Silicon Jungle</div>
+    <p class="subtitle">Step through the one-liner and watch each variable add structure to the final twin-form motion.</p>
+
+    <div class="steps">
+      <div class="step" data-step="0">
+        <div class="step-number">01</div>
+        <div class="step-title">Angle Sweep</div>
+        <div class="step-code">x=200+120*sin(y), y=190+120*cos(y)</div>
+      </div>
+      <div class="step" data-step="1">
+        <div class="step-number">02</div>
+        <div class="step-title">k and e Axes</div>
+        <div class="step-code">k=8*cos(y), e=y/8-12</div>
+      </div>
+      <div class="step" data-step="2">
+        <div class="step-number">03</div>
+        <div class="step-title">Distance Warp d</div>
+        <div class="step-code">d=mag(k,e)^3/999+1</div>
+      </div>
+      <div class="step" data-step="3">
+        <div class="step-number">04</div>
+        <div class="step-title">Base Radius q</div>
+        <div class="step-code">q=79</div>
+      </div>
+      <div class="step" data-step="4">
+        <div class="step-number">05</div>
+        <div class="step-title">Curvature in q</div>
+        <div class="step-code">q=79-e*sin(k)</div>
+      </div>
+      <div class="step" data-step="5">
+        <div class="step-number">06</div>
+        <div class="step-title">Full q Oscillation</div>
+        <div class="step-code">q+=k/d*(8+4*sin(d*d-t+cos(e+t/2)))</div>
+      </div>
+      <div class="step" data-step="6">
+        <div class="step-number">07</div>
+        <div class="step-title">Phase c</div>
+        <div class="step-code">c=d/2+e/99*sin(t+d)-t/8</div>
+      </div>
+      <div class="step" data-step="7">
+        <div class="step-number">08</div>
+        <div class="step-title">Parity Split (Final)</div>
+        <div class="step-code">c+=i%2*3; point(q*sin(c)+200,(q+40)*cos(c)+190)</div>
+      </div>
+    </div>
+
+    <div class="controls-row">
+      <button id="prevBtn">← Prev</button>
+      <button id="playBtn">Pause Auto</button>
+      <button id="nextBtn">Next →</button>
+    </div>
+
+    <div class="speed-wrap">
+      <span>Time</span>
+      <input id="speedRange" type="range" min="35" max="180" value="100">
+      <span id="speedLabel">1.00x</span>
+    </div>
+
+    <div class="hint">Arrow keys: step · Space: play/pause</div>
+  </aside>
+
+  <script src="https://cdn.jsdelivr.net/npm/p5@1.9.3/lib/p5.min.js"></script>
+  <script>
+    const TOTAL_POINTS = 20000;
+    const STEP_COUNT = 8;
+    const POINT_BUDGETS = [900, 1600, 2800, 4500, 7500, 12000, 16500, 20000];
+
+    let t = 0;
+    let currentStep = 0;
+    let displayStep = 0;
+    let autoPlay = true;
+    let lastAutoAdvance = 0;
+    let timeScale = 1;
+
+    const stepEls = [...document.querySelectorAll(".step")];
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const playBtn = document.getElementById("playBtn");
+    const speedRange = document.getElementById("speedRange");
+    const speedLabel = document.getElementById("speedLabel");
+
+    function clamp(v, min, max) {
+      return Math.max(min, Math.min(max, v));
+    }
+
+    function setStep(step) {
+      currentStep = clamp(step, 0, STEP_COUNT - 1);
+      lastAutoAdvance = millis();
+      syncStepUI();
+    }
+
+    function syncStepUI() {
+      stepEls.forEach((el, idx) => {
+        el.classList.toggle("active", idx === currentStep);
+      });
+      prevBtn.disabled = currentStep === 0;
+      nextBtn.disabled = currentStep === STEP_COUNT - 1;
+      playBtn.textContent = autoPlay ? "Pause Auto" : "Play Auto";
+    }
+
+    function computePoint(stage, y, i, time) {
+      const k = 8 * cos(y);
+      const e = y / 8 - 12;
+      const d = Math.pow(Math.hypot(k, e), 3) / 999 + 1;
+      const qCurved = 79 - e * sin(k);
+      const qFull = qCurved + (k / d) * (8 + 4 * sin(d * d - time + cos(e + time / 2)));
+      const cBase = d / 2 + (e / 99) * sin(time + d) - time / 8;
+      const cSplit = cBase + (i % 2) * 3;
+
+      if (stage <= 0) {
+        return { x: 200 + 120 * sin(y), y: 190 + 120 * cos(y) };
+      }
+      if (stage === 1) {
+        return { x: 200 + k * 14, y: 190 + e * 10 };
+      }
+      if (stage === 2) {
+        const radius = 52 + d * 32;
+        const a = y * 1.2 + time * 0.07;
+        return { x: 200 + radius * sin(a), y: 190 + radius * cos(a) };
+      }
+      if (stage === 3) {
+        const q = 79;
+        return { x: q * sin(y) + 200, y: (q + 40) * cos(y) + 190 };
+      }
+      if (stage === 4) {
+        return { x: qCurved * sin(y) + 200, y: (qCurved + 40) * cos(y) + 190 };
+      }
+      if (stage === 5) {
+        return { x: qFull * sin(y) + 200, y: (qFull + 40) * cos(y) + 190 };
+      }
+      if (stage === 6) {
+        return { x: qFull * sin(cBase) + 200, y: (qFull + 40) * cos(cBase) + 190 };
+      }
+      return { x: qFull * sin(cSplit) + 200, y: (qFull + 40) * cos(cSplit) + 190 };
+    }
+
+    function blendedPoint(y, i, stepFloat, time) {
+      const lo = Math.floor(clamp(stepFloat, 0, STEP_COUNT - 1));
+      const hi = Math.min(STEP_COUNT - 1, lo + 1);
+      const blend = stepFloat - lo;
+      const a = computePoint(lo, y, i, time);
+      const b = computePoint(hi, y, i, time);
+      return {
+        x: lerp(a.x, b.x, blend),
+        y: lerp(a.y, b.y, blend)
+      };
+    }
+
+    function pointBudgetForStep(stepFloat) {
+      const lo = Math.floor(clamp(stepFloat, 0, STEP_COUNT - 1));
+      const hi = Math.min(STEP_COUNT - 1, lo + 1);
+      const blend = stepFloat - lo;
+      return Math.floor(lerp(POINT_BUDGETS[lo], POINT_BUDGETS[hi], blend));
+    }
+
+    function setup() {
+      const canvas = createCanvas(400, 400);
+      canvas.parent("stage");
+      pixelDensity(1);
+      colorMode(RGB, 400, 400, 400, 400);
+      noFill();
+      strokeWeight(1);
+      lastAutoAdvance = millis();
+      syncStepUI();
+    }
+
+    function draw() {
+      background(9);
+      stroke(400, 96);
+
+      const frameScale = (deltaTime / 16.6667) * timeScale;
+      t += (PI / 45) * frameScale;
+
+      displayStep += (currentStep - displayStep) * 0.12;
+      if (Math.abs(currentStep - displayStep) < 0.001) {
+        displayStep = currentStep;
+      }
+
+      if (autoPlay && millis() - lastAutoAdvance > 3600) {
+        if (currentStep < STEP_COUNT - 1) {
+          setStep(currentStep + 1);
+        } else {
+          autoPlay = false;
+          syncStepUI();
+        }
+      }
+
+      const pointsToDraw = pointBudgetForStep(displayStep);
+      for (let i = pointsToDraw; i--;) {
+        const y = i / 99;
+        const p = blendedPoint(y, i, displayStep, t);
+        point(p.x, p.y);
+      }
+    }
+
+    function keyPressed() {
+      if (keyCode === LEFT_ARROW) setStep(currentStep - 1);
+      if (keyCode === RIGHT_ARROW) setStep(currentStep + 1);
+      if (key === " ") {
+        autoPlay = !autoPlay;
+        lastAutoAdvance = millis();
+        syncStepUI();
+        return false;
+      }
+      return true;
+    }
+
+    stepEls.forEach((el) => {
+      el.addEventListener("click", () => {
+        setStep(Number(el.dataset.step));
+      });
+    });
+
+    prevBtn.addEventListener("click", () => setStep(currentStep - 1));
+    nextBtn.addEventListener("click", () => setStep(currentStep + 1));
+    playBtn.addEventListener("click", () => {
+      autoPlay = !autoPlay;
+      lastAutoAdvance = millis();
+      syncStepUI();
+    });
+
+    speedRange.addEventListener("input", () => {
+      timeScale = Number(speedRange.value) / 100;
+      speedLabel.textContent = timeScale.toFixed(2) + "x";
+    });
+  </script>
+</body>
+</html>

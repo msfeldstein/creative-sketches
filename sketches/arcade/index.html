@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arcade — Space Shooter</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #0a0a0b;
+      font-family: 'JetBrains Mono', monospace;
+      color: #e8e8e8;
+    }
+    canvas { display: block; }
+    #ui {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 0.75rem 1.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      font-size: 0.7rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: #666;
+    }
+    #ui span { color: #ff6b35; }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10,10,11,0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1rem;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.3s, visibility 0.3s;
+    }
+    #overlay.visible {
+      opacity: 1;
+      visibility: visible;
+    }
+    #overlay h2 {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      color: #ff6b35;
+    }
+    #overlay p {
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: #666;
+    }
+    #overlay button {
+      margin-top: 0.5rem;
+      padding: 0.6rem 1.5rem;
+      font-family: inherit;
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      background: transparent;
+      color: #ff6b35;
+      border: 1px solid #ff6b35;
+      border-radius: 4px;
+      cursor: pointer;
+      pointer-events: auto;
+      transition: background 0.2s, color 0.2s;
+    }
+    #overlay button:hover {
+      background: #ff6b35;
+      color: #0a0a0b;
+    }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <span>Score: <span id="score">0</span></span>
+    <span>Lives: <span id="lives">3</span></span>
+  </div>
+  <canvas id="canvas"></canvas>
+  <div id="overlay">
+    <h2>Game Over</h2>
+    <p>Score: <span id="final-score">0</span></p>
+    <button type="button" id="restart">Play Again</button>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const ACCENT = '#ff6b35';
+    const BG = '#0a0a0b';
+    const SHIP_W = 36;
+    const SHIP_H = 24;
+    const BULLET_SPEED = -11;
+    const ENEMY_SPEED = 1.2;
+    const ENEMY_SPAWN_MS = 1400;
+    const PLAYER_SPEED = 5;
+
+    let width, height;
+    let player = { x: 0, y: 0 };
+    let bullets = [];
+    let enemies = [];
+    let score = 0;
+    let lives = 3;
+    let lastEnemyTime = 0;
+    let keys = {};
+    let running = true;
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      player.x = (width - SHIP_W) / 2;
+      player.y = height - 60;
+    }
+
+    function spawnEnemy() {
+      const w = 28;
+      const h = 20;
+      enemies.push({
+        x: Math.random() * (width - w),
+        y: -h,
+        w,
+        h,
+      });
+    }
+
+    function shoot() {
+      bullets.push({
+        x: player.x + SHIP_W / 2 - 2,
+        y: player.y,
+        w: 4,
+        h: 14,
+        vy: BULLET_SPEED,
+      });
+    }
+
+    function drawShip() {
+      const { x, y } = player;
+      ctx.fillStyle = ACCENT;
+      ctx.beginPath();
+      ctx.moveTo(x + SHIP_W / 2, y + SHIP_H);
+      ctx.lineTo(x, y);
+      ctx.lineTo(x + SHIP_W / 2, y + SHIP_H * 0.4);
+      ctx.lineTo(x + SHIP_W, y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,107,53,0.5)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+
+    function drawBullets() {
+      ctx.fillStyle = ACCENT;
+      bullets.forEach(b => {
+        ctx.fillRect(b.x, b.y, b.w, b.h);
+      });
+    }
+
+    function drawEnemies() {
+      ctx.fillStyle = '#4a9eff';
+      ctx.strokeStyle = 'rgba(74,158,255,0.6)';
+      enemies.forEach(e => {
+        ctx.fillRect(e.x, e.y, e.w, e.h);
+        ctx.strokeRect(e.x, e.y, e.w, e.h);
+      });
+    }
+
+    function hit(a, b) {
+      return a.x < b.x + b.w && a.x + a.w > b.x &&
+             a.y < b.y + b.h && a.y + a.h > b.y;
+    }
+
+    function update(now) {
+      if (!running) return;
+
+      if (keys['ArrowLeft'] || keys['a']) player.x = Math.max(0, player.x - PLAYER_SPEED);
+      if (keys['ArrowRight'] || keys['d']) player.x = Math.min(width - SHIP_W, player.x + PLAYER_SPEED);
+
+      bullets = bullets.filter(b => {
+        b.y += b.vy;
+        return b.y + b.h > 0;
+      });
+
+      enemies = enemies.filter(e => {
+        e.y += ENEMY_SPEED;
+        if (e.y > height) return false;
+        if (hit(player, e)) {
+          lives--;
+          document.getElementById('lives').textContent = lives;
+          if (lives <= 0) {
+            running = false;
+            document.getElementById('final-score').textContent = score;
+            document.getElementById('overlay').classList.add('visible');
+          }
+          return false;
+        }
+        const hitBy = bullets.find(b => hit(b, e));
+        if (hitBy) {
+          score += 100;
+          document.getElementById('score').textContent = score;
+          bullets = bullets.filter(b => b !== hitBy);
+          return false;
+        }
+        return true;
+      });
+
+      if (now - lastEnemyTime > ENEMY_SPAWN_MS) {
+        lastEnemyTime = now;
+        spawnEnemy();
+      }
+    }
+
+    function draw() {
+      ctx.fillStyle = BG;
+      ctx.fillRect(0, 0, width, height);
+      drawBullets();
+      drawEnemies();
+      drawShip();
+    }
+
+    function loop(now) {
+      update(now);
+      draw();
+      requestAnimationFrame(loop);
+    }
+
+    resize();
+    window.addEventListener('resize', resize);
+
+    document.addEventListener('keydown', e => {
+      keys[e.key.toLowerCase()] = true;
+      if (e.key === ' ' && running) {
+        e.preventDefault();
+        shoot();
+      }
+    });
+    document.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+    document.getElementById('restart').addEventListener('click', () => {
+      bullets = [];
+      enemies = [];
+      score = 0;
+      lives = 3;
+      lastEnemyTime = performance.now();
+      running = true;
+      document.getElementById('score').textContent = '0';
+      document.getElementById('lives').textContent = '3';
+      document.getElementById('overlay').classList.remove('visible');
+      player.x = (width - SHIP_W) / 2;
+      player.y = height - 60;
+    });
+
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

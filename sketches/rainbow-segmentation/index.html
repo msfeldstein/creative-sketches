@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Rainbow Segmentation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #05020d;
+      color: #f5f5f7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    canvas { display: block; width: 100vw; height: 100vh; }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: radial-gradient(circle at center, rgba(18, 10, 30, 0.65), rgba(4, 2, 9, 0.95));
+      z-index: 10;
+      padding: 24px;
+    }
+    .panel {
+      max-width: 420px;
+      text-align: center;
+      background: rgba(12, 8, 24, 0.75);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 14px;
+      padding: 24px;
+      backdrop-filter: blur(8px);
+    }
+    .panel h1 {
+      font-size: 18px;
+      margin-bottom: 8px;
+      letter-spacing: 0.03em;
+      font-weight: 550;
+    }
+    .panel p {
+      color: rgba(255, 255, 255, 0.72);
+      margin-bottom: 18px;
+      line-height: 1.5;
+      font-size: 14px;
+    }
+    button {
+      background: linear-gradient(90deg, #ff4fd8, #5bc7ff);
+      color: #09030f;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 18px;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+    #status {
+      margin-top: 12px;
+      font-size: 12px;
+      color: rgba(255, 255, 255, 0.7);
+      min-height: 16px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>Rainbow Segmentation</h1>
+      <p>Allow camera access to segment your silhouette and push rainbow bands outward from your body.</p>
+      <button id="startBtn">Enable Camera</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js"></script>
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const statusLabel = document.getElementById('status');
+
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+
+    const maskW = 320;
+    const maskH = 240;
+    const ringCount = 8;
+    const ringStep = 2.8;
+    const ringThickness = 5.8;
+
+    const rawMask = document.createElement('canvas');
+    rawMask.width = maskW;
+    rawMask.height = maskH;
+    const rawMaskCtx = rawMask.getContext('2d', { willReadFrequently: true });
+
+    const binaryMask = document.createElement('canvas');
+    binaryMask.width = maskW;
+    binaryMask.height = maskH;
+    const binaryMaskCtx = binaryMask.getContext('2d', { willReadFrequently: true });
+
+    const blurOuter = document.createElement('canvas');
+    blurOuter.width = maskW;
+    blurOuter.height = maskH;
+    const blurOuterCtx = blurOuter.getContext('2d');
+
+    const blurInner = document.createElement('canvas');
+    blurInner.width = maskW;
+    blurInner.height = maskH;
+    const blurInnerCtx = blurInner.getContext('2d');
+
+    const ringLayer = document.createElement('canvas');
+    ringLayer.width = maskW;
+    ringLayer.height = maskH;
+    const ringLayerCtx = ringLayer.getContext('2d');
+
+    const personLayer = document.createElement('canvas');
+    personLayer.width = maskW;
+    personLayer.height = maskH;
+    const personLayerCtx = personLayer.getContext('2d');
+
+    let running = false;
+    let hasMask = false;
+
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    }
+
+    function drawBlurredMask(targetCtx, radius) {
+      targetCtx.save();
+      targetCtx.clearRect(0, 0, maskW, maskH);
+      targetCtx.filter = `blur(${Math.max(0, radius).toFixed(2)}px)`;
+      targetCtx.drawImage(binaryMask, 0, 0);
+      targetCtx.restore();
+    }
+
+    function buildBinaryMask(segmentationMask) {
+      rawMaskCtx.clearRect(0, 0, maskW, maskH);
+      rawMaskCtx.drawImage(segmentationMask, 0, 0, maskW, maskH);
+      const image = rawMaskCtx.getImageData(0, 0, maskW, maskH);
+      const data = image.data;
+
+      for (let i = 0; i < data.length; i += 4) {
+        const confidence = data[i];
+        const on = confidence > 120;
+        data[i] = 255;
+        data[i + 1] = 255;
+        data[i + 2] = 255;
+        data[i + 3] = on ? 255 : 0;
+      }
+
+      binaryMaskCtx.putImageData(image, 0, 0);
+      hasMask = true;
+    }
+
+    function renderRainbow() {
+      const t = performance.now() * 0.001;
+      const pulse = (Math.sin(t * 1.65) * 0.5 + 0.5) * 2.2;
+      const hueSpin = t * 45;
+
+      ctx.fillStyle = '#05020d';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      if (!hasMask) {
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';
+        ctx.font = '14px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('Waiting for segmentation...', canvas.width * 0.5, canvas.height * 0.5);
+        return;
+      }
+
+      for (let i = ringCount - 1; i >= 0; i--) {
+        const innerRadius = i * ringStep + pulse;
+        const outerRadius = innerRadius + ringThickness;
+        const hue = (hueSpin + i * 38) % 360;
+
+        drawBlurredMask(blurOuterCtx, outerRadius);
+        drawBlurredMask(blurInnerCtx, innerRadius);
+
+        ringLayerCtx.clearRect(0, 0, maskW, maskH);
+        ringLayerCtx.globalCompositeOperation = 'source-over';
+        ringLayerCtx.drawImage(blurOuter, 0, 0);
+        ringLayerCtx.globalCompositeOperation = 'destination-out';
+        ringLayerCtx.drawImage(blurInner, 0, 0);
+        ringLayerCtx.globalCompositeOperation = 'source-in';
+        ringLayerCtx.fillStyle = `hsl(${hue}, 92%, 62%)`;
+        ringLayerCtx.fillRect(0, 0, maskW, maskH);
+        ringLayerCtx.globalCompositeOperation = 'source-over';
+
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.globalAlpha = 0.8;
+        ctx.drawImage(ringLayer, 0, 0, canvas.width, canvas.height);
+      }
+
+      personLayerCtx.clearRect(0, 0, maskW, maskH);
+      personLayerCtx.drawImage(video, 0, 0, maskW, maskH);
+      personLayerCtx.globalCompositeOperation = 'destination-in';
+      personLayerCtx.drawImage(binaryMask, 0, 0);
+      personLayerCtx.globalCompositeOperation = 'source-over';
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(personLayer, 0, 0, canvas.width, canvas.height);
+
+      drawBlurredMask(blurOuterCtx, 2.4);
+      drawBlurredMask(blurInnerCtx, 0.8);
+      ringLayerCtx.clearRect(0, 0, maskW, maskH);
+      ringLayerCtx.drawImage(blurOuter, 0, 0);
+      ringLayerCtx.globalCompositeOperation = 'destination-out';
+      ringLayerCtx.drawImage(blurInner, 0, 0);
+      ringLayerCtx.globalCompositeOperation = 'source-in';
+      ringLayerCtx.fillStyle = 'rgba(255,255,255,0.7)';
+      ringLayerCtx.fillRect(0, 0, maskW, maskH);
+      ringLayerCtx.globalCompositeOperation = 'source-over';
+
+      ctx.globalCompositeOperation = 'screen';
+      ctx.globalAlpha = 0.65;
+      ctx.drawImage(ringLayer, 0, 0, canvas.width, canvas.height);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+    }
+
+    async function runSegmentation(selfieSegmentation) {
+      if (!running) return;
+      await selfieSegmentation.send({ image: video });
+      renderRainbow();
+      requestAnimationFrame(() => runSegmentation(selfieSegmentation));
+    }
+
+    async function start() {
+      try {
+        statusLabel.textContent = 'Requesting camera...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 } },
+          audio: false,
+        });
+
+        video.srcObject = stream;
+        await video.play();
+
+        const selfieSegmentation = new SelfieSegmentation({
+          locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`,
+        });
+
+        selfieSegmentation.setOptions({
+          modelSelection: 1,
+        });
+
+        selfieSegmentation.onResults((results) => {
+          if (results.segmentationMask) {
+            buildBinaryMask(results.segmentationMask);
+          }
+        });
+
+        running = true;
+        overlay.style.display = 'none';
+        runSegmentation(selfieSegmentation);
+      } catch (error) {
+        statusLabel.textContent = 'Camera failed to start. Check browser permissions and try again.';
+        console.error(error);
+      }
+    }
+
+    startBtn.addEventListener('click', start);
+    window.addEventListener('resize', resize);
+
+    resize();
+    renderRainbow();
+  </script>
+</body>
+</html>
