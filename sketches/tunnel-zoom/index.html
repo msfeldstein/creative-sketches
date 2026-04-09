@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tunnel Zoom</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      overflow: hidden;
+      background: #000;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    const DEFAULT_CONFIG = {
+      speed: 100,
+      ringCount: 24,
+      hue: 200,
+      hueRange: 60,
+      glow: 80,
+      streakCount: 120,
+      wobble: 30,
+      fade: 92,
+    };
+
+    const CONFIG = {
+      speed: DEFAULT_CONFIG.speed / 100,
+      ringCount: DEFAULT_CONFIG.ringCount,
+      hue: DEFAULT_CONFIG.hue,
+      hueRange: DEFAULT_CONFIG.hueRange,
+      glow: DEFAULT_CONFIG.glow / 100,
+      streakCount: DEFAULT_CONFIG.streakCount,
+      wobble: DEFAULT_CONFIG.wobble / 100,
+      fade: DEFAULT_CONFIG.fade / 100,
+    };
+
+    let width, height, cx, cy, maxRadius;
+
+    const rings = [];
+    const streaks = [];
+
+    function createRing(depth) {
+      return {
+        depth,
+        angleOffset: Math.random() * Math.PI * 2,
+        segments: 6 + Math.floor(Math.random() * 4),
+        gapRatio: 0.3 + Math.random() * 0.3,
+      };
+    }
+
+    function createStreak() {
+      const angle = Math.random() * Math.PI * 2;
+      return {
+        angle,
+        depth: Math.random(),
+        speed: 0.5 + Math.random() * 1.0,
+        length: 0.02 + Math.random() * 0.06,
+        brightness: 0.3 + Math.random() * 0.7,
+        radialOffset: 0.3 + Math.random() * 0.7,
+      };
+    }
+
+    function initRings() {
+      rings.length = 0;
+      for (let i = 0; i < CONFIG.ringCount; i++) {
+        rings.push(createRing(i / CONFIG.ringCount));
+      }
+    }
+
+    function initStreaks() {
+      streaks.length = 0;
+      for (let i = 0; i < CONFIG.streakCount; i++) {
+        streaks.push(createStreak());
+      }
+    }
+
+    function resize() {
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width;
+      canvas.height = height;
+      cx = width / 2;
+      cy = height / 2;
+      maxRadius = Math.sqrt(cx * cx + cy * cy);
+    }
+
+    function easeOutQuad(t) {
+      return t * (2 - t);
+    }
+
+    function drawRing(ring, time) {
+      const expandedDepth = easeOutQuad(ring.depth);
+      const radius = expandedDepth * maxRadius;
+      if (radius < 1) return;
+
+      const hue = (CONFIG.hue + ring.depth * CONFIG.hueRange) % 360;
+      const alpha = Math.sin(ring.depth * Math.PI) * 0.8;
+
+      if (alpha < 0.01) return;
+
+      const wobbleX = Math.sin(time * 0.7 + ring.angleOffset) * CONFIG.wobble * 30 * expandedDepth;
+      const wobbleY = Math.cos(time * 0.9 + ring.angleOffset * 1.3) * CONFIG.wobble * 30 * expandedDepth;
+
+      const centerX = cx + wobbleX;
+      const centerY = cy + wobbleY;
+
+      const lineWidth = 1 + expandedDepth * 3;
+
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate(ring.angleOffset + time * 0.1);
+
+      const segAngle = (Math.PI * 2) / ring.segments;
+      const gapAngle = segAngle * ring.gapRatio;
+
+      for (let s = 0; s < ring.segments; s++) {
+        const startAngle = s * segAngle;
+        const endAngle = startAngle + segAngle - gapAngle;
+
+        ctx.beginPath();
+        ctx.arc(0, 0, radius, startAngle, endAngle);
+        ctx.strokeStyle = `hsla(${hue}, 80%, 60%, ${alpha})`;
+        ctx.lineWidth = lineWidth;
+        ctx.stroke();
+
+        if (CONFIG.glow > 0.1) {
+          ctx.beginPath();
+          ctx.arc(0, 0, radius, startAngle, endAngle);
+          ctx.strokeStyle = `hsla(${hue}, 90%, 70%, ${alpha * CONFIG.glow * 0.3})`;
+          ctx.lineWidth = lineWidth + 4 * CONFIG.glow;
+          ctx.stroke();
+        }
+      }
+
+      ctx.restore();
+    }
+
+    function drawStreak(streak, time) {
+      const depthExp = easeOutQuad(streak.depth);
+      const innerRadius = depthExp * maxRadius * streak.radialOffset;
+      const outerRadius = innerRadius + streak.length * maxRadius * depthExp;
+
+      if (innerRadius < 1) return;
+
+      const alpha = Math.sin(streak.depth * Math.PI) * streak.brightness * 0.5;
+      if (alpha < 0.01) return;
+
+      const hue = (CONFIG.hue + 30 + streak.depth * CONFIG.hueRange * 0.5) % 360;
+
+      const wobbleAngle = Math.sin(time * 0.5 + streak.angle * 3) * CONFIG.wobble * 0.1;
+      const angle = streak.angle + wobbleAngle;
+
+      const x1 = cx + Math.cos(angle) * innerRadius;
+      const y1 = cy + Math.sin(angle) * innerRadius;
+      const x2 = cx + Math.cos(angle) * outerRadius;
+      const y2 = cy + Math.sin(angle) * outerRadius;
+
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.strokeStyle = `hsla(${hue}, 70%, 75%, ${alpha})`;
+      ctx.lineWidth = 0.5 + depthExp * 1.5;
+      ctx.stroke();
+    }
+
+    function drawCenterGlow(time) {
+      const pulseSize = 1 + Math.sin(time * 2) * 0.15;
+      const glowRadius = 60 * pulseSize * CONFIG.glow;
+
+      const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowRadius);
+      grad.addColorStop(0, `hsla(${CONFIG.hue}, 80%, 90%, ${0.4 * CONFIG.glow})`);
+      grad.addColorStop(0.3, `hsla(${CONFIG.hue + 20}, 70%, 60%, ${0.15 * CONFIG.glow})`);
+      grad.addColorStop(1, 'hsla(0, 0%, 0%, 0)');
+
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - glowRadius, cy - glowRadius, glowRadius * 2, glowRadius * 2);
+    }
+
+    function drawVignette() {
+      const grad = ctx.createRadialGradient(cx, cy, maxRadius * 0.3, cx, cy, maxRadius);
+      grad.addColorStop(0, 'rgba(0, 0, 0, 0)');
+      grad.addColorStop(1, 'rgba(0, 0, 0, 0.6)');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, width, height);
+    }
+
+    let lastTime = 0;
+
+    function draw(timestamp) {
+      const dt = Math.min((timestamp - lastTime) / 1000, 0.05);
+      lastTime = timestamp;
+
+      const time = timestamp * 0.001;
+      const values = panel.getValues(time);
+      if (values) {
+        CONFIG.speed = (values.speed ?? DEFAULT_CONFIG.speed) / 100;
+        CONFIG.hue = values.hue ?? DEFAULT_CONFIG.hue;
+        CONFIG.hueRange = values.hueRange ?? DEFAULT_CONFIG.hueRange;
+        CONFIG.glow = (values.glow ?? DEFAULT_CONFIG.glow) / 100;
+        CONFIG.wobble = (values.wobble ?? DEFAULT_CONFIG.wobble) / 100;
+        CONFIG.fade = (values.fade ?? DEFAULT_CONFIG.fade) / 100;
+
+        const newRingCount = values.ringCount ?? DEFAULT_CONFIG.ringCount;
+        if (newRingCount !== CONFIG.ringCount) {
+          CONFIG.ringCount = newRingCount;
+          initRings();
+        }
+
+        const newStreakCount = values.streakCount ?? DEFAULT_CONFIG.streakCount;
+        if (newStreakCount !== CONFIG.streakCount) {
+          CONFIG.streakCount = newStreakCount;
+          initStreaks();
+        }
+      }
+
+      ctx.fillStyle = `rgba(0, 0, 0, ${1 - CONFIG.fade})`;
+      ctx.fillRect(0, 0, width, height);
+
+      const advanceSpeed = dt * CONFIG.speed;
+
+      for (const ring of rings) {
+        ring.depth += advanceSpeed * 0.6;
+        if (ring.depth > 1) {
+          ring.depth -= 1;
+          ring.angleOffset = Math.random() * Math.PI * 2;
+          ring.segments = 6 + Math.floor(Math.random() * 4);
+          ring.gapRatio = 0.3 + Math.random() * 0.3;
+        }
+        drawRing(ring, time);
+      }
+
+      for (const streak of streaks) {
+        streak.depth += advanceSpeed * 0.8 * streak.speed;
+        if (streak.depth > 1) {
+          streak.depth -= 1;
+          streak.angle = Math.random() * Math.PI * 2;
+          streak.brightness = 0.3 + Math.random() * 0.7;
+          streak.radialOffset = 0.3 + Math.random() * 0.7;
+        }
+        drawStreak(streak, time);
+      }
+
+      drawCenterGlow(time);
+      drawVignette();
+
+      panel.update(time);
+      requestAnimationFrame(draw);
+    }
+
+    const panel = new DebugPanel({
+      title: 'Tunnel Zoom',
+      storageKey: 'tunnelZoomSettings',
+      schema: {
+        speed: { type: 'number', label: 'Speed', min: 10, max: 300, default: DEFAULT_CONFIG.speed, unit: '%', group: 'Motion' },
+        ringCount: { type: 'number', label: 'Rings', min: 4, max: 60, default: DEFAULT_CONFIG.ringCount, group: 'Motion' },
+        streakCount: { type: 'number', label: 'Streaks', min: 0, max: 300, default: DEFAULT_CONFIG.streakCount, group: 'Motion' },
+        wobble: { type: 'number', label: 'Wobble', min: 0, max: 100, default: DEFAULT_CONFIG.wobble, unit: '%', group: 'Motion' },
+        hue: { type: 'number', label: 'Hue', min: 0, max: 360, default: DEFAULT_CONFIG.hue, group: 'Visual' },
+        hueRange: { type: 'number', label: 'Hue Range', min: 0, max: 180, default: DEFAULT_CONFIG.hueRange, group: 'Visual' },
+        glow: { type: 'number', label: 'Glow', min: 0, max: 200, default: DEFAULT_CONFIG.glow, unit: '%', group: 'Visual' },
+        fade: { type: 'number', label: 'Trail Fade', min: 80, max: 100, default: DEFAULT_CONFIG.fade, unit: '%', group: 'Visual' },
+      },
+      onChange: () => {},
+    });
+
+    createHint('D: toggle panel');
+    resize();
+    window.addEventListener('resize', resize);
+    initRings();
+    initStreaks();
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
