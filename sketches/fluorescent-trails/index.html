@@ -108,14 +108,20 @@
     video.muted = true;
     video.playsInline = true;
 
-    const sampleW = 96;
-    const sampleH = 72;
+    const sampleW = 160;
+    const sampleH = 120;
     const sampleCanvas = document.createElement('canvas');
     sampleCanvas.width = sampleW;
     sampleCanvas.height = sampleH;
     const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
     const currentLuma = new Float32Array(sampleW * sampleH);
     const previousLuma = new Float32Array(sampleW * sampleH);
+    const motionMask = new Float32Array(sampleW * sampleH);
+    const outlineCanvas = document.createElement('canvas');
+    outlineCanvas.width = sampleW;
+    outlineCanvas.height = sampleH;
+    const outlineCtx = outlineCanvas.getContext('2d');
+    const outlineImage = outlineCtx.createImageData(sampleW, sampleH);
     let hasPreviousFrame = false;
 
     const fluid = {
@@ -154,7 +160,7 @@
       canvas.style.height = `${window.innerHeight}px`;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-      const simW = 144;
+      const simW = 224;
       const simH = Math.max(80, Math.round(simW * window.innerHeight / window.innerWidth));
       if (fluid.width !== simW || fluid.height !== simH) {
         createFluid(simW, simH);
@@ -219,6 +225,25 @@
       }
     }
 
+    function addMotionMark(x, y, strength) {
+      const radius = 7;
+      const amount = clamp(strength * 1.6, 0.25, 1);
+
+      for (let oy = -radius; oy <= radius; oy++) {
+        const py = y + oy;
+        if (py < 1 || py >= sampleH - 1) continue;
+
+        for (let ox = -radius; ox <= radius; ox++) {
+          const px = x + ox;
+          if (px < 1 || px >= sampleW - 1) continue;
+
+          const falloff = Math.max(0, 1 - Math.hypot(ox, oy) / radius);
+          const i = px + py * sampleW;
+          motionMask[i] = Math.max(motionMask[i], falloff * amount);
+        }
+      }
+    }
+
     function captureOpticalFlow() {
       if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
 
@@ -239,7 +264,7 @@
       }
 
       const now = performance.now() * 0.001;
-      const step = 3;
+      const step = 4;
       for (let y = 2; y < sampleH - 2; y += step) {
         for (let x = 2; x < sampleW - 2; x += step) {
           const p = x + y * sampleW;
@@ -256,11 +281,18 @@
             const ny = y / (sampleH - 1);
             const force = clamp(motion * 0.22, 0.02, 0.28);
             addSplash(nx, ny, flowX * 1.4, flowY * 1.4, force, (now * 0.08 + nx * 0.48 + ny * 0.18) % 1);
+            addMotionMark(x, y, motion);
           }
         }
       }
 
       previousLuma.set(currentLuma);
+    }
+
+    function fadeMotionMask() {
+      for (let i = 0; i < motionMask.length; i++) {
+        motionMask[i] *= 0.9;
+      }
     }
 
     function sampleField(field, x, y) {
@@ -412,20 +444,70 @@
       ctx.globalCompositeOperation = 'source-over';
     }
 
+    function renderMotionOutline() {
+      const pixels = outlineImage.data;
+      pixels.fill(0);
+
+      for (let y = 1; y < sampleH - 1; y++) {
+        for (let x = 1; x < sampleW - 1; x++) {
+          const i = x + y * sampleW;
+          const center = motionMask[i];
+          if (center < 0.04) continue;
+
+          const left = motionMask[i - 1];
+          const right = motionMask[i + 1];
+          const top = motionMask[i - sampleW];
+          const bottom = motionMask[i + sampleW];
+          const gradient = Math.abs(right - left) + Math.abs(bottom - top);
+          const rim = Math.max(0, center - Math.min(left, right, top, bottom) * 0.65);
+          const alpha = clamp((rim * 1.35 + gradient * 1.9) * 255, 0, 255);
+          const p = i * 4;
+          pixels[p] = 255;
+          pixels[p + 1] = 255;
+          pixels[p + 2] = 255;
+          pixels[p + 3] = alpha;
+        }
+      }
+
+      outlineCtx.putImageData(outlineImage, 0, 0);
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.save();
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.filter = 'blur(18px)';
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(outlineCanvas, 0, 0, w, h);
+      ctx.filter = 'blur(5px)';
+      ctx.globalAlpha = 0.85;
+      ctx.drawImage(outlineCanvas, 0, 0, w, h);
+      ctx.filter = 'none';
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(outlineCanvas, 0, 0, w, h);
+      ctx.restore();
+    }
+
     function animate(now) {
       const dt = clamp((now - lastTime) / 16.666, 0.35, 1.8);
       lastTime = now;
 
+      fadeMotionMask();
       if (running) captureOpticalFlow();
       if (pointerDown) {
         const fx = (pointer.x - pointer.px) * fluid.width * 0.55;
         const fy = (pointer.y - pointer.py) * fluid.height * 0.55;
         addSplash(pointer.x, pointer.y, fx, fy, 0.09, (now * 0.00008 + pointer.x) % 1);
+        addMotionMark(
+          Math.round(pointer.x * (sampleW - 1)),
+          Math.round(pointer.y * (sampleH - 1)),
+          0.95
+        );
         pointer.px = pointer.x;
         pointer.py = pointer.y;
       }
       stepFluid(dt);
       renderFluid();
+      renderMotionOutline();
       requestAnimationFrame(animate);
     }
 
