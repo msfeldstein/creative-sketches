@@ -212,9 +212,9 @@
           const pulse = falloff * amount;
           fluid.vx[i] += fx * pulse;
           fluid.vy[i] += fy * pulse;
-          fluid.dyeR[i] += r * pulse * 3.8;
-          fluid.dyeG[i] += g * pulse * 3.8;
-          fluid.dyeB[i] += b * pulse * 3.8;
+          fluid.dyeR[i] += r * pulse * 1.55;
+          fluid.dyeG[i] += g * pulse * 1.55;
+          fluid.dyeB[i] += b * pulse * 1.55;
         }
       }
     }
@@ -380,10 +380,10 @@
         const r = clamp(fluid.dyeR[i], 0, 1);
         const g = clamp(fluid.dyeG[i], 0, 1);
         const b = clamp(fluid.dyeB[i], 0, 1);
-        const glow = clamp((r + g + b) * 0.38, 0, 1);
-        pixels[p] = Math.round(r * 235 + glow * 45);
-        pixels[p + 1] = Math.round(g * 245 + glow * 38);
-        pixels[p + 2] = Math.round(b * 255 + glow * 60);
+        const glow = clamp((r + g + b) * 0.14, 0, 0.32);
+        pixels[p] = Math.round(r * 220 + glow * 35);
+        pixels[p + 1] = Math.round(g * 230 + glow * 28);
+        pixels[p + 2] = Math.round(b * 245 + glow * 42);
         pixels[p + 3] = 255;
       }
       fluidCtx.putImageData(fluid.image, 0, 0);
@@ -391,20 +391,20 @@
       const w = window.innerWidth;
       const h = window.innerHeight;
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = 'rgba(2, 2, 7, 0.32)';
+      ctx.fillStyle = 'rgba(2, 2, 7, 0.45)';
       ctx.fillRect(0, 0, w, h);
 
       ctx.save();
       ctx.filter = 'blur(22px) saturate(190%)';
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.62;
+      ctx.globalAlpha = 0.34;
       ctx.drawImage(fluid.canvas, 0, 0, w, h);
       ctx.restore();
 
       ctx.save();
       ctx.filter = 'saturate(180%) contrast(112%)';
       ctx.globalCompositeOperation = 'lighter';
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.72;
       ctx.drawImage(fluid.canvas, 0, 0, w, h);
       ctx.restore();
 
@@ -420,7 +420,7 @@
       if (pointerDown) {
         const fx = (pointer.x - pointer.px) * fluid.width * 0.55;
         const fy = (pointer.y - pointer.py) * fluid.height * 0.55;
-        addSplash(pointer.x, pointer.y, fx, fy, 0.22, (now * 0.00008 + pointer.x) % 1);
+        addSplash(pointer.x, pointer.y, fx, fy, 0.09, (now * 0.00008 + pointer.x) % 1);
         pointer.px = pointer.x;
         pointer.py = pointer.y;
       }
