@@ -458,9 +458,8 @@
           const right = motionMask[i + 1];
           const top = motionMask[i - sampleW];
           const bottom = motionMask[i + sampleW];
-          const gradient = Math.abs(right - left) + Math.abs(bottom - top);
-          const rim = Math.max(0, center - Math.min(left, right, top, bottom) * 0.65);
-          const alpha = clamp((rim * 1.35 + gradient * 1.9) * 255, 0, 255);
+          const gradient = Math.hypot(right - left, bottom - top);
+          const alpha = clamp((gradient - 0.025) * 980, 0, 210);
           const p = i * 4;
           pixels[p] = 255;
           pixels[p + 1] = 255;
@@ -475,14 +474,14 @@
       const h = window.innerHeight;
       ctx.save();
       ctx.globalCompositeOperation = 'lighter';
-      ctx.filter = 'blur(18px)';
-      ctx.globalAlpha = 0.95;
+      ctx.filter = 'blur(14px)';
+      ctx.globalAlpha = 0.48;
       ctx.drawImage(outlineCanvas, 0, 0, w, h);
       ctx.filter = 'blur(5px)';
-      ctx.globalAlpha = 0.85;
+      ctx.globalAlpha = 0.58;
       ctx.drawImage(outlineCanvas, 0, 0, w, h);
       ctx.filter = 'none';
-      ctx.globalAlpha = 0.9;
+      ctx.globalAlpha = 0.72;
       ctx.drawImage(outlineCanvas, 0, 0, w, h);
       ctx.restore();
     }
