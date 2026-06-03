@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fluorescent Trails</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      overflow: hidden;
+      background: #020207;
+      color: #f7fbff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+    }
+    #overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background:
+        radial-gradient(circle at 30% 20%, rgba(68, 255, 219, 0.18), transparent 34%),
+        radial-gradient(circle at 70% 70%, rgba(255, 46, 248, 0.14), transparent 38%),
+        rgba(2, 2, 7, 0.92);
+      z-index: 5;
+    }
+    .panel {
+      width: min(440px, 100%);
+      padding: 26px;
+      border: 1px solid rgba(136, 255, 239, 0.26);
+      border-radius: 18px;
+      text-align: center;
+      background: rgba(5, 8, 18, 0.76);
+      box-shadow: 0 0 40px rgba(28, 255, 206, 0.16);
+      backdrop-filter: blur(14px);
+    }
+    h1 {
+      margin-bottom: 10px;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+    }
+    p {
+      margin-bottom: 18px;
+      color: rgba(247, 251, 255, 0.72);
+      font-size: 14px;
+      line-height: 1.55;
+    }
+    button {
+      border: 0;
+      border-radius: 999px;
+      padding: 11px 20px;
+      color: #02110f;
+      background: linear-gradient(90deg, #2fffe6, #fc4dff, #faff66);
+      cursor: pointer;
+      font-weight: 800;
+      letter-spacing: 0.03em;
+      box-shadow: 0 0 24px rgba(47, 255, 230, 0.32);
+    }
+    #status {
+      min-height: 16px;
+      margin-top: 12px;
+      color: rgba(247, 251, 255, 0.66);
+      font-size: 12px;
+    }
+    .label {
+      position: fixed;
+      left: 18px;
+      bottom: 16px;
+      z-index: 2;
+      color: rgba(247, 251, 255, 0.54);
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      pointer-events: none;
+      text-shadow: 0 0 12px rgba(47, 255, 230, 0.5);
+    }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+  <div class="label">Camera optical flow / fluid trails</div>
+
+  <div id="overlay">
+    <div class="panel">
+      <h1>Fluorescent Trails</h1>
+      <p>Allow camera access, then move through the frame to inject optical-flow currents into a glowing fluid field.</p>
+      <button id="startBtn">Enable Camera</button>
+      <div id="status"></div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const statusLabel = document.getElementById('status');
+
+    const video = document.createElement('video');
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+
+    const sampleW = 96;
+    const sampleH = 72;
+    const sampleCanvas = document.createElement('canvas');
+    sampleCanvas.width = sampleW;
+    sampleCanvas.height = sampleH;
+    const sampleCtx = sampleCanvas.getContext('2d', { willReadFrequently: true });
+    const currentLuma = new Float32Array(sampleW * sampleH);
+    const previousLuma = new Float32Array(sampleW * sampleH);
+    let hasPreviousFrame = false;
+
+    const fluid = {
+      width: 0,
+      height: 0,
+      size: 0,
+      vx: new Float32Array(0),
+      vy: new Float32Array(0),
+      vx0: new Float32Array(0),
+      vy0: new Float32Array(0),
+      dyeR: new Float32Array(0),
+      dyeG: new Float32Array(0),
+      dyeB: new Float32Array(0),
+      dyeR0: new Float32Array(0),
+      dyeG0: new Float32Array(0),
+      dyeB0: new Float32Array(0),
+      pressure: new Float32Array(0),
+      divergence: new Float32Array(0),
+      curl: new Float32Array(0),
+      pixels: null,
+      image: null,
+      canvas: document.createElement('canvas'),
+    };
+    const fluidCtx = fluid.canvas.getContext('2d');
+
+    let running = false;
+    let lastTime = performance.now();
+    let pointerDown = false;
+    let pointer = { x: 0.5, y: 0.5, px: 0.5, py: 0.5 };
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const simW = 144;
+      const simH = Math.max(80, Math.round(simW * window.innerHeight / window.innerWidth));
+      if (fluid.width !== simW || fluid.height !== simH) {
+        createFluid(simW, simH);
+      }
+    }
+
+    function createFluid(width, height) {
+      const size = width * height;
+      fluid.width = width;
+      fluid.height = height;
+      fluid.size = size;
+      fluid.canvas.width = width;
+      fluid.canvas.height = height;
+      fluid.vx = new Float32Array(size);
+      fluid.vy = new Float32Array(size);
+      fluid.vx0 = new Float32Array(size);
+      fluid.vy0 = new Float32Array(size);
+      fluid.dyeR = new Float32Array(size);
+      fluid.dyeG = new Float32Array(size);
+      fluid.dyeB = new Float32Array(size);
+      fluid.dyeR0 = new Float32Array(size);
+      fluid.dyeG0 = new Float32Array(size);
+      fluid.dyeB0 = new Float32Array(size);
+      fluid.pressure = new Float32Array(size);
+      fluid.divergence = new Float32Array(size);
+      fluid.curl = new Float32Array(size);
+      fluid.image = fluidCtx.createImageData(width, height);
+      fluid.pixels = fluid.image.data;
+    }
+
+    function index(x, y) {
+      return x + y * fluid.width;
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    function addSplash(nx, ny, fx, fy, amount, hue) {
+      const cx = clamp(Math.round(nx * (fluid.width - 1)), 1, fluid.width - 2);
+      const cy = clamp(Math.round(ny * (fluid.height - 1)), 1, fluid.height - 2);
+      const radius = 4;
+      const hueRad = hue * Math.PI * 2;
+      const r = 0.55 + 0.45 * Math.sin(hueRad);
+      const g = 0.55 + 0.45 * Math.sin(hueRad + 2.1);
+      const b = 0.55 + 0.45 * Math.sin(hueRad + 4.2);
+
+      for (let y = -radius; y <= radius; y++) {
+        for (let x = -radius; x <= radius; x++) {
+          const px = cx + x;
+          const py = cy + y;
+          if (px <= 0 || px >= fluid.width - 1 || py <= 0 || py >= fluid.height - 1) continue;
+          const falloff = Math.max(0, 1 - Math.hypot(x, y) / radius);
+          const i = index(px, py);
+          const pulse = falloff * amount;
+          fluid.vx[i] += fx * pulse;
+          fluid.vy[i] += fy * pulse;
+          fluid.dyeR[i] += r * pulse * 3.8;
+          fluid.dyeG[i] += g * pulse * 3.8;
+          fluid.dyeB[i] += b * pulse * 3.8;
+        }
+      }
+    }
+
+    function captureOpticalFlow() {
+      if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) return;
+
+      sampleCtx.save();
+      sampleCtx.scale(-1, 1);
+      sampleCtx.drawImage(video, -sampleW, 0, sampleW, sampleH);
+      sampleCtx.restore();
+
+      const frame = sampleCtx.getImageData(0, 0, sampleW, sampleH).data;
+      for (let i = 0, p = 0; i < frame.length; i += 4, p++) {
+        currentLuma[p] = frame[i] * 0.299 + frame[i + 1] * 0.587 + frame[i + 2] * 0.114;
+      }
+
+      if (!hasPreviousFrame) {
+        previousLuma.set(currentLuma);
+        hasPreviousFrame = true;
+        return;
+      }
+
+      const now = performance.now() * 0.001;
+      const step = 3;
+      for (let y = 2; y < sampleH - 2; y += step) {
+        for (let x = 2; x < sampleW - 2; x += step) {
+          const p = x + y * sampleW;
+          const gx = currentLuma[p + 1] - currentLuma[p - 1];
+          const gy = currentLuma[p + sampleW] - currentLuma[p - sampleW];
+          const gt = currentLuma[p] - previousLuma[p];
+          const denom = gx * gx + gy * gy + 18;
+          const flowX = -gt * gx / denom;
+          const flowY = -gt * gy / denom;
+          const motion = Math.hypot(flowX, flowY);
+
+          if (motion > 0.22) {
+            const nx = x / (sampleW - 1);
+            const ny = y / (sampleH - 1);
+            const force = clamp(motion * 0.22, 0.02, 0.28);
+            addSplash(nx, ny, flowX * 1.4, flowY * 1.4, force, (now * 0.08 + nx * 0.48 + ny * 0.18) % 1);
+          }
+        }
+      }
+
+      previousLuma.set(currentLuma);
+    }
+
+    function sampleField(field, x, y) {
+      const sx = clamp(x, 0, fluid.width - 1.001);
+      const sy = clamp(y, 0, fluid.height - 1.001);
+      const x0 = Math.floor(sx);
+      const y0 = Math.floor(sy);
+      const x1 = Math.min(x0 + 1, fluid.width - 1);
+      const y1 = Math.min(y0 + 1, fluid.height - 1);
+      const tx = sx - x0;
+      const ty = sy - y0;
+      const a = field[index(x0, y0)] * (1 - tx) + field[index(x1, y0)] * tx;
+      const b = field[index(x0, y1)] * (1 - tx) + field[index(x1, y1)] * tx;
+      return a * (1 - ty) + b * ty;
+    }
+
+    function advect(target, source, dt, decay) {
+      for (let y = 1; y < fluid.height - 1; y++) {
+        for (let x = 1; x < fluid.width - 1; x++) {
+          const i = index(x, y);
+          const backX = x - fluid.vx0[i] * dt;
+          const backY = y - fluid.vy0[i] * dt;
+          target[i] = sampleField(source, backX, backY) * decay;
+        }
+      }
+    }
+
+    function computeCurl() {
+      for (let y = 1; y < fluid.height - 1; y++) {
+        for (let x = 1; x < fluid.width - 1; x++) {
+          const i = index(x, y);
+          fluid.curl[i] = (fluid.vy[index(x + 1, y)] - fluid.vy[index(x - 1, y)]) -
+            (fluid.vx[index(x, y + 1)] - fluid.vx[index(x, y - 1)]);
+        }
+      }
+    }
+
+    function applyVorticity(dt) {
+      computeCurl();
+      for (let y = 2; y < fluid.height - 2; y++) {
+        for (let x = 2; x < fluid.width - 2; x++) {
+          const i = index(x, y);
+          const left = Math.abs(fluid.curl[index(x - 1, y)]);
+          const right = Math.abs(fluid.curl[index(x + 1, y)]);
+          const top = Math.abs(fluid.curl[index(x, y - 1)]);
+          const bottom = Math.abs(fluid.curl[index(x, y + 1)]);
+          let nx = right - left;
+          let ny = bottom - top;
+          const len = Math.hypot(nx, ny) + 0.0001;
+          nx /= len;
+          ny /= len;
+          const curl = fluid.curl[i];
+          fluid.vx[i] += ny * -curl * 0.018 * dt;
+          fluid.vy[i] += nx * curl * 0.018 * dt;
+        }
+      }
+    }
+
+    function project() {
+      fluid.pressure.fill(0);
+      for (let y = 1; y < fluid.height - 1; y++) {
+        for (let x = 1; x < fluid.width - 1; x++) {
+          fluid.divergence[index(x, y)] = -0.5 * (
+            fluid.vx[index(x + 1, y)] - fluid.vx[index(x - 1, y)] +
+            fluid.vy[index(x, y + 1)] - fluid.vy[index(x, y - 1)]
+          );
+        }
+      }
+
+      for (let k = 0; k < 18; k++) {
+        for (let y = 1; y < fluid.height - 1; y++) {
+          for (let x = 1; x < fluid.width - 1; x++) {
+            const i = index(x, y);
+            fluid.pressure[i] = (
+              fluid.divergence[i] +
+              fluid.pressure[index(x - 1, y)] +
+              fluid.pressure[index(x + 1, y)] +
+              fluid.pressure[index(x, y - 1)] +
+              fluid.pressure[index(x, y + 1)]
+            ) * 0.25;
+          }
+        }
+      }
+
+      for (let y = 1; y < fluid.height - 1; y++) {
+        for (let x = 1; x < fluid.width - 1; x++) {
+          const i = index(x, y);
+          fluid.vx[i] -= 0.5 * (fluid.pressure[index(x + 1, y)] - fluid.pressure[index(x - 1, y)]);
+          fluid.vy[i] -= 0.5 * (fluid.pressure[index(x, y + 1)] - fluid.pressure[index(x, y - 1)]);
+        }
+      }
+    }
+
+    function stepFluid(dt) {
+      applyVorticity(dt);
+      project();
+
+      fluid.vx0.set(fluid.vx);
+      fluid.vy0.set(fluid.vy);
+      advect(fluid.vx, fluid.vx0, dt, 0.992);
+      advect(fluid.vy, fluid.vy0, dt, 0.992);
+      project();
+
+      fluid.vx0.set(fluid.vx);
+      fluid.vy0.set(fluid.vy);
+      fluid.dyeR0.set(fluid.dyeR);
+      fluid.dyeG0.set(fluid.dyeG);
+      fluid.dyeB0.set(fluid.dyeB);
+      advect(fluid.dyeR, fluid.dyeR0, dt, 0.982);
+      advect(fluid.dyeG, fluid.dyeG0, dt, 0.982);
+      advect(fluid.dyeB, fluid.dyeB0, dt, 0.982);
+    }
+
+    function renderFluid() {
+      const pixels = fluid.pixels;
+      for (let i = 0, p = 0; i < fluid.size; i++, p += 4) {
+        const r = clamp(fluid.dyeR[i], 0, 1);
+        const g = clamp(fluid.dyeG[i], 0, 1);
+        const b = clamp(fluid.dyeB[i], 0, 1);
+        const glow = clamp((r + g + b) * 0.38, 0, 1);
+        pixels[p] = Math.round(r * 235 + glow * 45);
+        pixels[p + 1] = Math.round(g * 245 + glow * 38);
+        pixels[p + 2] = Math.round(b * 255 + glow * 60);
+        pixels[p + 3] = 255;
+      }
+      fluidCtx.putImageData(fluid.image, 0, 0);
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.fillStyle = 'rgba(2, 2, 7, 0.32)';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.filter = 'blur(22px) saturate(190%)';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.62;
+      ctx.drawImage(fluid.canvas, 0, 0, w, h);
+      ctx.restore();
+
+      ctx.save();
+      ctx.filter = 'saturate(180%) contrast(112%)';
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.9;
+      ctx.drawImage(fluid.canvas, 0, 0, w, h);
+      ctx.restore();
+
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+
+    function animate(now) {
+      const dt = clamp((now - lastTime) / 16.666, 0.35, 1.8);
+      lastTime = now;
+
+      if (running) captureOpticalFlow();
+      if (pointerDown) {
+        const fx = (pointer.x - pointer.px) * fluid.width * 0.55;
+        const fy = (pointer.y - pointer.py) * fluid.height * 0.55;
+        addSplash(pointer.x, pointer.y, fx, fy, 0.22, (now * 0.00008 + pointer.x) % 1);
+        pointer.px = pointer.x;
+        pointer.py = pointer.y;
+      }
+      stepFluid(dt);
+      renderFluid();
+      requestAnimationFrame(animate);
+    }
+
+    async function startCamera() {
+      try {
+        statusLabel.textContent = 'Requesting camera...';
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            facingMode: 'user',
+          },
+          audio: false,
+        });
+        video.srcObject = stream;
+        await video.play();
+        hasPreviousFrame = false;
+        running = true;
+        overlay.style.display = 'none';
+      } catch (error) {
+        statusLabel.textContent = 'Camera failed to start. Check browser permissions and try again.';
+        console.error(error);
+      }
+    }
+
+    function setPointer(event) {
+      const rect = canvas.getBoundingClientRect();
+      pointer.x = clamp((event.clientX - rect.left) / rect.width, 0, 1);
+      pointer.y = clamp((event.clientY - rect.top) / rect.height, 0, 1);
+    }
+
+    startBtn.addEventListener('click', startCamera);
+    window.addEventListener('resize', resize);
+    window.addEventListener('pointerdown', (event) => {
+      pointerDown = true;
+      setPointer(event);
+      pointer.px = pointer.x;
+      pointer.py = pointer.y;
+    });
+    window.addEventListener('pointermove', setPointer);
+    window.addEventListener('pointerup', () => {
+      pointerDown = false;
+    });
+
+    resize();
+    requestAnimationFrame(animate);
+  </script>
+</body>
+</html>
