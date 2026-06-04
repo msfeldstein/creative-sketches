@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fractal Bloom</title>
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body { overflow: hidden; background: #e9e4d3; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <canvas id="canvas"></canvas>
+
+  <script type="module">
+    import { DebugPanel, createHint } from '/lib/debug-panel.js';
+
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+
+    // ---- Palette (sampled from the artist's painted tiles) ----
+    const PAPER = '#e9e4d3';
+    const INKS = ['#1f5e63', '#2b7a78', '#356b74']; // deep teal "pencil" tones
+    const PETAL = ['#8aa1ad', '#9fb89a', '#6f93a0']; // slate-blue / sage
+    const POP = ['#f4604b', '#ff7a66', '#e7553f'];   // coral
+    const GOLD = '#e0a82e';                           // mustard center
+
+    const DEFAULT_CONFIG = {
+      stems: 4,
+      depth: 8,
+      branchAngle: 32,   // base spread in degrees
+      lengthRatio: 76,   // child length as % of parent
+      wobble: 55,        // hand-drawn jitter amount
+      growSpeed: 45,     // growth pace
+      dotDensity: 60,    // pointillist bloom density
+    };
+
+    const CONFIG = { ...DEFAULT_CONFIG };
+
+    let width, height, dpr;
+    let paperPattern = null;
+
+    // ---------- deterministic RNG so a generation stays stable while drawing ----------
+    function mulberry32(seed) {
+      let a = seed >>> 0;
+      return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        let t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    let rng = mulberry32(1);
+    const rand = (a = 0, b = 1) => a + (b - a) * rng();
+    const pick = (arr) => arr[Math.floor(rng() * arr.length)];
+
+    // ---------- the "humanly fractal" structure ----------
+    // Each node is one drawn branch segment. Children sprout after the
+    // parent finishes, so the whole thing draws itself like a sketch.
+    let nodes = [];
+    let blooms = [];
+
+    function buildTree() {
+      nodes = [];
+      blooms = [];
+      const maxDepth = Math.round(CONFIG.depth);
+      const ratio = CONFIG.lengthRatio / 100;
+      const spread = (CONFIG.branchAngle * Math.PI) / 180;
+
+      const CAP = 1100;
+
+      const makeNode = (x, y, angle, len, depth) => {
+        const ex = x + Math.cos(angle) * len;
+        const ey = y + Math.sin(angle) * len;
+        const segs = 5;
+        const offs = [];
+        for (let i = 0; i <= segs; i++) offs.push((rng() - 0.5) * (CONFIG.wobble / 100) * 14);
+        const t = 1 - depth / (maxDepth + 1);
+        const node = {
+          x1: x, y1: y, x2: ex, y2: ey, ex, ey, angle, len, depth, segs, offs,
+          ord: rng(), start01: 0, end01: 1,
+          w: 0.6 + t * t * 7.5,
+          color: depth < 2 ? INKS[0] : pick(INKS),
+        };
+        nodes.push(node);
+        return node;
+      };
+
+      // Breadth-first growth: every stem advances one generation at a time, so
+      // the whole plant thickens together and the node budget is shared evenly
+      // across stems (no single bush hogs all the detail).
+      let queue = [];
+      const n = Math.round(CONFIG.stems);
+      for (let s = 0; s < n; s++) {
+        const fx = (s + 0.5) / n;
+        const x = width * (fx + rand(-0.04, 0.04));
+        const y = height + 8;
+        const len = height * rand(0.16, 0.23) * (0.85 + 0.3 * Math.sin(fx * Math.PI));
+        const angle = -Math.PI / 2 + rand(-0.18, 0.18);
+        queue.push(makeNode(x, y, angle, len, 0));
+      }
+
+      while (queue.length) {
+        // shuffle the frontier so, when the node budget runs out mid-generation,
+        // the surviving deep branches are scattered across the whole plant
+        for (let i = queue.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          [queue[i], queue[j]] = [queue[j], queue[i]];
+        }
+        const next = [];
+        for (const node of queue) {
+          const leaf = node.depth >= maxDepth || node.len < 6 || nodes.length >= CAP;
+          if (leaf) {
+            if (node.depth >= 2) {
+              const b = makeBloom(node.ex, node.ey, node.len);
+              b._node = node;
+              blooms.push(b);
+            }
+            continue;
+          }
+          // 2-3 children, asymmetric — never a clean radial fan
+          const kids = rng() < 0.35 ? 3 : 2;
+          const baseDroop = rand(-0.12, 0.12);
+          for (let k = 0; k < kids; k++) {
+            const side = kids === 2 ? (k === 0 ? -1 : 1) : (k - 1);
+            const a = node.angle + side * spread * rand(0.55, 1.35) + baseDroop;
+            const nl = node.len * ratio * rand(0.82, 1.06);
+            next.push(makeNode(node.ex, node.ey, a, nl, node.depth + 1));
+          }
+          if (rng() < 0.22) {
+            next.push(makeNode(node.ex, node.ey, node.angle + rand(-0.4, 0.4),
+              node.len * ratio * rand(0.5, 0.8), node.depth + 1));
+          }
+        }
+        queue = next;
+      }
+
+      // Uniform per-stroke schedule: reveal nodes outward (shallow first) at a
+      // constant stroke rate. Each generation's nodes are interleaved across
+      // stems (BFS order), so detail fills the whole canopy evenly over time
+      // instead of popping a dense clump into one corner.
+      nodes.sort((a, b) => (a.depth - b.depth) || (a.ord - b.ord));
+      const N = Math.max(1, nodes.length);
+      const span = Math.min(0.1, Math.max(0.03, 9 / N)); // overlap of concurrent strokes
+      nodes.forEach((nd, i) => {
+        nd.start01 = i / N;
+        nd.end01 = Math.min(1, i / N + span);
+      });
+      for (const b of blooms) b.start01 = b._node.end01;
+    }
+
+    function makeBloom(x, y, len) {
+      const r = Math.max(6, len * 0.8);
+      const count = Math.round(4 + (CONFIG.dotDensity / 100) * 18);
+      const dots = [];
+      for (let i = 0; i < count; i++) {
+        const ang = rng() * Math.PI * 2;
+        const rr = Math.pow(rng(), 0.6) * r;
+        const coral = rng() < 0.45;
+        dots.push({
+          dx: Math.cos(ang) * rr,
+          dy: Math.sin(ang) * rr,
+          rad: (coral ? rand(1.4, 3.6) : rand(1.0, 2.6)),
+          color: coral ? pick(POP) : pick(PETAL),
+          delay: rng() * 0.12,
+        });
+      }
+      return { x, y, start01: 1, r, dots, hasGold: rng() < 0.7, petalColor: pick(PETAL) };
+    }
+
+    // ---------- rendering ----------
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    function strokeWobbly(n, frac) {
+      // draw the segment up to `frac` of its length, as a slightly shaky line
+      const segs = n.segs;
+      const upto = Math.max(1, Math.ceil(segs * frac));
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      const dx = n.x2 - n.x1, dy = n.y2 - n.y1;
+      const nx = -dy, ny = dx; // perpendicular
+      const plen = Math.hypot(nx, ny) || 1;
+
+      // two overlapping passes = pencil-sketch texture
+      for (let pass = 0; pass < 2; pass++) {
+        ctx.beginPath();
+        const jitter = pass === 0 ? 1 : 0.55;
+        for (let i = 0; i <= upto; i++) {
+          const f = Math.min(i / segs, frac);
+          const px = n.x1 + dx * f + (nx / plen) * n.offs[i] * jitter;
+          const py = n.y1 + dy * f + (ny / plen) * n.offs[i] * jitter;
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.strokeStyle = n.color;
+        ctx.globalAlpha = pass === 0 ? 0.85 : 0.35;
+        ctx.lineWidth = n.w * (pass === 0 ? 1 : 0.6);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function drawBloom(b, local) {
+      if (local <= 0) return;
+      const e = easeOut(Math.min(1, local));
+
+      // soft sage petal halo blooming open
+      ctx.save();
+      ctx.globalAlpha = 0.16 * e;
+      ctx.fillStyle = b.petalColor;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * 1.05 * e, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      for (const d of b.dots) {
+        const de = easeOut(Math.max(0, Math.min(1, (local - d.delay) / 0.7)));
+        if (de <= 0) continue;
+        ctx.globalAlpha = 0.9 * de;
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        ctx.arc(b.x + d.dx * de, b.y + d.dy * de, d.rad * de, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      if (b.hasGold) {
+        ctx.globalAlpha = e;
+        ctx.fillStyle = GOLD;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 2.6 * e, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function makePaper() {
+      const off = document.createElement('canvas');
+      off.width = width; off.height = height;
+      const o = off.getContext('2d');
+      const g = o.createLinearGradient(0, 0, 0, height);
+      g.addColorStop(0, '#efeadb');
+      g.addColorStop(1, '#e3ddca');
+      o.fillStyle = g;
+      o.fillRect(0, 0, width, height);
+      // subtle paper grain
+      const grains = Math.floor((width * height) / 900);
+      for (let i = 0; i < grains; i++) {
+        o.globalAlpha = Math.random() * 0.04;
+        o.fillStyle = Math.random() < 0.5 ? '#000' : '#fff';
+        o.fillRect(Math.random() * width, Math.random() * height, 1.3, 1.3);
+      }
+      o.globalAlpha = 1;
+      paperPattern = off;
+    }
+
+    // ---------- animation loop ----------
+    let phaseStart = 0;
+    function reseed() {
+      rng = mulberry32((Math.random() * 1e9) | 0);
+      buildTree();
+      phaseStart = performance.now();
+    }
+
+    function draw(now) {
+      const values = panel.getValues(now);
+      if (values) {
+        let changed = false;
+        for (const k of ['stems', 'depth', 'branchAngle', 'lengthRatio', 'wobble', 'dotDensity']) {
+          if (values[k] != null && values[k] !== CONFIG[k]) { CONFIG[k] = values[k]; changed = true; }
+        }
+        CONFIG.growSpeed = values.growSpeed ?? CONFIG.growSpeed;
+        if (changed) reseed();
+      }
+
+      const growDur = 9000 * (60 / Math.max(10, CONFIG.growSpeed));
+      const BLOOM_MS = 1500;
+      const holdDur = 2600;
+      const fadeDur = 1800;
+      const cycle = growDur + holdDur + fadeDur;
+      let elapsed = now - phaseStart;
+      if (elapsed > cycle) { reseed(); elapsed = 0; }
+
+      // branch growth runs over the grow phase, in 0..1 normalised time
+      const branchProgress = Math.min(1, elapsed / growDur);
+
+      // background
+      ctx.globalAlpha = 1;
+      if (paperPattern) ctx.drawImage(paperPattern, 0, 0, width, height);
+      else { ctx.fillStyle = PAPER; ctx.fillRect(0, 0, width, height); }
+
+      // fade-out near end of cycle
+      let fade = 1;
+      if (elapsed > growDur + holdDur) fade = 1 - (elapsed - growDur - holdDur) / fadeDur;
+
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, fade);
+
+      for (const n of nodes) {
+        if (branchProgress < n.start01) continue;
+        const frac = Math.min(1, (branchProgress - n.start01) / (n.end01 - n.start01));
+        ctx.save();
+        strokeWobbly(n, easeOut(frac));
+        ctx.restore();
+      }
+      // each tip blooms on its own real-time delay that continues past the
+      // grow phase, so the dots fully open during the hold
+      for (const b of blooms) {
+        const startMs = b.start01 * growDur;
+        drawBloom(b, (elapsed - startMs) / BLOOM_MS);
+      }
+
+      ctx.restore();
+      panel.update(now);
+      requestAnimationFrame(draw);
+    }
+
+    function resize() {
+      dpr = Math.min(2, window.devicePixelRatio || 1);
+      width = window.innerWidth;
+      height = window.innerHeight;
+      canvas.width = width * dpr;
+      canvas.height = height * dpr;
+      canvas.style.width = width + 'px';
+      canvas.style.height = height + 'px';
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      makePaper();
+      reseed();
+    }
+
+    const panel = new DebugPanel({
+      title: 'Fractal Bloom',
+      storageKey: 'fractalBloomSettings',
+      schema: {
+        stems: { type: 'number', label: 'Stems', min: 1, max: 8, default: DEFAULT_CONFIG.stems, group: 'Structure' },
+        depth: { type: 'number', label: 'Depth', min: 4, max: 10, default: DEFAULT_CONFIG.depth, group: 'Structure' },
+        branchAngle: { type: 'number', label: 'Spread', min: 12, max: 60, default: DEFAULT_CONFIG.branchAngle, group: 'Structure' },
+        lengthRatio: { type: 'number', label: 'Length ratio', min: 60, max: 85, default: DEFAULT_CONFIG.lengthRatio, group: 'Structure' },
+        wobble: { type: 'number', label: 'Hand wobble', min: 0, max: 120, default: DEFAULT_CONFIG.wobble, group: 'Style' },
+        dotDensity: { type: 'number', label: 'Bloom dots', min: 0, max: 100, default: DEFAULT_CONFIG.dotDensity, group: 'Style' },
+        growSpeed: { type: 'number', label: 'Grow speed', min: 15, max: 120, default: DEFAULT_CONFIG.growSpeed, group: 'Motion' },
+      },
+      onChange: () => {},
+    });
+
+    createHint('D: toggle panel · sketch regrows on loop');
+    resize();
+    window.addEventListener('resize', resize);
+    requestAnimationFrame(draw);
+  </script>
+</body>
+</html>
