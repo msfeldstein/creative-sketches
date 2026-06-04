@@ -40,6 +40,9 @@
 
     let width, height, dpr;
     let paperPattern = null;
+    // accumulation buffer: completed strokes/blooms are stamped here once, so
+    // each frame only re-renders the small active frontier (keeps it smooth)
+    let growCanvas = null, gctx = null;
 
     // ---------- deterministic RNG so a generation stays stable while drawing ----------
     function mulberry32(seed) {
@@ -173,65 +176,63 @@
     // ---------- rendering ----------
     function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
 
-    function strokeWobbly(n, frac) {
+    function strokeWobbly(c, n, frac) {
       // draw the segment up to `frac` of its length, as a slightly shaky line
       const segs = n.segs;
       const upto = Math.max(1, Math.ceil(segs * frac));
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
+      c.lineCap = 'round';
+      c.lineJoin = 'round';
       const dx = n.x2 - n.x1, dy = n.y2 - n.y1;
       const nx = -dy, ny = dx; // perpendicular
       const plen = Math.hypot(nx, ny) || 1;
 
       // two overlapping passes = pencil-sketch texture
       for (let pass = 0; pass < 2; pass++) {
-        ctx.beginPath();
+        c.beginPath();
         const jitter = pass === 0 ? 1 : 0.55;
         for (let i = 0; i <= upto; i++) {
           const f = Math.min(i / segs, frac);
           const px = n.x1 + dx * f + (nx / plen) * n.offs[i] * jitter;
           const py = n.y1 + dy * f + (ny / plen) * n.offs[i] * jitter;
-          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+          if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
         }
-        ctx.strokeStyle = n.color;
-        ctx.globalAlpha = pass === 0 ? 0.85 : 0.35;
-        ctx.lineWidth = n.w * (pass === 0 ? 1 : 0.6);
-        ctx.stroke();
+        c.strokeStyle = n.color;
+        c.globalAlpha = pass === 0 ? 0.85 : 0.35;
+        c.lineWidth = n.w * (pass === 0 ? 1 : 0.6);
+        c.stroke();
       }
-      ctx.globalAlpha = 1;
+      c.globalAlpha = 1;
     }
 
-    function drawBloom(b, local) {
+    function drawBloom(c, b, local) {
       if (local <= 0) return;
       const e = easeOut(Math.min(1, local));
 
       // soft sage petal halo blooming open
-      ctx.save();
-      ctx.globalAlpha = 0.16 * e;
-      ctx.fillStyle = b.petalColor;
-      ctx.beginPath();
-      ctx.arc(b.x, b.y, b.r * 1.05 * e, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.restore();
+      c.globalAlpha = 0.16 * e;
+      c.fillStyle = b.petalColor;
+      c.beginPath();
+      c.arc(b.x, b.y, b.r * 1.05 * e, 0, Math.PI * 2);
+      c.fill();
 
       for (const d of b.dots) {
         const de = easeOut(Math.max(0, Math.min(1, (local - d.delay) / 0.7)));
         if (de <= 0) continue;
-        ctx.globalAlpha = 0.9 * de;
-        ctx.fillStyle = d.color;
-        ctx.beginPath();
-        ctx.arc(b.x + d.dx * de, b.y + d.dy * de, d.rad * de, 0, Math.PI * 2);
-        ctx.fill();
+        c.globalAlpha = 0.9 * de;
+        c.fillStyle = d.color;
+        c.beginPath();
+        c.arc(b.x + d.dx * de, b.y + d.dy * de, d.rad * de, 0, Math.PI * 2);
+        c.fill();
       }
 
       if (b.hasGold) {
-        ctx.globalAlpha = e;
-        ctx.fillStyle = GOLD;
-        ctx.beginPath();
-        ctx.arc(b.x, b.y, 2.6 * e, 0, Math.PI * 2);
-        ctx.fill();
+        c.globalAlpha = e;
+        c.fillStyle = GOLD;
+        c.beginPath();
+        c.arc(b.x, b.y, 2.6 * e, 0, Math.PI * 2);
+        c.fill();
       }
-      ctx.globalAlpha = 1;
+      c.globalAlpha = 1;
     }
 
     function makePaper() {
@@ -259,6 +260,7 @@
     function reseed() {
       rng = mulberry32((Math.random() * 1e9) | 0);
       buildTree();
+      if (gctx) gctx.clearRect(0, 0, width, height);
       phaseStart = performance.now();
     }
 
@@ -284,33 +286,49 @@
       // branch growth runs over the grow phase, in 0..1 normalised time
       const branchProgress = Math.min(1, elapsed / growDur);
 
-      // background
-      ctx.globalAlpha = 1;
-      if (paperPattern) ctx.drawImage(paperPattern, 0, 0, width, height);
-      else { ctx.fillStyle = PAPER; ctx.fillRect(0, 0, width, height); }
-
       // fade-out near end of cycle
       let fade = 1;
       if (elapsed > growDur + holdDur) fade = 1 - (elapsed - growDur - holdDur) / fadeDur;
 
-      ctx.save();
-      ctx.globalAlpha = Math.max(0, fade);
-
+      // 1) Stamp newly-completed strokes/blooms into the persistent buffer once,
+      //    and collect the few still-animating ones to draw live this frame.
+      const activeNodes = [];
       for (const n of nodes) {
         if (branchProgress < n.start01) continue;
-        const frac = Math.min(1, (branchProgress - n.start01) / (n.end01 - n.start01));
-        ctx.save();
-        strokeWobbly(n, easeOut(frac));
-        ctx.restore();
+        const frac = (branchProgress - n.start01) / (n.end01 - n.start01);
+        if (frac >= 1) {
+          if (!n.stamped) { strokeWobbly(gctx, n, 1); n.stamped = true; }
+        } else {
+          activeNodes.push({ n, frac });
+        }
       }
-      // each tip blooms on its own real-time delay that continues past the
-      // grow phase, so the dots fully open during the hold
+      const activeBlooms = [];
       for (const b of blooms) {
-        const startMs = b.start01 * growDur;
-        drawBloom(b, (elapsed - startMs) / BLOOM_MS);
+        const local = (elapsed - b.start01 * growDur) / BLOOM_MS;
+        if (local <= 0) continue;
+        if (local >= 1) {
+          if (!b.stamped) { drawBloom(gctx, b, 1); b.stamped = true; }
+        } else {
+          activeBlooms.push({ b, local });
+        }
       }
 
+      // 2) Compose: paper background, then the stamped buffer, then live frontier.
+      ctx.globalAlpha = 1;
+      if (paperPattern) ctx.drawImage(paperPattern, 0, 0, width, height);
+      else { ctx.fillStyle = PAPER; ctx.fillRect(0, 0, width, height); }
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // buffer is in device pixels
+      ctx.globalAlpha = Math.max(0, fade);
+      ctx.drawImage(growCanvas, 0, 0);
       ctx.restore();
+
+      ctx.globalAlpha = Math.max(0, fade);
+      for (const a of activeNodes) strokeWobbly(ctx, a.n, easeOut(a.frac));
+      for (const a of activeBlooms) drawBloom(ctx, a.b, a.local);
+      ctx.globalAlpha = 1;
+
       panel.update(now);
       requestAnimationFrame(draw);
     }
@@ -324,6 +342,13 @@
       canvas.style.width = width + 'px';
       canvas.style.height = height + 'px';
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      growCanvas = document.createElement('canvas');
+      growCanvas.width = width * dpr;
+      growCanvas.height = height * dpr;
+      gctx = growCanvas.getContext('2d');
+      gctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
       makePaper();
       reseed();
     }
