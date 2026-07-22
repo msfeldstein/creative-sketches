@@ -103,9 +103,10 @@ export function createDemoShow() {
     start: 4, len: 12, fixtures: TOWERS, pattern: 'sweep', color: '#00eaff',
     params: { count: 1, speed: 0.5, phase: 0.5, size: 0.9 }, intensity: [0.55, 0.95],
   });
+  // solid rippling plane: the "beam moving so fast it looks like a sheet" look
   cues.push({
-    start: 8, len: 8, fixtures: [1, 2, 3], pattern: 'liquid', color: '#0090ff',
-    params: { count: 14, speed: 0.6, wave: 0.35, size: 0.9, oy: 0.12 }, intensity: [0.65, 1.0],
+    start: 8, len: 8, fixtures: [1, 2, 3], pattern: 'liquid-sky', color: '#0090ff',
+    params: { count: 4, speed: 0.6, wave: 0.3, size: 0.9, oy: 0.12 }, intensity: [0.65, 1.0],
   });
 
   // ------------------------------------------------ build (16-32)
@@ -174,9 +175,19 @@ export function createDemoShow() {
     },
     intensity: 1.15,
   });
+  // solid planes slashing across the room
   cues.push({
-    start: 48, len: 16, fixtures: TOWERS, pattern: 'sweep', color: ['#ff2020', '#ffffff'],
-    params: { count: 5, speed: 2, size: 1 }, intensity: 1,
+    start: 48, len: 16, fixtures: TOWERS, pattern: 'sheet-sweep', color: ['#ff2020', '#ffffff'],
+    params: { speed: 1, size: 1, wave: 0.15 }, intensity: 1,
+  });
+  // truss heads snap to solid rotating fans for the last 8 beats of drop 1
+  cues.push({
+    start: 56, len: 8, fixtures: [0, 2, 4], pattern: 'sheet', color: '#00ff66',
+    params: {
+      size: 0.9, oy: 0.12, wave: 0.1, waveFreq: 3,
+      rotSpeed: 0.5, rot: (u) => -30 + u * 60,
+    },
+    intensity: 1.05,
   });
   cues.push({
     start: 56, len: 8, fixtures: BOOTH, pattern: 'helix', color: '#f7ff00',
@@ -185,9 +196,9 @@ export function createDemoShow() {
 
   // ------------------------------------------------ breakdown (64-80)
   cues.push({
-    start: 64, len: 12, fixtures: [1, 2, 3], pattern: 'liquid', color: '#2a55ff',
-    params: { count: 16, speed: 0.5, wave: 0.5, size: 1, oy: 0.15 },
-    intensity: (u) => 0.9 - 0.4 * u,
+    start: 64, len: 12, fixtures: [1, 2, 3], pattern: 'liquid-sky', color: '#2a55ff',
+    params: { count: 8, speed: 0.4, wave: 0.45, size: 1, oy: 0.15 },
+    intensity: (u) => 1.2 - 0.5 * u,
   });
   cues.push({
     start: 64, len: 12, fixtures: TOWERS, pattern: 'beam', color: '#2a55ff',

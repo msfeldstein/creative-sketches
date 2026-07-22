@@ -5,7 +5,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
-import { BeamPool } from './beams.js';
+import { BeamPool, SheetPool } from './beams.js';
 import { buildStage, updateStage, ROOM } from './stage.js';
 import { createRig, createDemoShow, energyAt, accentAt, cameraAt, DEMO_BPM, DEMO_BEATS } from './demo-show.js';
 import { HarnessUI } from './ui.js';
@@ -33,6 +33,7 @@ class App {
 
     this.stage = buildStage(this.scene);
     this.pool = new BeamPool(this.scene, { maxBeams: 640, room: ROOM });
+    this.sheets = new SheetPool(this.scene, { maxSheets: 64, room: ROOM, uniforms: this.pool.uniforms });
 
     this.fixtures = createRig();
     this.show = createDemoShow();
@@ -129,12 +130,14 @@ class App {
 
     // lasers
     this.pool.begin(time, this.camera.position);
+    this.sheets.begin();
     this.fixtures.forEach((f, i) => {
       const override = this.mode === 'show' ? this.show.overrideFor(f, i, beat) : null;
       if (this.mode === 'show' && !override && !f.isWash) return; // blackout between cues
-      f.emit(this.pool, beat, override);
+      f.emit(this.pool, beat, override, this.sheets);
     });
     this.pool.end();
+    this.sheets.end();
 
     // sync fixture housings
     this.fixtures.forEach((f, i) => {

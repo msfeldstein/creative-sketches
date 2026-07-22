@@ -12,6 +12,7 @@ import * as THREE from 'three';
 import { runPattern } from './patterns.js';
 
 const _dir = new THREE.Vector3();
+const _axis = new THREE.Vector3();
 const _euler = new THREE.Euler();
 
 const RAINBOW = [0xff2020, 0xff9500, 0xf7ff00, 0x2bff35, 0x00eaff, 0x2a55ff, 0xd022ff]
@@ -65,9 +66,10 @@ export class LaserFixture {
   }
 
   /**
-   * Compute beams for the current musical time and emit them into the pool.
+   * Compute beams/sheets for the current musical time and emit them into the
+   * pools. sheetPool may be null (sheets are then skipped).
    */
-  emit(pool, beat, override) {
+  emit(pool, beat, override, sheetPool) {
     if (!this.enabled) return;
     const patName = override?.pattern ?? this.pattern;
     const params = override?.params ? { ...this.params, ...override.params } : this.params;
@@ -75,9 +77,32 @@ export class LaserFixture {
     const master = (override?.intensity ?? 1) * this.intensity;
     if (master <= 0.001) return;
 
-    const { beams, params: p } = runPattern(patName, beat, params);
+    const { beams, sheets, params: p } = runPattern(patName, beat, params);
     const scan = THREE.MathUtils.degToRad(this.maxScan);
     const seedBase = this.position.x * 7.3 + this.position.z * 3.1;
+
+    if (sheetPool) {
+      for (let k = 0; k < sheets.length; k++) {
+        const sh = sheets[k];
+        if (sh.i <= 0.002) continue;
+        const ax = sh.x * scan;
+        const ay = sh.y * scan;
+        _dir.set(Math.sin(ax), Math.sin(ay), Math.cos(ax) * Math.cos(ay)).normalize();
+        _dir.applyQuaternion(this.quaternion);
+        // fan opens along the rotated scan-space axis
+        _axis.set(Math.cos(sh.axis), Math.sin(sh.axis), 0);
+        _axis.applyQuaternion(this.quaternion);
+        sheetPool.add(this.position, _dir, _axis, {
+          color: p.colorMode === 'rainbow' ? RAINBOW[k % RAINBOW.length] : color,
+          intensity: sh.i * master,
+          halfArc: sh.w * scan,
+          rippleAmp: (sh.amp ?? 0) * scan * 0.5,
+          rippleFreq: sh.freq ?? 1,
+          ripplePhase: sh.phase ?? 0,
+          seed: seedBase + k * 3.7,
+        });
+      }
+    }
 
     for (let k = 0; k < beams.length; k++) {
       const b = beams[k];

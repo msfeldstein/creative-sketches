@@ -30,9 +30,13 @@ export const PATTERN_DEFAULTS = {
 
 function frac(x) { return x - Math.floor(x); }
 
+function frameAngle(p, beat) {
+  return (p.rot * Math.PI / 180) + (p.rotSpeed * beat / 8) * Math.PI * 2;
+}
+
 /** Apply frame rotation + offset + size, shared by all patterns. */
 function frame(beams, p, beat) {
-  const ang = (p.rot * Math.PI / 180) + (p.rotSpeed * beat / 8) * Math.PI * 2;
+  const ang = frameAngle(p, beat);
   const c = Math.cos(ang), s = Math.sin(ang);
   for (const b of beams) {
     const x = b.x * p.size, y = b.y * p.size;
@@ -40,6 +44,23 @@ function frame(beams, p, beat) {
     b.y = x * s + y * c + p.oy;
   }
   return beams;
+}
+
+/**
+ * Same console channels applied to solid sheets: rotate/offset the center,
+ * rotate the spread axis, scale the fan width.
+ */
+function frameSheets(sheets, p, beat) {
+  const ang = frameAngle(p, beat);
+  const c = Math.cos(ang), s = Math.sin(ang);
+  for (const sh of sheets) {
+    const x = sh.x * p.size, y = sh.y * p.size;
+    sh.x = x * c - y * s + p.ox;
+    sh.y = x * s + y * c + p.oy;
+    sh.axis = (sh.axis ?? 0) + ang;
+    sh.w *= p.size;
+  }
+  return { beams: [], sheets };
 }
 
 function strobeGate(p, beat) {
@@ -172,19 +193,60 @@ export const PATTERNS = {
   wash(beat, p) {
     return frame([{ x: 0, y: 0, i: 0.8 + 0.2 * Math.sin(beat * Math.PI / 4) }], p, beat);
   },
+
+  // ---- solid scan planes (beam swept so fast it reads as a plane) ----
+
+  /** One solid fan plane, optional slow ripple via wave/waveFreq. */
+  sheet(beat, p) {
+    const phase = (beat / 4 * p.speed + p.phase) * Math.PI * 2;
+    return frameSheets([{
+      x: 0, y: 0, axis: 0, w: 1, i: 1,
+      amp: p.wave, freq: p.waveFreq * 2, phase,
+    }], p, beat);
+  },
+
+  /** A narrower solid plane sweeping side to side. */
+  'sheet-sweep'(beat, p) {
+    const t = Math.sin((beat / 4 * p.speed + p.phase) * Math.PI * 2);
+    return frameSheets([{
+      x: t * 0.7, y: 0, axis: 0, w: 0.35, i: 1,
+      amp: p.wave * 0.5, freq: p.waveFreq * 2, phase: beat * Math.PI,
+    }], p, beat);
+  },
+
+  /** Liquid sky: stacked rippling solid sheets. count/4 = layers. */
+  'liquid-sky'(beat, p) {
+    const layers = Math.max(1, Math.min(5, Math.round(p.count / 4)));
+    const t = beat / 4 * p.speed;
+    const out = [];
+    for (let k = 0; k < layers; k++) {
+      const v = layers === 1 ? 0 : k / (layers - 1) - 0.5;
+      out.push({
+        x: 0, y: v * 0.5, axis: 0, w: 1,
+        i: 0.9 - Math.abs(v) * 0.3,
+        amp: 0.35 + p.wave,
+        freq: p.waveFreq * 2 + k * 0.7,
+        phase: (t + k * 0.21) * Math.PI * 2,
+      });
+    }
+    return frameSheets(out, p, beat);
+  },
 };
 
 export const PATTERN_NAMES = Object.keys(PATTERNS);
 
 /**
  * Run a pattern and apply the shared console channels (dimmer, strobe).
- * Returns beams with final intensity.
+ * Returns { beams, sheets, params } with final intensities.
  */
 export function runPattern(name, beat, params) {
   const p = { ...PATTERN_DEFAULTS, ...params };
   const fn = PATTERNS[name] || PATTERNS.beam;
-  const beams = fn(beat, p);
+  const res = fn(beat, p);
+  const beams = Array.isArray(res) ? res : res.beams;
+  const sheets = Array.isArray(res) ? [] : res.sheets;
   const gate = strobeGate(p, beat) * p.dim;
   for (const b of beams) b.i *= gate;
-  return { beams, params: p };
+  for (const s of sheets) s.i *= gate;
+  return { beams, sheets, params: p };
 }
