@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Spinning Blackboard">
+  <meta name="theme-color" content="#0a0a0b">
+  <title>Spinning Blackboard — Exploratorium</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #0a0a0b;
+      color: #e8e8e8;
+      font-family: 'JetBrains Mono', monospace;
+      -webkit-user-select: none;
+      user-select: none;
+      -webkit-touch-callout: none;
+    }
+
+    #stage {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      touch-action: none;
+    }
+
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: calc(env(safe-area-inset-top, 0px) + 14px) 56px 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      pointer-events: none;
+      z-index: 5;
+    }
+
+    header h1 {
+      font-size: 0.8rem;
+      font-weight: 400;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: #999;
+    }
+
+    header span {
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: #555;
+    }
+
+    #controls {
+      position: fixed;
+      left: 50%;
+      bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 10px 16px;
+      background: rgba(16, 16, 18, 0.82);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      z-index: 5;
+      touch-action: none;
+    }
+
+    #controls label {
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: #888;
+      white-space: nowrap;
+    }
+
+    input[type="range"] {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 150px;
+      height: 30px;
+      background: transparent;
+      touch-action: none;
+    }
+    input[type="range"]::-webkit-slider-runnable-track {
+      height: 4px;
+      border-radius: 2px;
+      background: rgba(255, 255, 255, 0.18);
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 26px;
+      height: 26px;
+      margin-top: -11px;
+      border-radius: 50%;
+      background: #ff6b35;
+      border: none;
+    }
+
+    .brush-group {
+      display: flex;
+      gap: 6px;
+    }
+
+    .brush-group button {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: transparent;
+      color: #ccc;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+    .brush-group button.active {
+      border-color: #ff6b35;
+      background: rgba(255, 107, 53, 0.12);
+    }
+    .brush-group button i {
+      display: block;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    #reset {
+      height: 40px;
+      padding: 0 16px;
+      border-radius: 10px;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      background: transparent;
+      color: #ccc;
+      font-family: inherit;
+      font-size: 0.6rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      cursor: pointer;
+    }
+    #reset:active { border-color: #ff6b35; color: #ff6b35; }
+
+    #whats-going-on {
+      position: fixed;
+      right: 16px;
+      top: calc(env(safe-area-inset-top, 0px) + 44px);
+      max-width: 250px;
+      padding: 12px 14px;
+      background: rgba(16, 16, 18, 0.85);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      font-size: 0.62rem;
+      line-height: 1.6;
+      color: #aaa;
+      z-index: 5;
+      display: none;
+    }
+    #whats-going-on.open { display: block; }
+    #whats-going-on b {
+      display: block;
+      color: #ff6b35;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 6px;
+      font-weight: 500;
+    }
+
+    #info-toggle {
+      position: fixed;
+      right: 16px;
+      top: calc(env(safe-area-inset-top, 0px) + 10px);
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      background: rgba(16, 16, 18, 0.7);
+      color: #999;
+      font-family: inherit;
+      font-size: 0.75rem;
+      cursor: pointer;
+      z-index: 6;
+    }
+
+    @media (max-width: 620px) {
+      input[type="range"] { width: 90px; }
+      #controls { gap: 10px; padding: 8px 12px; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="stage"></canvas>
+
+  <header>
+    <h1>Spinning Blackboard</h1>
+    <span>after the Exploratorium exhibit</span>
+  </header>
+
+  <button id="info-toggle" aria-label="What's going on?">?</button>
+  <aside id="whats-going-on">
+    <b>What's going on?</b>
+    Drag a finger through the sand while the table turns. Try holding your
+    finger perfectly still — the spinning table turns your straight line into
+    a circle, and a slow steady pull becomes a spiral. Your hand and the
+    turntable are both "drawing" at once: what you see is the sum of the two
+    motions.
+  </aside>
+
+  <div id="controls">
+    <label for="speed">Spin</label>
+    <input id="speed" type="range" min="-100" max="100" step="1" value="35">
+    <div class="brush-group" aria-label="Brush size">
+      <button data-size="7"  aria-label="Fine brush"><i style="width:6px;height:6px"></i></button>
+      <button data-size="14" class="active" aria-label="Medium brush"><i style="width:11px;height:11px"></i></button>
+      <button data-size="26" aria-label="Broad brush"><i style="width:17px;height:17px"></i></button>
+    </div>
+    <button id="reset">Smooth Sand</button>
+  </div>
+
+  <script type="module">
+    const stage = document.getElementById('stage');
+    const ctx = stage.getContext('2d');
+
+    // The sand lives on an offscreen canvas in the disk's own (rotating)
+    // coordinate frame. The screen shows this texture rotated by the current
+    // turntable angle, so strokes stay glued to the sand as it spins.
+    const SAND = 1600;
+    const SAND_R = SAND / 2;
+    const sand = document.createElement('canvas');
+    sand.width = sand.height = SAND;
+    const sctx = sand.getContext('2d');
+
+    let angle = 0;               // turntable rotation (radians)
+    let speed = 0.35;            // rad/s, set by the slider
+    let brushSize = 14;          // in screen px, converted to sand px per stroke
+    let dpr = Math.min(window.devicePixelRatio || 1, 2);
+    let cx = 0, cy = 0, diskR = 0;   // disk placement in canvas px
+
+    function resize() {
+      dpr = Math.min(window.devicePixelRatio || 1, 2);
+      stage.width = Math.round(innerWidth * dpr);
+      stage.height = Math.round(innerHeight * dpr);
+      cx = stage.width / 2;
+      cy = stage.height / 2;
+      diskR = Math.min(stage.width, stage.height) * 0.44;
+    }
+    resize();
+    addEventListener('resize', resize);
+
+    function initSand() {
+      const img = sctx.createImageData(SAND, SAND);
+      const d = img.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const g = 200 + Math.random() * 40;      // grainy off-white sand
+        d[i] = g; d[i + 1] = g - 4; d[i + 2] = g - 14;
+        d[i + 3] = 255;
+      }
+      sctx.putImageData(img, 0, 0);
+      // Keep everything inside the platter circle.
+      sctx.globalCompositeOperation = 'destination-in';
+      sctx.beginPath();
+      sctx.arc(SAND_R, SAND_R, SAND_R - 2, 0, Math.PI * 2);
+      sctx.fill();
+      sctx.globalCompositeOperation = 'source-over';
+    }
+    initSand();
+
+    // Screen point -> sand-texture point, undoing the current rotation.
+    function toSand(px, py) {
+      const x = px * dpr - cx;
+      const y = py * dpr - cy;
+      const cos = Math.cos(-angle), sin = Math.sin(-angle);
+      const s = SAND_R / diskR;
+      return {
+        x: (x * cos - y * sin) * s + SAND_R,
+        y: (x * sin + y * cos) * s + SAND_R,
+      };
+    }
+
+    // Live strokes are redrawn each frame as full polylines on top of a
+    // snapshot of the sand taken when the first finger went down. Drawing the
+    // whole polyline at once (instead of frame-by-frame segments) keeps the
+    // trough continuous — otherwise each new segment's wide bright ridge
+    // would paint over the previous segment's dark core. When the last finger
+    // lifts, the composite is baked into the sand for good.
+    const pointers = new Map();   // pointerId -> { sx, sy (screen), points: [sand coords] }
+    let sessionBase = null;       // sand snapshot beneath the live strokes
+
+    function snapshotSand() {
+      const c = document.createElement('canvas');
+      c.width = c.height = SAND;
+      c.getContext('2d').drawImage(sand, 0, 0);
+      return c;
+    }
+
+    function tracePolyline(points) {
+      sctx.beginPath();
+      sctx.moveTo(points[0].x, points[0].y);
+      if (points.length === 1) {
+        // A single-point "dot" still needs some length to render with round caps.
+        sctx.lineTo(points[0].x + 0.01, points[0].y);
+      } else {
+        // Quadratic curves through segment midpoints hide the chord-by-chord
+        // sampling of rotating strokes.
+        for (let i = 1; i < points.length - 1; i++) {
+          const mx = (points[i].x + points[i + 1].x) / 2;
+          const my = (points[i].y + points[i + 1].y) / 2;
+          sctx.quadraticCurveTo(points[i].x, points[i].y, mx, my);
+        }
+        sctx.lineTo(points[points.length - 1].x, points[points.length - 1].y);
+      }
+      sctx.stroke();
+    }
+
+    function redrawStrokes(width) {
+      sctx.drawImage(sessionBase, 0, 0);
+      sctx.save();
+      sctx.beginPath();
+      sctx.arc(SAND_R, SAND_R, SAND_R - 2, 0, Math.PI * 2);
+      sctx.clip();
+      sctx.lineCap = 'round';
+      sctx.lineJoin = 'round';
+      // Displaced sand piles up brighter along the edges of the trough...
+      sctx.strokeStyle = 'rgba(255, 252, 240, 0.5)';
+      sctx.lineWidth = width * 1.7;
+      for (const rec of pointers.values()) tracePolyline(rec.points);
+      // ...and the trough itself exposes the dark board underneath.
+      sctx.strokeStyle = 'rgba(16, 14, 12, 0.95)';
+      sctx.lineWidth = width;
+      for (const rec of pointers.values()) tracePolyline(rec.points);
+      sctx.restore();
+    }
+
+    // Fold the current composite into the sand and restart the live session
+    // from it (used when a finger lifts or a stroke gets very long).
+    function bake(width) {
+      if (!sessionBase) return;
+      redrawStrokes(width);
+      sessionBase = pointers.size ? snapshotSand() : null;
+      for (const rec of pointers.values()) rec.points = [rec.points[rec.points.length - 1]];
+    }
+
+    stage.addEventListener('pointerdown', (e) => {
+      stage.setPointerCapture(e.pointerId);
+      if (!sessionBase) sessionBase = snapshotSand();
+      pointers.set(e.pointerId, {
+        sx: e.clientX,
+        sy: e.clientY,
+        points: [toSand(e.clientX, e.clientY)],
+      });
+    });
+
+    stage.addEventListener('pointermove', (e) => {
+      const rec = pointers.get(e.pointerId);
+      if (!rec) return;
+      rec.sx = e.clientX;
+      rec.sy = e.clientY;
+    });
+
+    const lift = (e) => {
+      if (!pointers.has(e.pointerId)) return;
+      bake(brushSize * dpr * (SAND_R / diskR));
+      pointers.delete(e.pointerId);
+      if (!pointers.size) sessionBase = null;
+    };
+    stage.addEventListener('pointerup', lift);
+    stage.addEventListener('pointercancel', lift);
+
+    // Block iOS pinch-zoom / double-tap-zoom inside the app.
+    document.addEventListener('gesturestart', (e) => e.preventDefault());
+    document.addEventListener('dblclick', (e) => e.preventDefault());
+
+    function render(now) {
+      const dt = Math.min((now - render.t) / 1000 || 0, 0.05);
+      render.t = now;
+      angle += speed * dt;
+
+      if (pointers.size) {
+        const strokeW = brushSize * dpr * (SAND_R / diskR);
+        let needsBake = false;
+        for (const rec of pointers.values()) {
+          const p = toSand(rec.sx, rec.sy);
+          const last = rec.points[rec.points.length - 1];
+          // Skip sub-pixel jitter so stationary-finger arcs stay smooth
+          // without the point list growing every frame.
+          if (Math.hypot(p.x - last.x, p.y - last.y) > 1.2) rec.points.push(p);
+          if (rec.points.length > 3000) needsBake = true;
+        }
+        redrawStrokes(strokeW);
+        if (needsBake) bake(strokeW);
+      }
+
+      ctx.clearRect(0, 0, stage.width, stage.height);
+
+      // Table surface under the platter.
+      const table = ctx.createRadialGradient(cx, cy - diskR * 0.5, diskR * 0.2, cx, cy, diskR * 2.2);
+      table.addColorStop(0, '#17171a');
+      table.addColorStop(1, '#0a0a0b');
+      ctx.fillStyle = table;
+      ctx.fillRect(0, 0, stage.width, stage.height);
+
+      // Metal rim.
+      ctx.beginPath();
+      ctx.arc(cx, cy, diskR + 14 * dpr, 0, Math.PI * 2);
+      ctx.fillStyle = '#232326';
+      ctx.fill();
+      ctx.lineWidth = 2 * dpr;
+      ctx.strokeStyle = 'rgba(255,255,255,0.09)';
+      ctx.stroke();
+
+      // The rotating sand platter.
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      ctx.drawImage(sand, -diskR, -diskR, diskR * 2, diskR * 2);
+      ctx.restore();
+
+      // Static overhead-light shading so the disk reads as 3D.
+      const light = ctx.createRadialGradient(
+        cx - diskR * 0.35, cy - diskR * 0.45, diskR * 0.1,
+        cx, cy, diskR * 1.05
+      );
+      light.addColorStop(0, 'rgba(255,255,255,0.10)');
+      light.addColorStop(0.55, 'rgba(255,255,255,0)');
+      light.addColorStop(1, 'rgba(0,0,0,0.28)');
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(cx, cy, diskR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.fillStyle = light;
+      ctx.fillRect(0, 0, stage.width, stage.height);
+      ctx.restore();
+
+      requestAnimationFrame(render);
+    }
+    requestAnimationFrame(render);
+
+    // --- Controls ---
+    const speedInput = document.getElementById('speed');
+    const setSpeed = () => {
+      const v = Number(speedInput.value) / 100;
+      speed = Math.abs(v) < 0.06 ? 0 : v;   // snap tiny values to a full stop
+    };
+    speedInput.addEventListener('input', setSpeed);
+    setSpeed();
+
+    document.querySelectorAll('.brush-group button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        document.querySelector('.brush-group .active')?.classList.remove('active');
+        btn.classList.add('active');
+        brushSize = Number(btn.dataset.size);
+      });
+    });
+
+    document.getElementById('reset').addEventListener('click', () => {
+      initSand();
+      if (sessionBase) {
+        sessionBase = snapshotSand();
+        for (const rec of pointers.values()) rec.points = [rec.points[rec.points.length - 1]];
+      }
+    });
+
+    const panel = document.getElementById('whats-going-on');
+    document.getElementById('info-toggle').addEventListener('click', () => {
+      panel.classList.toggle('open');
+    });
+  </script>
+</body>
+</html>
