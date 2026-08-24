@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Laser Arena — EDM Laser Show Simulator</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { overflow: hidden; background: #000; height: 100%; }
+    body { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    canvas#c { display: block; width: 100vw; height: 100vh; }
+
+    #panel {
+      position: fixed;
+      top: 0; right: 0;
+      width: 290px;
+      max-height: 100vh;
+      overflow-y: auto;
+      background: rgba(8, 8, 12, 0.88);
+      backdrop-filter: blur(6px);
+      border-left: 1px solid rgba(255,255,255,0.08);
+      color: #cfcfd6;
+      font-size: 11px;
+      padding: 12px;
+      z-index: 20;
+    }
+    #panel::-webkit-scrollbar { width: 4px; }
+    #panel::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+
+    #panel h3 {
+      font-size: 10px;
+      font-weight: 400;
+      letter-spacing: 0.25em;
+      text-transform: uppercase;
+      color: #666;
+      margin: 14px 0 6px;
+    }
+    #panel .section:first-child h3 { margin-top: 0; }
+
+    #panel .row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 3px 0;
+    }
+    #panel .row label {
+      flex: 0 0 84px;
+      color: #8a8a94;
+      font-size: 10px;
+    }
+    #panel .row input[type="range"] { flex: 1; accent-color: #ff6b35; height: 14px; }
+    #panel .row input[type="color"] { width: 40px; height: 20px; border: none; background: none; }
+    #panel .row select {
+      flex: 1;
+      background: #16161e;
+      color: #cfcfd6;
+      border: 1px solid rgba(255,255,255,0.1);
+      font-family: inherit;
+      font-size: 10px;
+      padding: 3px;
+    }
+    #panel .row .val { flex: 0 0 38px; text-align: right; color: #666; font-size: 10px; }
+
+    #panel button {
+      background: #16161e;
+      color: #cfcfd6;
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 3px;
+      font-family: inherit;
+      font-size: 10px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 5px 10px;
+      cursor: pointer;
+    }
+    #panel button:hover { border-color: #ff6b35; color: #ff6b35; }
+    #panel button.primary { border-color: #ff6b35; color: #ff6b35; }
+    #panel .btns { gap: 6px; }
+    #panel .btns button { flex: 1; }
+
+    #panel .beat-display {
+      font-size: 12px;
+      color: #ff6b35;
+      letter-spacing: 0.1em;
+      margin: 6px 0;
+    }
+
+    #panel .fixture-list { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
+    #panel .fixture-list .fx {
+      padding: 4px 7px;
+      text-transform: none;
+      letter-spacing: 0;
+      border-left: 3px solid var(--fx-color, #444);
+    }
+    #panel .fixture-list .fx.selected { background: #26262f; color: #fff; }
+
+    #panel .hint { color: #555; font-size: 9px; line-height: 1.5; margin-top: 12px; }
+
+    body.record #panel { display: none; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div id="panel"></div>
+  <script>
+    if (new URLSearchParams(location.search).get('record') === '1') {
+      document.body.classList.add('record');
+    }
+  </script>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
